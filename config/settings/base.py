@@ -34,6 +34,12 @@ INSTALLED_APPS = [
     "apps.auditlog.apps.AuditlogConfig",
     "apps.notifications.apps.NotificationsConfig",
     "apps.api.apps.ApiConfig",
+    "apps.staff.apps.StaffConfig",
+    "apps.students.apps.StudentsConfig",
+    "apps.timetable.apps.TimetableConfig",
+    "apps.assignments.apps.AssignmentsConfig",
+    "apps.assessments.apps.AssessmentsConfig",
+    "apps.copilot.apps.CopilotConfig",
 ]
 
 MIDDLEWARE = [

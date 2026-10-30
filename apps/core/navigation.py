@@ -63,6 +63,19 @@ def central_navigation():
                 {"title": _("قوالب الإشعار"), "icon": "drafts", "link": reverse_lazy("admin:notifications_notificationtemplate_changelist"), "permission": _central_check("notifications.view_notificationtemplate")},
             ],
         },
+        {
+            "title": _("البيانات الأكاديمية والذكاء الاصطناعي"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("المعلمون"), "icon": "badge", "link": reverse_lazy("admin:staff_teacher_changelist"), "permission": _central_check("staff.view_teacher")},
+                {"title": _("الطلاب"), "icon": "person", "link": reverse_lazy("admin:students_student_changelist"), "permission": _central_check("students.view_student")},
+                {"title": _("أولياء الأمور"), "icon": "family_restroom", "link": reverse_lazy("admin:students_guardian_changelist"), "permission": _central_check("students.view_guardian")},
+                {"title": _("جدول الحصص"), "icon": "calendar_month", "link": reverse_lazy("admin:timetable_classschedule_changelist"), "permission": _central_check("timetable.view_classschedule")},
+                {"title": _("الواجبات والتكليفات"), "icon": "assignment", "link": reverse_lazy("admin:assignments_homework_changelist"), "permission": _central_check("assignments.view_homework")},
+                {"title": _("دفتر الدرجات"), "icon": "grade", "link": reverse_lazy("admin:assessments_gradebook_changelist"), "permission": _central_check("assessments.view_gradebook")},
+                {"title": _("وثائق المناهج (RAG)"), "icon": "menu_book", "link": reverse_lazy("admin:copilot_curriculumdocument_changelist"), "permission": _central_check("copilot.view_curriculumdocument")},
+                {"title": _("جلسات المساعد الذكي"), "icon": "smart_toy", "link": reverse_lazy("admin:copilot_aichatsession_changelist"), "permission": _central_check("copilot.view_aichatsession")},
+            ],
+        },
     ]
 
 
@@ -101,6 +114,43 @@ def school_navigation():
                 {"title": _("إشعارات المدرسة"), "icon": "notifications", "link": reverse_lazy("school_admin:notifications_notification_changelist"), "permission": _school_check("notifications.view_notification")},
                 {"title": _("قوالب الإشعار"), "icon": "drafts", "link": reverse_lazy("school_admin:notifications_notificationtemplate_changelist"), "permission": _school_check("notifications.view_notificationtemplate")},
                 {"title": _("تفضيلات الإشعار"), "icon": "notifications_active", "link": reverse_lazy("school_admin:notifications_notificationpreference_changelist"), "permission": _school_check("notifications.view_notificationpreference")},
+            ],
+        },
+        {
+            "title": _("الكادر والمعلمون"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("المعلمون"), "icon": "badge", "link": reverse_lazy("school_admin:staff_teacher_changelist"), "permission": _school_check("staff.view_teacher")},
+                {"title": _("إسناد المواد"), "icon": "assignment_ind", "link": reverse_lazy("school_admin:staff_teacherassignment_changelist"), "permission": _school_check("staff.view_teacherassignment")},
+            ],
+        },
+        {
+            "title": _("الطلاب وأولياء الأمور"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("سجل الطلاب"), "icon": "person", "link": reverse_lazy("school_admin:students_student_changelist"), "permission": _school_check("students.view_student")},
+                {"title": _("أولياء الأمور"), "icon": "family_restroom", "link": reverse_lazy("school_admin:students_guardian_changelist"), "permission": _school_check("students.view_guardian")},
+            ],
+        },
+        {
+            "title": _("الجدول والتدريس"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("جدول الحصص"), "icon": "calendar_month", "link": reverse_lazy("school_admin:timetable_classschedule_changelist"), "permission": _school_check("timetable.view_classschedule")},
+                {"title": _("سجلات الدروس اليومية"), "icon": "history_edu", "link": reverse_lazy("school_admin:timetable_dailylessonlog_changelist"), "permission": _school_check("timetable.view_dailylessonlog")},
+            ],
+        },
+        {
+            "title": _("الواجبات والتقييمات"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("الواجبات المدرسية"), "icon": "assignment", "link": reverse_lazy("school_admin:assignments_homework_changelist"), "permission": _school_check("assignments.view_homework")},
+                {"title": _("تسليمات الطلاب"), "icon": "task_alt", "link": reverse_lazy("school_admin:assignments_homeworksubmission_changelist"), "permission": _school_check("assignments.view_homeworksubmission")},
+                {"title": _("أنواع التقييم"), "icon": "category", "link": reverse_lazy("school_admin:assessments_assessmenttype_changelist"), "permission": _school_check("assessments.view_assessmenttype")},
+                {"title": _("دفتر الدرجات"), "icon": "grade", "link": reverse_lazy("school_admin:assessments_gradebook_changelist"), "permission": _school_check("assessments.view_gradebook")},
+            ],
+        },
+        {
+            "title": _("المساعد الذكي (Co-Pilot)"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("وثائق المناهج (RAG)"), "icon": "menu_book", "link": reverse_lazy("school_admin:copilot_curriculumdocument_changelist"), "permission": _school_check("copilot.view_curriculumdocument")},
+                {"title": _("جلسات المحادثة الذكية"), "icon": "smart_toy", "link": reverse_lazy("school_admin:copilot_aichatsession_changelist"), "permission": _school_check("copilot.view_aichatsession")},
             ],
         },
     ]

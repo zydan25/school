@@ -7,3 +7,8 @@ python-dotenv>=1.1,<2.0
 dj-database-url>=3.0,<4.0
 gunicorn>=23.0,<24.0
 whitenoise>=6.9,<7.0
+google-genai>=2.0.0
+langchain>=0.2.0
+langchain-core
+langchain-google-genai
+pypdf>=4.0.0

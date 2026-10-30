@@ -296,3 +296,129 @@ class SchoolInvitationAdmin(SchoolScopedAdmin):
 
     def has_change_permission(self, request, obj=None):
         return request.method in ("GET", "HEAD", "OPTIONS") and super().has_view_permission(request, obj)
+
+
+# -----------------------------------------------------------------------------
+# New Operational Modules Registered in School Admin
+# -----------------------------------------------------------------------------
+from apps.staff.models import Teacher, TeacherAssignment
+from apps.students.models import Student, Guardian, StudentGuardianRelation
+from apps.timetable.models import ClassSchedule, DailyLessonLog
+from apps.assignments.models import Homework, HomeworkSubmission
+from apps.assessments.models import AssessmentType, GradeBook
+from apps.copilot.models import CurriculumDocument, AIChatSession
+
+
+@admin.register(Teacher, site=school_admin_site)
+class SchoolTeacherAdmin(SchoolScopedAdmin):
+    list_display = ("user", "specialization", "employee_number", "max_weekly_periods", "is_active_teaching")
+    list_filter = ("is_active_teaching",)
+    search_fields = ("user__phone", "user__first_name", "user__last_name", "specialization")
+    autocomplete_fields = ("user",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(TeacherAssignment, site=school_admin_site)
+class SchoolTeacherAssignmentAdmin(SchoolScopedAdmin):
+    list_display = ("teacher", "subject", "section", "academic_year", "weekly_periods")
+    list_filter = ("academic_year", "subject")
+    search_fields = ("teacher__user__first_name", "subject__name", "section__name")
+    autocomplete_fields = ("teacher", "subject", "section", "academic_year")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Student, site=school_admin_site)
+class SchoolStudentAdmin(SchoolScopedAdmin):
+    list_display = ("get_full_name", "student_id_number", "grade_level", "section", "status")
+    list_filter = ("status", "grade_level", "academic_year")
+    search_fields = ("student_id_number", "first_name", "last_name", "national_id")
+    autocomplete_fields = ("user", "grade_level", "section", "academic_year")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Guardian, site=school_admin_site)
+class SchoolGuardianAdmin(SchoolScopedAdmin):
+    list_display = ("user", "relationship_type", "national_id", "emergency_phone")
+    list_filter = ("relationship_type",)
+    search_fields = ("user__phone", "user__first_name", "user__last_name", "national_id")
+    autocomplete_fields = ("user",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentGuardianRelation, site=school_admin_site)
+class SchoolStudentGuardianRelationAdmin(SchoolScopedAdmin):
+    list_display = ("student", "guardian", "is_primary", "receives_notifications", "can_pickup")
+    list_filter = ("is_primary", "receives_notifications", "can_pickup")
+    search_fields = ("student__first_name", "student__last_name", "guardian__user__first_name")
+    autocomplete_fields = ("student", "guardian")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(ClassSchedule, site=school_admin_site)
+class SchoolClassScheduleAdmin(SchoolScopedAdmin):
+    list_display = ("get_day_of_week_display", "period_number", "subject", "section", "teacher", "classroom")
+    list_filter = ("day_of_week", "academic_year", "subject")
+    search_fields = ("subject__name", "section__name", "teacher__user__first_name")
+    autocomplete_fields = ("academic_year", "academic_term", "section", "subject", "teacher", "classroom")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(DailyLessonLog, site=school_admin_site)
+class SchoolDailyLessonLogAdmin(SchoolScopedAdmin):
+    list_display = ("schedule", "date", "topic", "is_completed")
+    list_filter = ("date", "is_completed")
+    search_fields = ("topic", "lesson_summary")
+    autocomplete_fields = ("schedule",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Homework, site=school_admin_site)
+class SchoolHomeworkAdmin(SchoolScopedAdmin):
+    list_display = ("title", "subject", "section", "teacher", "assigned_date", "due_date", "max_score", "is_active")
+    list_filter = ("is_active", "subject")
+    search_fields = ("title", "description", "subject__name", "section__name")
+    autocomplete_fields = ("subject", "section", "teacher")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(HomeworkSubmission, site=school_admin_site)
+class SchoolHomeworkSubmissionAdmin(SchoolScopedAdmin):
+    list_display = ("student", "homework", "submitted_at", "status", "score", "graded_by")
+    list_filter = ("status",)
+    search_fields = ("student__first_name", "student__last_name", "homework__title")
+    autocomplete_fields = ("homework", "student", "graded_by")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(AssessmentType, site=school_admin_site)
+class SchoolAssessmentTypeAdmin(SchoolScopedAdmin):
+    list_display = ("name", "code", "weight_percentage", "default_max_score")
+    search_fields = ("name", "code")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(GradeBook, site=school_admin_site)
+class SchoolGradeBookAdmin(SchoolScopedAdmin):
+    list_display = ("student", "subject", "assessment_title", "score", "max_score", "is_published", "graded_by")
+    list_filter = ("is_published", "subject", "academic_term")
+    search_fields = ("student__first_name", "student__last_name", "assessment_title", "subject__name")
+    autocomplete_fields = ("student", "subject", "academic_term", "assessment_type", "homework", "graded_by")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(CurriculumDocument, site=school_admin_site)
+class SchoolCurriculumDocumentAdmin(SchoolScopedAdmin):
+    list_display = ("title", "subject", "grade_level", "uploaded_by", "is_indexed", "created_at")
+    list_filter = ("is_indexed", "subject", "grade_level")
+    search_fields = ("title", "description", "subject__name")
+    autocomplete_fields = ("subject", "grade_level", "uploaded_by")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(AIChatSession, site=school_admin_site)
+class SchoolAIChatSessionAdmin(SchoolScopedAdmin):
+    list_display = ("title", "role_scope", "user", "model_name", "is_active", "created_at")
+    list_filter = ("role_scope", "is_active")
+    search_fields = ("title", "user__phone", "user__first_name")
+    autocomplete_fields = ("user",)
+    readonly_fields = ("id", "created_at", "updated_at")
