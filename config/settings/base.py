@@ -168,7 +168,7 @@ UNFOLD = {
     },
     "SIDEBAR": {
         "show_search": True,
-        "show_all_applications": False,
+        "show_all_applications": True,
         # Both sites use the same visual shell but expose route-specific navigation.
         "navigation": [
             *__import__("apps.core.navigation", fromlist=["central_navigation"]).central_navigation(),
