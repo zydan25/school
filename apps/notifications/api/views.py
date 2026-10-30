@@ -248,6 +248,11 @@ class WhatsAppWebhookAPIView(APIView):
         })
 
 
+class SchoolWhatsAppWebhookAPIView(WhatsAppWebhookAPIView):
+    """نقطة استقبال الويب هوك المخصصة لرمز المدرسة."""
+    pass
+
+
 def _dispatch_to_gateway(gateway: SchoolMessagingGateway, recipient: str, text: str):
     """إرسال فعلي للرد إلى خادم مزود خدمة الواتساب عبر HTTP REST API."""
     import urllib.request

@@ -91,7 +91,8 @@ DATABASES = {
         conn_health_checks=True,
     )
 }
-DATABASES["default"]["OPTIONS"] = {**DATABASES["default"].get("OPTIONS", {}), "connect_timeout": 10}
+if "postgresql" in DATABASES["default"].get("ENGINE", "") or "psycopg" in DATABASES["default"].get("ENGINE", ""):
+    DATABASES["default"]["OPTIONS"] = {**DATABASES["default"].get("OPTIONS", {}), "connect_timeout": 10}
 
 AUTH_USER_MODEL = "accounts.User"
 AUTHENTICATION_BACKENDS = [
