@@ -564,13 +564,18 @@ class ExtendedModulesTests(TestCase):
     def test_security_copilot_and_reports_access_control(self):
         """التحقق الأمني من منع تسريب بيانات الطلاب ومنع غير المصرح لهم من رؤية التقارير المالية."""
         from rest_framework.test import APIClient
-        from apps.accounts.models import User
+        from apps.accounts.models import User, SchoolMembership
 
         unauth_user = User.objects.create_user(
             phone="770000002",
-            first_name="زائر",
-            last_name="غير مصرح",
+            first_name="معلم",
+            last_name="عادي",
             password="pass_test_123",
+        )
+        SchoolMembership.objects.create(
+            user=unauth_user,
+            school=self.school,
+            status=SchoolMembership.Status.ACTIVE,
         )
         client = APIClient()
         client.force_authenticate(user=unauth_user)
@@ -580,5 +585,5 @@ class ExtendedModulesTests(TestCase):
         self.assertEqual(copilot_res.status_code, 403)
 
         # 2. Trial balance without finance role must return 403 Forbidden
-        fin_res = client.get("/api/v1/reports/trial-balance/")
+        fin_res = client.get("/api/v1/reports/financial/trial-balance/")
         self.assertEqual(fin_res.status_code, 403)
