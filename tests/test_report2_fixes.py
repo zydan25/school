@@ -159,7 +159,9 @@ class Report2AuditFixesTests(TestCase):
             paid_amount=Decimal("0.00"),
         )
         StudentInvoiceItem.objects.create(
+            school=self.school,
             invoice=inv,
+            description="رسوم دراسية",
             fee_category=self.fee_category,
             amount=Decimal("1000.00"),
         )
@@ -229,12 +231,14 @@ class Report2AuditFixesTests(TestCase):
             description="قيد اختبار الحماية",
         )
         line1 = JournalEntryLine.objects.create(
+            school=self.school,
             journal_entry=entry,
             account=ar_acc,
             debit=Decimal("500.00"),
             credit=Decimal("0.00"),
         )
         line2 = JournalEntryLine.objects.create(
+            school=self.school,
             journal_entry=entry,
             account=rev_acc,
             debit=Decimal("0.00"),
@@ -293,7 +297,6 @@ class Report2AuditFixesTests(TestCase):
             amount=Decimal("30000.00"),
             monthly_installment=Decimal("15000.00"),
             repaid_amount=Decimal("0.00"),
-            remaining_amount=Decimal("30000.00"),
             date_granted=date(2026, 1, 1),
             status=EmployeeLoanAdvance.Status.ACTIVE,
         )
@@ -382,8 +385,8 @@ class Report2AuditFixesTests(TestCase):
             warehouse=wh,
             code="BK-MATH-G1",
             name="كتاب الرياضيات للصف الأول",
-            item_type=InventoryItem.ItemType.BOOK,
-            current_quantity=Decimal("50.00"),
+            unit=InventoryItem.Unit.BOOK,
+            current_stock=Decimal("50.00"),
         )
         dist = StudentBookDistribution.objects.create(
             school=self.school,
@@ -397,15 +400,15 @@ class Report2AuditFixesTests(TestCase):
         dist.deliver_book(user=self.user)
         dist.refresh_from_db()
         item.refresh_from_db()
-        self.assertTrue(dist.is_delivered)
-        self.assertEqual(item.current_quantity, Decimal("49.00"))
+        self.assertEqual(dist.delivery_status, StudentBookDistribution.DeliveryStatus.DELIVERED)
+        self.assertEqual(item.current_stock, Decimal("49.00"))
 
         # 2. Return Book -> Stock restored to 50
         dist.return_book(user=self.user)
         dist.refresh_from_db()
         item.refresh_from_db()
-        self.assertFalse(dist.is_delivered)
-        self.assertEqual(item.current_quantity, Decimal("50.00"))
+        self.assertEqual(dist.delivery_status, StudentBookDistribution.DeliveryStatus.RETURNED)
+        self.assertEqual(item.current_stock, Decimal("50.00"))
 
     def test_user_in_app_notifications_api(self):
         """Phase 4: التحقق من واجهات إشعارات المستخدم والتحديد كمقروء."""
@@ -441,7 +444,14 @@ class Report2AuditFixesTests(TestCase):
 
     def test_reports_school_isolation_without_fallback(self):
         """Phase 4: التحقق من عدم تسريب بيانات مدرسة عشوائية عند طلب تقرير دون تحديد المدرسة."""
-        token, _ = Token.objects.get_or_create(user=self.user)
+        platform_user = User.objects.create_user(
+            phone="+967778899000",
+            password="StrongPassword123!",
+            first_name="مدير",
+            last_name="عام",
+            is_platform_admin=True,
+        )
+        token, _ = Token.objects.get_or_create(user=platform_user)
         client = APIClient()
         client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
 
