@@ -12,7 +12,7 @@ tests/test_audit_fixes.py
 9. عزل صلاحيات العيادة والملفات الطبية الحساسة وإنشاء دور مسؤول العيادة.
 10. مصادقة الرموز (Token Authentication) لتطبيقات الموبايل وواجهات API.
 """
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -89,31 +89,36 @@ class AuditFixesVerificationTests(TestCase):
         cls.term = AcademicTerm.objects.create(
             school=cls.school,
             academic_year=cls.academic_year,
-            code="T1",
             name="الفصل الأول",
+            number=1,
             starts_on=date(2026, 9, 1),
             ends_on=date(2027, 1, 15),
+            is_current=True,
         )
         cls.stage = EducationalStage.objects.create(
             school=cls.school,
             code="PRIMARY",
             name="المرحلة الابتدائية",
+            sequence=1,
         )
         cls.grade = GradeLevel.objects.create(
             school=cls.school,
             stage=cls.stage,
             code="G1",
             name="الصف الأول",
+            sequence=1,
         )
         cls.section_a = Section.objects.create(
             school=cls.school,
-            grade_level=cls.grade,
+            academic_year=cls.academic_year,
+            grade=cls.grade,
             code="A",
             name="شعبة أ",
         )
         cls.section_b = Section.objects.create(
             school=cls.school,
-            grade_level=cls.grade,
+            academic_year=cls.academic_year,
+            grade=cls.grade,
             code="B",
             name="شعبة ب",
         )
@@ -121,6 +126,18 @@ class AuditFixesVerificationTests(TestCase):
             school=cls.school,
             code="MATH1",
             name="الرياضيات",
+        )
+        cls.teacher_user = User.objects.create_user(
+            phone="+967770001155",
+            password="StrongPassword123!",
+            first_name="أستاذ",
+            last_name="المادة",
+        )
+        cls.teacher = Teacher.objects.create(
+            school=cls.school,
+            user=cls.teacher_user,
+            employee_number="TCH-001",
+            specialization="رياضيات",
         )
 
         # 4. Student & Staff
@@ -136,6 +153,7 @@ class AuditFixesVerificationTests(TestCase):
             student_id_number="STD-00101",
             first_name="سامي",
             last_name="خالد",
+            academic_year=cls.academic_year,
             grade_level=cls.grade,
             section=cls.section_a,
         )
@@ -336,8 +354,11 @@ class AuditFixesVerificationTests(TestCase):
             academic_year=self.academic_year,
             section=self.section_b,  # شعبة ب
             subject=self.subject,
-            day_of_week=0,
+            teacher=self.teacher,
+            day_of_week=ClassSchedule.WeekDay.SUNDAY,
             period_number=1,
+            start_time=time(8, 0),
+            end_time=time(8, 45),
         )
         # الطالب سامي مسجل في شعبة أ
         attendance = PeriodAttendance(
