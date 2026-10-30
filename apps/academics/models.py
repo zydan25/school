@@ -1,0 +1,257 @@
+"""Foundational school structure: academic years, stages, grades, groups and periods."""
+from __future__ import annotations
+
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.db.models import Q
+from django.utils import timezone
+
+from apps.core.models import TenantOwnedModel
+
+
+class AcademicYear(TenantOwnedModel):
+    class Status(models.TextChoices):
+        PLANNING = "planning", "قيد الإعداد"
+        ACTIVE = "active", "جارية"
+        CLOSED = "closed", "مغلقة"
+        ARCHIVED = "archived", "مؤرشفة"
+
+    name = models.CharField("اسم السنة الدراسية", max_length=80)
+    code = models.CharField("رمز السنة", max_length=24)
+    starts_on = models.DateField("تاريخ البداية")
+    ends_on = models.DateField("تاريخ النهاية")
+    status = models.CharField("الحالة", max_length=12, choices=Status.choices, default=Status.PLANNING, db_index=True)
+    is_current = models.BooleanField("السنة الحالية", default=False)
+    opened_at = models.DateTimeField("تاريخ الفتح", null=True, blank=True)
+    closed_at = models.DateTimeField("تاريخ الإغلاق", null=True, blank=True)
+    notes = models.TextField("ملاحظات", blank=True)
+
+    class Meta:
+        verbose_name = "سنة دراسية"
+        verbose_name_plural = "السنوات الدراسية"
+        ordering = ["-starts_on"]
+        constraints = [
+            models.UniqueConstraint(fields=["school", "code"], name="academics_year_school_code_uniq"),
+            models.UniqueConstraint(fields=["school"], condition=Q(is_current=True, is_archived=False), name="academics_one_current_year_per_school"),
+        ]
+        indexes = [models.Index(fields=["school", "status", "starts_on"])]
+
+    def __str__(self):
+        return f"{self.name} - {self.school}"
+
+    def clean(self):
+        super().clean()
+        if self.ends_on and self.starts_on and self.ends_on <= self.starts_on:
+            raise ValidationError({"ends_on": "تاريخ نهاية السنة يجب أن يكون بعد تاريخ بدايتها."})
+        if self.is_current and self.status != self.Status.ACTIVE:
+            raise ValidationError({"is_current": "لا يمكن تحديد سنة غير جارية كسنة حالية."})
+
+
+
+class AcademicTerm(TenantOwnedModel):
+    academic_year = models.ForeignKey(AcademicYear, verbose_name="السنة الدراسية", on_delete=models.PROTECT, related_name="terms")
+    name = models.CharField("اسم الفصل الدراسي", max_length=80)
+    number = models.PositiveSmallIntegerField("ترتيب الفصل")
+    starts_on = models.DateField("البداية")
+    ends_on = models.DateField("النهاية")
+    is_current = models.BooleanField("الفصل الحالي", default=False)
+    is_closed = models.BooleanField("مغلق", default=False)
+
+    class Meta:
+        verbose_name = "فصل دراسي"
+        verbose_name_plural = "الفصول الدراسية"
+        ordering = ["academic_year__starts_on", "number"]
+        constraints = [
+            models.UniqueConstraint(fields=["academic_year", "number"], name="academics_term_year_number_uniq"),
+            models.UniqueConstraint(fields=["academic_year"], condition=Q(is_current=True, is_archived=False), name="academics_one_current_term_per_year"),
+        ]
+
+    def __str__(self):
+        return f"{self.academic_year.name} - {self.name}"
+
+    def clean(self):
+        super().clean()
+        if self.academic_year_id and self.school_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة نفسها."})
+        if self.starts_on and self.ends_on and self.ends_on <= self.starts_on:
+            raise ValidationError({"ends_on": "تاريخ النهاية يجب أن يكون بعد تاريخ البداية."})
+        if self.academic_year_id and self.starts_on and self.ends_on:
+            if self.starts_on < self.academic_year.starts_on or self.ends_on > self.academic_year.ends_on:
+                raise ValidationError("الفصل الدراسي يجب أن يقع داخل حدود السنة الدراسية.")
+
+
+
+class EducationalStage(TenantOwnedModel):
+    name = models.CharField("اسم المرحلة", max_length=100)
+    code = models.CharField("رمز المرحلة", max_length=24)
+    sequence = models.PositiveSmallIntegerField("الترتيب", default=1)
+    description = models.TextField("الوصف", blank=True)
+    is_active = models.BooleanField("نشطة", default=True)
+
+    class Meta:
+        verbose_name = "مرحلة تعليمية"
+        verbose_name_plural = "المراحل التعليمية"
+        ordering = ["school", "sequence"]
+        constraints = [models.UniqueConstraint(fields=["school", "code"], name="academics_stage_school_code_uniq")]
+
+    def __str__(self):
+        return self.name
+
+
+class GradeLevel(TenantOwnedModel):
+    stage = models.ForeignKey(EducationalStage, verbose_name="المرحلة", on_delete=models.PROTECT, related_name="grades")
+    name = models.CharField("اسم الصف", max_length=100)
+    code = models.CharField("رمز الصف", max_length=24)
+    sequence = models.PositiveSmallIntegerField("الترتيب", default=1)
+    age_from = models.PositiveSmallIntegerField("أقل عمر", null=True, blank=True)
+    age_to = models.PositiveSmallIntegerField("أعلى عمر", null=True, blank=True)
+    is_active = models.BooleanField("نشط", default=True)
+
+    class Meta:
+        verbose_name = "صف دراسي"
+        verbose_name_plural = "الصفوف الدراسية"
+        ordering = ["stage__sequence", "sequence"]
+        constraints = [models.UniqueConstraint(fields=["school", "code"], name="academics_grade_school_code_uniq")]
+
+    def __str__(self):
+        return f"{self.stage.name} / {self.name}"
+
+    def clean(self):
+        super().clean()
+        if self.stage_id and self.school_id and self.stage.school_id != self.school_id:
+            raise ValidationError({"stage": "المرحلة المحددة لا تتبع المدرسة نفسها."})
+        if self.age_from and self.age_to and self.age_to < self.age_from:
+            raise ValidationError("الحد الأعلى للعمر لا يمكن أن يكون أقل من الحد الأدنى.")
+
+
+class Classroom(TenantOwnedModel):
+    class Type(models.TextChoices):
+        CLASS = "class", "قاعة صفية"
+        LAB = "lab", "مختبر"
+        COMPUTER = "computer", "مختبر حاسوب"
+        LIBRARY = "library", "مكتبة"
+        MULTIPURPOSE = "multi", "متعددة الاستخدام"
+
+    code = models.CharField("رمز القاعة", max_length=24)
+    name = models.CharField("اسم القاعة", max_length=100)
+    classroom_type = models.CharField("نوع القاعة", max_length=12, choices=Type.choices, default=Type.CLASS)
+    capacity = models.PositiveSmallIntegerField("السعة", default=30)
+    building = models.CharField("المبنى", max_length=80, blank=True)
+    floor = models.CharField("الطابق", max_length=30, blank=True)
+    has_projector = models.BooleanField("جهاز عرض", default=False)
+    is_active = models.BooleanField("نشطة", default=True)
+
+    class Meta:
+        verbose_name = "قاعة / غرفة"
+        verbose_name_plural = "القاعات والغرف"
+        constraints = [models.UniqueConstraint(fields=["school", "code"], name="academics_classroom_school_code_uniq")]
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
+class Section(TenantOwnedModel):
+    academic_year = models.ForeignKey(AcademicYear, verbose_name="السنة الدراسية", on_delete=models.PROTECT, related_name="sections")
+    grade = models.ForeignKey(GradeLevel, verbose_name="الصف", on_delete=models.PROTECT, related_name="sections")
+    code = models.CharField("رمز الشعبة", max_length=24)
+    name = models.CharField("اسم الشعبة", max_length=100)
+    homeroom_classroom = models.ForeignKey(Classroom, verbose_name="القاعة الأساسية", null=True, blank=True, on_delete=models.PROTECT, related_name="homeroom_sections")
+    capacity = models.PositiveSmallIntegerField("السعة القصوى", default=35)
+    is_active = models.BooleanField("نشطة", default=True)
+    notes = models.CharField("ملاحظات", max_length=500, blank=True)
+
+    class Meta:
+        verbose_name = "شعبة / فصل"
+        verbose_name_plural = "الشعب والفصول"
+        ordering = ["academic_year__starts_on", "grade__sequence", "name"]
+        constraints = [models.UniqueConstraint(fields=["school", "academic_year", "code"], name="academics_section_school_year_code_uniq")]
+        indexes = [models.Index(fields=["school", "academic_year", "grade"])]
+
+    def __str__(self):
+        return f"{self.grade.name} - {self.name}"
+
+    def clean(self):
+        super().clean()
+        for field_name in ("academic_year", "grade", "homeroom_classroom"):
+            obj = getattr(self, field_name, None)
+            if obj and self.school_id and obj.school_id != self.school_id:
+                raise ValidationError({field_name: "السجل المرتبط لا يتبع المدرسة نفسها."})
+
+
+
+class Subject(TenantOwnedModel):
+    code = models.CharField("رمز المادة", max_length=24)
+    name = models.CharField("اسم المادة", max_length=120)
+    short_name = models.CharField("الاسم المختصر", max_length=40, blank=True)
+    description = models.TextField("الوصف", blank=True)
+    is_core = models.BooleanField("مادة أساسية", default=True)
+    default_weekly_periods = models.PositiveSmallIntegerField("الحصص الأسبوعية الافتراضية", default=2)
+    max_score = models.DecimalField("الدرجة النهائية الافتراضية", max_digits=7, decimal_places=2, default=100)
+    is_active = models.BooleanField("نشطة", default=True)
+
+    class Meta:
+        verbose_name = "مادة دراسية"
+        verbose_name_plural = "المواد الدراسية"
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["school", "code"], name="academics_subject_school_code_uniq")]
+
+    def __str__(self):
+        return self.name
+
+    def clean(self):
+        super().clean()
+        if self.max_score <= 0:
+            raise ValidationError({"max_score": "الدرجة النهائية يجب أن تكون أكبر من صفر."})
+
+
+class PeriodDefinition(TenantOwnedModel):
+    class Kind(models.TextChoices):
+        LESSON = "lesson", "حصة دراسية"
+        BREAK = "break", "استراحة"
+        ASSEMBLY = "assembly", "طابور / نشاط"
+
+    name = models.CharField("اسم الفترة", max_length=60)
+    period_number = models.PositiveSmallIntegerField("رقم الحصة / الفترة")
+    starts_at = models.TimeField("وقت البداية")
+    ends_at = models.TimeField("وقت النهاية")
+    kind = models.CharField("نوع الفترة", max_length=12, choices=Kind.choices, default=Kind.LESSON)
+    is_active = models.BooleanField("نشطة", default=True)
+
+    class Meta:
+        verbose_name = "فترة / حصة زمنية"
+        verbose_name_plural = "الفترات والحصص الزمنية"
+        ordering = ["period_number"]
+        constraints = [models.UniqueConstraint(fields=["school", "period_number"], name="academics_period_school_num_uniq")]
+
+    def __str__(self):
+        return f"{self.period_number}. {self.name} ({self.starts_at:%H:%M}-{self.ends_at:%H:%M})"
+
+    def clean(self):
+        super().clean()
+        if self.ends_at and self.starts_at and self.ends_at <= self.starts_at:
+            raise ValidationError({"ends_at": "وقت نهاية الفترة يجب أن يكون بعد وقت بدايتها."})
+
+
+class SchoolWorkingDay(TenantOwnedModel):
+    WEEKDAYS = [(0, "الاثنين"), (1, "الثلاثاء"), (2, "الأربعاء"), (3, "الخميس"), (4, "الجمعة"), (5, "السبت"), (6, "الأحد")]
+    weekday = models.PositiveSmallIntegerField("يوم الأسبوع", choices=WEEKDAYS)
+    is_working = models.BooleanField("يوم دوام", default=True)
+    sequence = models.PositiveSmallIntegerField("ترتيب اليوم", default=1)
+    first_period = models.ForeignKey(PeriodDefinition, verbose_name="أول فترة", null=True, blank=True, on_delete=models.PROTECT, related_name="first_days")
+    last_period = models.ForeignKey(PeriodDefinition, verbose_name="آخر فترة", null=True, blank=True, on_delete=models.PROTECT, related_name="last_days")
+
+    class Meta:
+        verbose_name = "يوم دوام"
+        verbose_name_plural = "أيام الدوام الأسبوعية"
+        ordering = ["sequence"]
+        constraints = [models.UniqueConstraint(fields=["school", "weekday"], name="academics_workday_school_weekday_uniq")]
+
+    def __str__(self):
+        return self.get_weekday_display()
+
+    def clean(self):
+        super().clean()
+        for field_name in ("first_period", "last_period"):
+            obj = getattr(self, field_name, None)
+            if obj and self.school_id and obj.school_id != self.school_id:
+                raise ValidationError({field_name: "الفترة الزمنية لا تتبع المدرسة نفسها."})

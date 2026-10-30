@@ -1,0 +1,56 @@
+{% extends "admin/base.html" %}
+{% load i18n unfold %}
+
+{% block title %}{{ dashboard_title|default:title }} | {{ site_title }}{% endblock %}
+
+{% block branding %}
+    {% include "unfold/helpers/site_branding.html" %}
+{% endblock %}
+
+{% block content %}
+<div class="school-dashboard" dir="rtl">
+    <div class="school-dashboard__intro">
+        <div>
+            <div class="school-dashboard__eyebrow">منصة سكول التعليمية</div>
+            <h1>{{ dashboard_title|default:"لوحة التحكم" }}</h1>
+            <p>{{ dashboard_subtitle|default:"إدارة أكثر وضوحاً، وقرارات مبنية على بيانات دقيقة." }}</p>
+        </div>
+        {% if request.path|slice:":14" == "/school-admin/" and school_context %}
+            <div class="school-dashboard__tenant"><span class="school-dashboard__tenant-dot"></span>{{ school_context.name }} <b>{{ school_context.code }}</b></div>
+        {% else %}
+            <div class="school-dashboard__tenant school-dashboard__tenant--platform"><span class="school-dashboard__tenant-dot"></span>الإدارة المركزية</div>
+        {% endif %}
+    </div>
+
+    {% if platform_metrics %}
+    <div class="school-metrics-grid">
+        <article class="school-metric school-metric--blue"><div class="school-metric__label">إجمالي المدارس</div><div class="school-metric__value">{{ platform_metrics.schools|default:0 }}</div><div class="school-metric__hint">كل المؤسسات المسجلة</div></article>
+        <article class="school-metric school-metric--green"><div class="school-metric__label">المدارس النشطة</div><div class="school-metric__value">{{ platform_metrics.active_schools|default:0 }}</div><div class="school-metric__hint">جاهزة للاستخدام</div></article>
+        <article class="school-metric school-metric--violet"><div class="school-metric__label">حسابات المستخدمين</div><div class="school-metric__value">{{ platform_metrics.users|default:0 }}</div><div class="school-metric__hint">حسابات موحدة للمنصة</div></article>
+        <article class="school-metric school-metric--amber"><div class="school-metric__label">الاشتراكات النشطة</div><div class="school-metric__value">{{ platform_metrics.subscriptions|default:0 }}</div><div class="school-metric__hint">عقود اشتراك سارية</div></article>
+    </div>
+    <div class="school-dashboard__section-head"><div><h2>إدارة المنصة</h2><p>الوصول السريع إلى أهم أعمال الإدارة المركزية</p></div></div>
+    <div class="school-quick-grid">
+        <a href="/admin/tenants/school/" class="school-quick-card"><span class="school-quick-card__icon">🏫</span><strong>إدارة المدارس</strong><small>إنشاء المدارس وتفعيلها وإيقافها</small></a>
+        <a href="/admin/platform/plan/" class="school-quick-card"><span class="school-quick-card__icon">🧩</span><strong>الباقات والمزايا</strong><small>تعريف الاشتراكات والوحدات المتاحة</small></a>
+        <a href="/admin/accounts/user/" class="school-quick-card"><span class="school-quick-card__icon">👥</span><strong>حسابات المستخدمين</strong><small>الحسابات والهوية والصلاحيات</small></a>
+        <a href="/admin/auditlog/auditevent/" class="school-quick-card"><span class="school-quick-card__icon">🛡️</span><strong>سجل الحوكمة</strong><small>مراجعة العمليات الحساسة</small></a>
+    </div>
+    {% elif school_metrics %}
+    <div class="school-metrics-grid">
+        <article class="school-metric school-metric--blue"><div class="school-metric__label">السنوات الدراسية</div><div class="school-metric__value">{{ school_metrics.academic_years|default:0 }}</div><div class="school-metric__hint">سنوات مدارة داخل المدرسة</div></article>
+        <article class="school-metric school-metric--green"><div class="school-metric__label">الفروع</div><div class="school-metric__value">{{ school_metrics.branches|default:0 }}</div><div class="school-metric__hint">نطاقات التشغيل التابعة</div></article>
+        <article class="school-metric school-metric--violet"><div class="school-metric__label">الشعب والفصول</div><div class="school-metric__value">{{ school_metrics.sections|default:0 }}</div><div class="school-metric__hint">الهيكل الدراسي الحالي</div></article>
+        <article class="school-metric school-metric--amber"><div class="school-metric__label">أعضاء المدرسة</div><div class="school-metric__value">{{ school_metrics.members|default:0 }}</div><div class="school-metric__hint">المستخدمون ذوو العضوية النشطة</div></article>
+    </div>
+    <div class="school-dashboard__section-head"><div><h2>إعداد المدرسة</h2><p>ابدأ بضبط التقويم والهيكل الدراسي قبل تشغيل بقية الوحدات</p></div></div>
+    <div class="school-quick-grid">
+        <a href="/school-admin/academics/academicyear/" class="school-quick-card"><span class="school-quick-card__icon">🗓️</span><strong>السنوات والفصول</strong><small>ضبط العام الدراسي وفتراته</small></a>
+        <a href="/school-admin/academics/educationalstage/" class="school-quick-card"><span class="school-quick-card__icon">🎓</span><strong>المراحل والصفوف</strong><small>بناء الهيكل التعليمي</small></a>
+        <a href="/school-admin/academics/section/" class="school-quick-card"><span class="school-quick-card__icon">🏷️</span><strong>الشعب والفصول</strong><small>توزيع الشعب على الصفوف والسنوات</small></a>
+        <a href="/school-admin/academics/perioddefinition/" class="school-quick-card"><span class="school-quick-card__icon">⏱️</span><strong>الحصص والفترات</strong><small>تجهيز الوحدات الزمنية للجدول</small></a>
+    </div>
+    {% endif %}
+    <div class="school-dashboard__footer"><span>سكول - إدارة تعليمية متكاملة</span><span>واجهة الإدارة المركزية وإدارة المدرسة</span></div>
+</div>
+{% endblock %}
