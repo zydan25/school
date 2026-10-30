@@ -32,7 +32,7 @@ from apps.accounting.services.auto_posting import (
     post_student_invoice_to_journal,
     reverse_journal_entry,
 )
-from apps.student_fees.models import FeeCategory, StudentInvoice, PaymentReceipt, PaymentAllocation
+from apps.student_fees.models import FeeCategory, StudentInvoice, StudentInvoiceItem, PaymentReceipt, PaymentAllocation
 from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRun, Payslip
 from apps.payroll.services import generate_monthly_payroll
 
@@ -183,11 +183,18 @@ class AuditFixesVerificationTests(TestCase):
             school=self.school,
             student=self.student,
             academic_year=self.academic_year,
-            fee_category=fee_cat,
             invoice_number="INV-2026-TEST-001",
             issue_date=date(2026, 9, 1),
             due_date=date(2026, 9, 15),
             total_amount=Decimal("5000.00"),
+            discount_amount=Decimal("500.00"),
+        )
+        StudentInvoiceItem.objects.create(
+            school=self.school,
+            invoice=invoice,
+            fee_category=fee_cat,
+            description="رسوم دراسية سنوية",
+            amount=Decimal("5000.00"),
             discount_amount=Decimal("500.00"),
         )
         entry = post_student_invoice_to_journal(invoice)
@@ -216,12 +223,18 @@ class AuditFixesVerificationTests(TestCase):
             school=self.school,
             student=self.student,
             academic_year=self.academic_year,
-            fee_category=fee_cat,
             invoice_number="INV-2026-TEST-002",
             issue_date=date(2026, 9, 1),
             due_date=date(2026, 9, 15),
             total_amount=Decimal("1000.00"),
             discount_amount=Decimal("0.00"),
+        )
+        StudentInvoiceItem.objects.create(
+            school=self.school,
+            invoice=invoice,
+            fee_category=fee_cat,
+            description="رسوم أنشطة",
+            amount=Decimal("1000.00"),
         )
         # سداد مبلغ 1400 (سداد الفاتورة 1000 + فائض 400 في رصيد الطالب)
         receipt = PaymentReceipt.objects.create(
@@ -303,6 +316,7 @@ class AuditFixesVerificationTests(TestCase):
         contract = EmployeeContract.objects.create(
             school=self.school,
             staff_member=self.staff_member,
+            contract_number="CNT-STAFF-001",
             contract_type=EmployeeContract.ContractType.FULL_TIME,
             basic_salary=Decimal("4000.00"),
             housing_allowance=Decimal("500.00"),
@@ -382,6 +396,7 @@ class AuditFixesVerificationTests(TestCase):
         from apps.inventory.models import Supplier
         supplier = Supplier.objects.create(
             school=self.school,
+            code="SUP-001",
             name="دار النشر والتوزيع المدرسية",
             contact_person="المدير التجاري",
             phone="+967771234567",
@@ -445,7 +460,7 @@ class AuditFixesVerificationTests(TestCase):
         self.assertEqual(settlement.payment_voucher, pv)
         # 120000 - 20000 = 100000 net payable
         self.assertEqual(pv.amount, Decimal("100000.00"))
-        self.assertEqual(pv.status, PaymentVoucher.Status.APPROVED)
+        self.assertEqual(pv.status, PaymentVoucher.Status.POSTED)
 
     def test_cash_register_report_excludes_draft_and_cancelled(self):
         """8. التحقق من استبعاد السندات المسودة والملغاة من تقرير حركة الصناديق واليومية."""
@@ -461,7 +476,7 @@ class AuditFixesVerificationTests(TestCase):
             amount=Decimal("100.00"),
             debit_account=exp_acc,
             credit_account=cash_acc,
-            status=PaymentVoucher.Status.APPROVED,
+            status=PaymentVoucher.Status.POSTED,
         )
         # 2. Draft Payment Voucher (250) - should be excluded
         PaymentVoucher.objects.create(

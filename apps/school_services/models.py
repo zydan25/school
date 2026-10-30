@@ -363,7 +363,7 @@ class BusFinancialSettlement(TenantOwnedModel):
                             "debit_account": expense_acc,
                             "credit_account": cash_acc,
                             "description": f"مستحقات نقل مدرسي شهر {self.month}/{self.year} - {self.student_count} طالب",
-                            "status": PaymentVoucher.Status.APPROVED,
+                            "status": PaymentVoucher.Status.POSTED,
                         },
                     )
                     self.payment_voucher = pv

@@ -185,14 +185,14 @@ def get_daily_cash_register_report(school, target_date=None) -> Dict[str, Any]:
         school=school,
         is_archived=False,
         date=target_date,
-        status__in=[ReceiptVoucher.Status.POSTED, ReceiptVoucher.Status.APPROVED],
+        status=ReceiptVoucher.Status.POSTED,
     )
 
     payment_vouchers = PaymentVoucher.objects.filter(
         school=school,
         is_archived=False,
         date=target_date,
-        status__in=[PaymentVoucher.Status.POSTED, PaymentVoucher.Status.APPROVED],
+        status=PaymentVoucher.Status.POSTED,
     )
 
     inflow_items = []

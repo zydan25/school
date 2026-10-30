@@ -190,10 +190,10 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     academic.permissions.set(academic_permissions.distinct())
 
-    # 9. مراجع مدرسي (اطلاع فقط باستثناء السجلات الصحية الخاصة)
+    # 9. مراجع مدرسي (اطلاع فقط باستثناء السجلات الصحية والعيادة الخاصة)
     auditor_permissions = Permission.objects.filter(
         content_type__app_label__in=all_school_apps
-    ).filter(codename__startswith="view_").exclude(content_type__model__in=["studenthealthprofile"])
+    ).filter(codename__startswith="view_").exclude(content_type__model__in=["studenthealthprofile", "clinicvisit"])
     auditor, _ = SchoolRole.objects.get_or_create(
         school=school, code="school-auditor",
         defaults={"name": "مراجع مدرسي", "description": "اطلاع وتدقيق لكافة السجلات والتقارير دون تعديل.", "is_system": True},
