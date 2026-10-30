@@ -110,26 +110,44 @@ def generate_monthly_payroll(
 
 def post_payroll_to_accounting(
     payroll_run: PayrollRun,
-    expense_account: Account,
-    payable_account: Account,
+    expense_account: Account = None,
+    payable_account: Account = None,
     posted_by=None,
 ) -> JournalEntry:
     """
-    ترحيل مسير الرواتب المعتمد إلى دفتر الأستاذ العام وإنشاء القيد المزدوج:
-    مدين: مصروف الرواتب والأجور (Gross Salary)
-    دائن: الرواتب المستحقة للموظفين (Net) + أمانات واستقطاعات التأمينات والسلف (Deductions).
+    ترحيل مسير الرواتب المعتمد إلى دفتر الأستاذ العام وإنشاء قيد الاستحقاق المزدوج:
+    مدين: مصروف الرواتب والأجور (Gross Salary 5101)
+    دائن: الرواتب المستحقة للموظفين (Net 2101) + أمانات واستقطاعات التأمينات (2103) والسلف (1105).
     """
-    if payroll_run.status == PayrollRun.Status.PAID and payroll_run.journal_entry:
+    if payroll_run.journal_entry:
         return payroll_run.journal_entry
+
+    from apps.accounting.services.auto_posting import _get_active_fiscal_period, validate_and_balance_journal_entry
+    school = payroll_run.school
+
+    if expense_account is None:
+        expense_account = Account.objects.filter(school=school, code="5101", is_leaf=True).first()
+    if payable_account is None:
+        payable_account = Account.objects.filter(school=school, code="2101", is_leaf=True).first()
+
+    loans_acc = Account.objects.filter(school=school, code="1105", is_leaf=True).first() or payable_account
+    insurance_acc = Account.objects.filter(school=school, code="2103", is_leaf=True).first() or payable_account
+
+    if not expense_account or not payable_account:
+        raise ValueError("شجرة الحسابات للمدرسة غير مهيأة لحسابات الرواتب (5101 أو 2101).")
+
+    post_date = timezone.localdate()
+    period = _get_active_fiscal_period(school, post_date)
 
     with transaction.atomic():
         entry_number = f"PAY-{payroll_run.year}{payroll_run.month:02d}-{payroll_run.id.hex[:6].upper()}"
         
         entry = JournalEntry.objects.create(
-            school=payroll_run.school,
+            school=school,
+            fiscal_period=period,
             entry_number=entry_number,
-            date=timezone.localdate(),
-            description=f"إثبات استحقاق {payroll_run.name}",
+            date=post_date,
+            description=f"إثبات استحقاق مسير الرواتب: {payroll_run.name}",
             status=JournalEntry.Status.POSTED,
             posted_by=posted_by,
             posted_at=timezone.now(),
@@ -139,9 +157,9 @@ def post_payroll_to_accounting(
 
         gross_total = payroll_run.total_basic + payroll_run.total_allowances
         
-        # Debit: Salaries & Wages Expense
+        # 1. Debit: Salaries & Wages Expense
         JournalEntryLine.objects.create(
-            school=payroll_run.school,
+            school=school,
             journal_entry=entry,
             account=expense_account,
             debit=gross_total,
@@ -149,9 +167,9 @@ def post_payroll_to_accounting(
             description=f"إجمالي استحقاقات {payroll_run.name}",
         )
 
-        # Credit: Accrued Salaries Payable
+        # 2. Credit: Accrued Salaries Payable (Net)
         JournalEntryLine.objects.create(
-            school=payroll_run.school,
+            school=school,
             journal_entry=entry,
             account=payable_account,
             debit=Decimal("0.00"),
@@ -159,34 +177,153 @@ def post_payroll_to_accounting(
             description="صافي الرواتب المستحقة للصرف",
         )
 
-        # Credit: Deductions if any (difference to balance)
-        diff = gross_total - payroll_run.total_net
-        if diff > Decimal("0.00"):
-            # Use payable account or liabilities account for deductions
+        # 3. Credit: Total Loans Deductions
+        total_loans_ded = sum(p.loan_deduction for p in payroll_run.payslips.all())
+        if total_loans_ded > Decimal("0.00"):
             JournalEntryLine.objects.create(
-                school=payroll_run.school,
+                school=school,
                 journal_entry=entry,
-                account=payable_account,
+                account=loans_acc,
                 debit=Decimal("0.00"),
-                credit=diff,
-                description="استقطاعات التأمينات والسلف المستردة",
+                credit=total_loans_ded,
+                description="استقطاعات سلف الموظفين المحصلة من الرواتب",
             )
 
-        payroll_run.journal_entry = entry
-        payroll_run.status = PayrollRun.Status.PAID
-        payroll_run.save()
+        # 4. Credit: Total Insurance & other deductions
+        total_insurance_ded = sum(p.insurance_deduction + p.absence_deduction for p in payroll_run.payslips.all())
+        if total_insurance_ded > Decimal("0.00"):
+            JournalEntryLine.objects.create(
+                school=school,
+                journal_entry=entry,
+                account=insurance_acc,
+                debit=Decimal("0.00"),
+                credit=total_insurance_ded,
+                description="أمانات التأمينات الاجتماعية والخصومات الإدارية",
+            )
 
-        # Update loans
+        validate_and_balance_journal_entry(entry)
+
+        # Update specific active loans for each employee correctly
         for p in payroll_run.payslips.filter(loan_deduction__gt=0):
-            loan = EmployeeLoanAdvance.objects.filter(
-                school=payroll_run.school,
-                teacher=p.teacher,
+            needed_ded = p.loan_deduction
+            loans_qs = EmployeeLoanAdvance.objects.filter(
+                school=school,
                 status=EmployeeLoanAdvance.Status.ACTIVE,
-            ).first()
-            if loan:
-                loan.repaid_amount += p.loan_deduction
+                is_archived=False,
+            )
+            if p.teacher_id:
+                loans_qs = loans_qs.filter(teacher_id=p.teacher_id)
+            elif p.staff_member_id:
+                loans_qs = loans_qs.filter(staff_member_id=p.staff_member_id)
+            else:
+                loans_qs = loans_qs.none()
+
+            for loan in loans_qs.order_by("start_date", "created_at"):
+                if needed_ded <= Decimal("0.00"):
+                    break
+                pay_installment = min(needed_ded, min(loan.monthly_installment, loan.remaining_amount))
+                loan.repaid_amount += pay_installment
+                needed_ded -= pay_installment
                 if loan.repaid_amount >= loan.amount:
                     loan.status = EmployeeLoanAdvance.Status.FULLY_REPAID
-                loan.save()
+                loan.save(update_fields=["repaid_amount", "status", "updated_at"])
+
+        payroll_run.journal_entry = entry
+        payroll_run.status = PayrollRun.Status.POSTED
+        payroll_run.save(update_fields=["journal_entry", "status", "updated_at"])
 
         return entry
+
+
+def disburse_payroll_run(
+    payroll_run: PayrollRun,
+    payment_account: Account,
+    payment_method: str = "bank_transfer",
+    reference_number: str = "",
+    disbursed_by=None,
+) -> JournalEntry:
+    """
+    تنفيذ الصرف الفعلي لمسير الرواتب من حساب الصندوق أو البنك،
+    وإنشاء قيد صرف مالي وسند صرف وتحديث قسائم الموظفين كـ مدفوعة.
+    """
+    from apps.accounting.models import PaymentVoucher
+    from apps.accounting.services.auto_posting import _get_active_fiscal_period, validate_and_balance_journal_entry
+
+    if payroll_run.status == PayrollRun.Status.PAID:
+        raise ValueError("مسير الرواتب هذا مصروف مسبقاً.")
+
+    if not payroll_run.journal_entry:
+        post_payroll_to_accounting(payroll_run, posted_by=disbursed_by)
+
+    school = payroll_run.school
+    payable_account = Account.objects.filter(school=school, code="2101", is_leaf=True).first()
+    if not payable_account:
+        raise ValueError("حساب الرواتب المستحقة (2101) غير مهيأ في دليل الحسابات.")
+
+    post_date = timezone.localdate()
+    period = _get_active_fiscal_period(school, post_date)
+
+    with transaction.atomic():
+        # Disbursement Journal Entry (Debit 2101, Credit 1101/1102)
+        disb_entry_number = f"DISB-PAY-{payroll_run.year}{payroll_run.month:02d}-{payroll_run.id.hex[:6].upper()}"
+        disb_entry = JournalEntry.objects.create(
+            school=school,
+            fiscal_period=period,
+            entry_number=disb_entry_number,
+            date=post_date,
+            description=f"صرف رواتب شهر {payroll_run.month}/{payroll_run.year} - مرجع: {reference_number}",
+            status=JournalEntry.Status.POSTED,
+            posted_by=disbursed_by,
+            posted_at=timezone.now(),
+            source_module="payroll_disbursement",
+            source_reference=str(payroll_run.id),
+        )
+
+        JournalEntryLine.objects.create(
+            school=school,
+            journal_entry=disb_entry,
+            account=payable_account,
+            debit=payroll_run.total_net,
+            credit=Decimal("0.00"),
+            description=f"إقفال مستحقات رواتب شهر {payroll_run.month}/{payroll_run.year}",
+        )
+
+        JournalEntryLine.objects.create(
+            school=school,
+            journal_entry=disb_entry,
+            account=payment_account,
+            debit=Decimal("0.00"),
+            credit=payroll_run.total_net,
+            description=f"تحويل رواتب الموظفين عبر {payment_method}",
+        )
+
+        validate_and_balance_journal_entry(disb_entry)
+
+        # Create Payment Voucher
+        v_num = f"PV-PAY-{payroll_run.year}{payroll_run.month:02d}"
+        pv, _ = PaymentVoucher.objects.get_or_create(
+            school=school,
+            voucher_number=v_num,
+            defaults={
+                "date": post_date,
+                "paid_to": f"كادر وموظفو المدرسة ({payroll_run.name})",
+                "amount": payroll_run.total_net,
+                "debit_account": payable_account,
+                "credit_account": payment_account,
+                "description": f"صرف مسير رواتب شهر {payroll_run.month}/{payroll_run.year}",
+                "status": PaymentVoucher.Status.POSTED,
+                "journal_entry": disb_entry,
+            },
+        )
+
+        payroll_run.status = PayrollRun.Status.PAID
+        payroll_run.save(update_fields=["status", "updated_at"])
+
+        # Mark all payslips as paid with today's date
+        payroll_run.payslips.all().update(
+            is_paid=True,
+            payment_date=post_date,
+            updated_at=timezone.now(),
+        )
+
+        return disb_entry

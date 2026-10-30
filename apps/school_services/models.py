@@ -348,7 +348,7 @@ class BusFinancialSettlement(TenantOwnedModel):
                 self.approved_by = approved_by_user
 
             if self.net_payable > Decimal("0.00") and not self.payment_voucher:
-                expense_acc = Account.objects.filter(school=self.school, code="5204", is_leaf=True).first()
+                expense_acc = Account.objects.filter(school=self.school, code__in=["5205", "5204"], is_leaf=True).first()
                 cash_acc = Account.objects.filter(school=self.school, code="1101", is_leaf=True).first()
 
                 if expense_acc and cash_acc:
@@ -367,6 +367,12 @@ class BusFinancialSettlement(TenantOwnedModel):
                         },
                     )
                     self.payment_voucher = pv
+                    try:
+                        from apps.accounting.services.auto_posting import post_payment_voucher_to_journal
+                        if not pv.journal_entry_id:
+                            post_payment_voucher_to_journal(pv)
+                    except Exception:
+                        pass
 
             self.save()
             return self.payment_voucher
@@ -379,7 +385,7 @@ class BusFinancialSettlement(TenantOwnedModel):
 class StudentBookDistribution(TenantOwnedModel):
     """
     تسليم وتوزيع الكتب المدرسية والرسوم الخاصة بها على الطلاب.
-    يتيح متابعة استلام كل طالب للكتب ورسومها وتحديث الفاتورة المالية.
+    يتيح متابعة استلام كل طالب للكتب ورسومها وتحديث المخزون والفاتورة المالية.
     """
     class DeliveryStatus(models.TextChoices):
         PENDING = "pending", "بانتظار الصرف والتسليم"
@@ -396,6 +402,14 @@ class StudentBookDistribution(TenantOwnedModel):
         "academics.AcademicYear",
         verbose_name="العام الدراسي",
         on_delete=models.PROTECT,
+        related_name="book_distributions",
+    )
+    inventory_item = models.ForeignKey(
+        "inventory.InventoryItem",
+        verbose_name="الصنف المخزني المرتبط (إن وجد)",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
         related_name="book_distributions",
     )
     book_title = models.CharField("اسم الكتاب / الحزمة المدرسية", max_length=200)
@@ -426,6 +440,51 @@ class StudentBookDistribution(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.student.first_name}: {self.book_title} [{self.get_delivery_status_display()}]"
+
+    def deliver_book(self, user=None):
+        """تسليم الكتاب للطالب وخصم الكمية من المخزون وتوثيق العملية."""
+        if self.delivery_status == self.DeliveryStatus.DELIVERED:
+            return
+        from django.db import transaction
+        with transaction.atomic():
+            if self.inventory_item:
+                from apps.inventory.models import StockMovement
+                if self.inventory_item.current_stock < 1:
+                    raise ValidationError(f"رصيد الكتاب المخزني ({self.inventory_item.current_stock}) غير كافٍ للصرف.")
+                StockMovement.objects.create(
+                    school=self.school,
+                    item=self.inventory_item,
+                    movement_type=StockMovement.MovementType.ISSUE,
+                    quantity=Decimal("1.00"),
+                    unit_cost=self.inventory_item.unit_cost,
+                    recipient_name=f"الطالب: {self.student}",
+                    reference=f"تسليم كتاب للطالب {self.student.student_id_number}",
+                )
+            self.delivery_status = self.DeliveryStatus.DELIVERED
+            self.delivered_at = timezone.now()
+            if user:
+                self.delivered_by = user
+            self.save(update_fields=["delivery_status", "delivered_at", "delivered_by", "updated_at"])
+
+    def return_book(self, user=None):
+        """استرجاع الكتاب إلى المخزون وتحديث حالته."""
+        if self.delivery_status != self.DeliveryStatus.DELIVERED:
+            return
+        from django.db import transaction
+        with transaction.atomic():
+            if self.inventory_item:
+                from apps.inventory.models import StockMovement
+                StockMovement.objects.create(
+                    school=self.school,
+                    item=self.inventory_item,
+                    movement_type=StockMovement.MovementType.RECEIPT,
+                    quantity=Decimal("1.00"),
+                    unit_cost=self.inventory_item.unit_cost,
+                    recipient_name=f"استرجاع من الطالب: {self.student}",
+                    reference=f"استرجاع كتاب من الطالب {self.student.student_id_number}",
+                )
+            self.delivery_status = self.DeliveryStatus.RETURNED
+            self.save(update_fields=["delivery_status", "updated_at"])
 
 
 class BookRequisitionOrder(TenantOwnedModel):

@@ -81,13 +81,18 @@ def get_payroll_summary_report(school, year: int, month: int) -> Dict[str, Any]:
     payslips = Payslip.objects.filter(
         payroll_run=payroll_run,
         is_archived=False,
-    ).select_related("teacher__user")
+    ).select_related("teacher__user", "staff_member__user")
 
     slips_data = []
     for p in payslips:
+        emp_id = str(p.teacher_id or p.staff_member_id)
+        emp_user = p.teacher.user if p.teacher else (p.staff_member.user if p.staff_member else None)
+        emp_name = emp_user.get_full_name() or emp_user.phone if emp_user else "غير محدد"
+        emp_role = "معلم تدريسي" if p.teacher else f"كادر إداري ({p.staff_member.get_role_display() if p.staff_member else ''})"
         slips_data.append({
-            "teacher_id": str(p.teacher_id),
-            "teacher_name": f"{p.teacher.user.first_name} {p.teacher.user.last_name}",
+            "employee_id": emp_id,
+            "employee_name": emp_name,
+            "employee_type": emp_role,
             "basic_salary": float(p.basic_salary),
             "allowances": float(p.housing_allowance + p.transport_allowance + p.other_allowances + p.overtime_amount),
             "deductions": float(p.loan_deduction + p.absence_deduction + p.insurance_deduction),

@@ -67,8 +67,8 @@ class EmployeeContract(TenantOwnedModel):
 
     def clean(self):
         super().clean()
-        if not self.teacher_id and not self.staff_member_id:
-            raise ValidationError("يجب ربط العقد بمعلم أو موظف إداري.")
+        if bool(self.teacher_id) == bool(self.staff_member_id):
+            raise ValidationError("يجب ربط العقد إما بمعلم أو بموظف إداري واحد فقط (وليس كليهما ولا كلاهما فارغ).")
         if self.teacher_id and self.teacher.school_id != self.school_id:
             raise ValidationError({"teacher": "المعلم لا ينتمي إلى نفس المدرسة."})
         if self.staff_member_id and self.staff_member.school_id != self.school_id:
@@ -85,11 +85,6 @@ class EmployeeContract(TenantOwnedModel):
     @property
     def net_salary(self) -> Decimal:
         return max(Decimal("0.00"), self.gross_salary - self.insurance_deduction)
-
-    def clean(self):
-        super().clean()
-        if self.teacher_id and self.teacher.school_id != self.school_id:
-            raise ValidationError({"teacher": "المعلم لا يتبع نفس المدرسة."})
 
 
 class EmployeeLoanAdvance(TenantOwnedModel):
@@ -135,7 +130,21 @@ class EmployeeLoanAdvance(TenantOwnedModel):
         ]
 
     def __str__(self) -> str:
-        return f"سلفة #{self.loan_number} - {self.teacher}: {self.amount} (المتبقي: {self.remaining_amount})"
+        beneficiary = self.teacher or self.staff_member or "موظف"
+        return f"سلفة #{self.loan_number} - {beneficiary}: {self.amount} (المتبقي: {self.remaining_amount})"
+
+    def clean(self):
+        super().clean()
+        if bool(self.teacher_id) == bool(self.staff_member_id):
+            raise ValidationError("يجب ربط السلفة إما بمعلم أو بموظف إداري واحد فقط.")
+        if self.teacher_id and self.teacher.school_id != self.school_id:
+            raise ValidationError({"teacher": "المعلم لا ينتمي إلى نفس المدرسة."})
+        if self.staff_member_id and self.staff_member.school_id != self.school_id:
+            raise ValidationError({"staff_member": "الموظف الإداري لا ينتمي إلى نفس المدرسة."})
+        if self.amount <= Decimal("0.00"):
+            raise ValidationError({"amount": "مبلغ السلفة الإجمالي يجب أن يكون أكبر من الصفر."})
+        if self.monthly_installment <= Decimal("0.00"):
+            raise ValidationError({"monthly_installment": "القسط الشهري للاستقطاع يجب أن يكون أكبر من الصفر."})
 
     @property
     def remaining_amount(self) -> Decimal:
@@ -147,6 +156,7 @@ class PayrollRun(TenantOwnedModel):
     class Status(models.TextChoices):
         DRAFT = "draft", "مسودة (قيد التجهيز)"
         APPROVED = "approved", "معتمد من الإدارة"
+        POSTED = "posted", "مرحل محاسبياً (استحقاق مسير)"
         PAID = "paid", "مصروف ومرحل مالياً"
 
     name = models.CharField("اسم المسير (مثل: مسير رواتب أكتوبر 2026)", max_length=150)

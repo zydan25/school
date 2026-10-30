@@ -142,3 +142,181 @@ class StaffMember(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.user.get_full_name() or self.user.phone} ({self.get_role_display()} - {self.job_title})"
+
+
+class Department(TenantOwnedModel):
+    """الأقسام والإدارات التنظيمية في هيكل المدرسة (شؤون الطلاب، الكنترول، المالية، الإشراف التربوي...)."""
+    code = models.CharField("رمز القسم / الإدارة", max_length=50, db_index=True)
+    name = models.CharField("اسم القسم / الإدارة", max_length=150)
+    manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="مدير / رئيس القسم",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="managed_departments",
+    )
+    description = models.TextField("وصف واختصاصات القسم", blank=True)
+
+    class Meta:
+        verbose_name = "قسم / إدارة"
+        verbose_name_plural = "الهيكل التنظيمي والأقسام"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "code"],
+                condition=models.Q(is_archived=False),
+                name="staff_department_code_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} [{self.code}]"
+
+
+class WorkShift(TenantOwnedModel):
+    """ورديات وساعات الدوام الرسمي للكادر والموظفين."""
+    name = models.CharField("اسم الوردية (مثل: الدوام الصباحي الأساسي)", max_length=100)
+    start_time = models.TimeField("وقت بدء الدوام")
+    end_time = models.TimeField("وقت انتهاء الدوام")
+    grace_period_minutes = models.PositiveSmallIntegerField("فترة السماح قبل احتساب التأخير (دقائق)", default=15)
+    is_active = models.BooleanField("نشطة", default=True)
+
+    class Meta:
+        verbose_name = "وردية دوام"
+        verbose_name_plural = "ورديات وساعات الدوام"
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.start_time.strftime('%H:%M')} - {self.end_time.strftime('%H:%M')})"
+
+
+class LeaveType(TenantOwnedModel):
+    """أنواع الإجازات السنوية والرسمية (اعتيادية، مرضية، طارئة، أمومة، بدون راتب)."""
+    code = models.CharField("رمز الإجازة", max_length=30)
+    name = models.CharField("مسمى الإجازة", max_length=100)
+    days_allowed = models.PositiveSmallIntegerField("الرصيد المسموح به سنوياً (أيام)", default=30)
+    is_paid = models.BooleanField("إجازة مدفوعة الراتب", default=True)
+
+    class Meta:
+        verbose_name = "نوع إجازة"
+        verbose_name_plural = "أنواع الإجازات"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "code"],
+                condition=models.Q(is_archived=False),
+                name="staff_leave_type_code_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.days_allowed} يوم)"
+
+
+class LeaveRequest(TenantOwnedModel):
+    """طلبات الإجازات للموظفين والمعلمين وسير دورة اعتمادها."""
+    class Status(models.TextChoices):
+        PENDING = "pending", "قيد المراجعة"
+        APPROVED = "approved", "معتمدة"
+        REJECTED = "rejected", "مرفوضة"
+
+    teacher = models.ForeignKey(
+        Teacher,
+        verbose_name="المعلم مقدم الطلب",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="leave_requests",
+    )
+    staff_member = models.ForeignKey(
+        StaffMember,
+        verbose_name="الموظف الإداري مقدم الطلب",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="leave_requests",
+    )
+    leave_type = models.ForeignKey(
+        LeaveType,
+        verbose_name="نوع الإجازة",
+        on_delete=models.PROTECT,
+        related_name="requests",
+    )
+    start_date = models.DateField("تاريخ بدء الإجازة")
+    end_date = models.DateField("تاريخ نهاية الإجازة")
+    reason = models.TextField("مبررات وسبب الإجازة")
+    status = models.CharField("حالة الطلب", max_length=20, choices=Status.choices, default=Status.PENDING)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المعتمد",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_leaves",
+    )
+    approved_at = models.DateTimeField("تاريخ الاعتماد", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "طلب إجازة"
+        verbose_name_plural = "طلبات إجازات الموظفين"
+
+    def __str__(self) -> str:
+        emp = self.teacher or self.staff_member or "موظف"
+        return f"إجازة {emp} ({self.start_date} إلى {self.end_date}): {self.get_status_display()}"
+
+    def clean(self):
+        super().clean()
+        if bool(self.teacher_id) == bool(self.staff_member_id):
+            raise ValidationError("يجب تحديد مقدم الطلب إما معلماً أو موظفاً إدارياً.")
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValidationError("تاريخ بدء الإجازة لا يمكن أن يكون بعد تاريخ نهايتها.")
+
+
+class StaffAttendance(TenantOwnedModel):
+    """سجل الحضور والانصراف اليومي للموظفين والمعلمين (التكامل مع البصمة وساعات الدوام)."""
+    class Status(models.TextChoices):
+        PRESENT = "present", "حاضر في الموعد"
+        LATE = "late", "حاضر بتأخر"
+        EXCUSED = "excused", "غياب بعذر معتمد"
+        UNEXCUSED = "unexcused", "غياب بدون عذر"
+
+    teacher = models.ForeignKey(
+        Teacher,
+        verbose_name="المعلم",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="attendance_records",
+    )
+    staff_member = models.ForeignKey(
+        StaffMember,
+        verbose_name="الموظف الإداري",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="attendance_records",
+    )
+    date = models.DateField("تاريخ يوم الدوام", default=timezone.localdate)
+    time_in = models.TimeField("وقت الحضور الفعلي", null=True, blank=True)
+    time_out = models.TimeField("وقت الانصراف الفعلي", null=True, blank=True)
+    status = models.CharField("حالة الدوام", max_length=20, choices=Status.choices, default=Status.PRESENT)
+    delay_minutes = models.PositiveSmallIntegerField("دقائق التأخر إن وجدت", default=0)
+    notes = models.TextField("ملاحظات الدوام", blank=True)
+
+    class Meta:
+        verbose_name = "سجل دوام موظف"
+        verbose_name_plural = "حضور وانصراف الكادر والموظفين"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "teacher", "date"],
+                condition=models.Q(is_archived=False, teacher__isnull=False),
+                name="staff_teacher_attendance_date_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "staff_member", "date"],
+                condition=models.Q(is_archived=False, staff_member__isnull=False),
+                name="staff_member_attendance_date_uniq",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        emp = self.teacher or self.staff_member or "موظف"
+        return f"دوام {emp} في {self.date}: {self.get_status_display()}"

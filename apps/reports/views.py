@@ -46,12 +46,12 @@ class BaseSchoolReportView(APIView):
                 school = membership.school
         if not school and (request.user.is_superuser or request.user.is_platform_admin):
             school_code = request.query_params.get("school_code") or request.headers.get("X-School-Code")
-            if school_code:
-                from apps.tenants.models import School
+            school_id = request.query_params.get("school_id") or request.headers.get("X-School-ID")
+            from apps.tenants.models import School
+            if school_id:
+                school = School.objects.filter(id=school_id, is_archived=False).first()
+            elif school_code:
                 school = School.objects.filter(code=school_code, is_archived=False).first()
-            else:
-                from apps.tenants.models import School
-                school = School.objects.filter(status=School.Status.ACTIVE).first()
         return school
 
     def check_financial_access(self, request, school) -> bool:
@@ -81,6 +81,33 @@ class BaseSchoolReportView(APIView):
             "hr-manager", "accountant", "general_manager"
         }
         return bool(role_codes & allowed_roles)
+
+    def check_academic_access(self, request, school, section=None, subject=None) -> bool:
+        """التحقق من صلاحية الوصول للتقارير الأكاديمية والدرجات."""
+        if request.user.is_superuser or request.user.is_platform_admin or request.user.is_staff:
+            return True
+        membership = request.user.school_memberships.filter(school=school, status="active").first()
+        if not membership:
+            return False
+        role_codes = membership.get_role_codes()
+        mgmt_roles = {
+            "school-director", "school_director", "principal", "academic-coordinator",
+            "academic_coordinator", "student-affairs", "control-officer", "general_manager"
+        }
+        if role_codes & mgmt_roles:
+            return True
+
+        if hasattr(request.user, "teacher_profiles"):
+            teacher = request.user.teacher_profiles.filter(school=school).first()
+            if teacher:
+                assignments = teacher.assignments.filter(academic_year__status="active")
+                if section and assignments.filter(section=section).exists():
+                    return True
+                if subject and assignments.filter(subject=subject).exists():
+                    return True
+                if not section and not subject:
+                    return True
+        return False
 
 
 # -----------------------------------------------------------------------------
@@ -225,6 +252,9 @@ class ClassRankingAPIView(BaseSchoolReportView):
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
         section = get_object_or_404(Section, id=section_id, school=school)
+        if not self.check_academic_access(request, school, section=section):
+            return Response({"error": "غير مصرح لك بالاطلاع على تقرير ترتيب هذه الشعبة."}, status=status.HTTP_403_FORBIDDEN)
+
         term_id = request.query_params.get("term_id")
         term = None
         if term_id:
@@ -241,6 +271,9 @@ class SubjectGradeDistributionAPIView(BaseSchoolReportView):
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
         subject = get_object_or_404(Subject, id=subject_id, school=school)
+        if not self.check_academic_access(request, school, subject=subject):
+            return Response({"error": "غير مصرح لك بالاطلاع على توزيع درجات هذه المادة."}, status=status.HTTP_403_FORBIDDEN)
+
         term_id = request.query_params.get("term_id")
         term = None
         if term_id:
@@ -261,6 +294,9 @@ class SectionAttendanceSummaryAPIView(BaseSchoolReportView):
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
         section = get_object_or_404(Section, id=section_id, school=school)
+        if not self.check_academic_access(request, school, section=section):
+            return Response({"error": "غير مصرح لك بالاطلاع على تقرير حضور هذه الشعبة."}, status=status.HTTP_403_FORBIDDEN)
+
         data = get_section_attendance_summary(section)
         return Response(data)
 
@@ -270,6 +306,9 @@ class ChronicAbsenteeismAPIView(BaseSchoolReportView):
         school = self.get_school(request)
         if not school:
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not self.check_academic_access(request, school):
+            return Response({"error": "غير مصرح لك بالاطلاع على تقرير الغياب المزمن."}, status=status.HTTP_403_FORBIDDEN)
 
         threshold = int(request.query_params.get("threshold", 5))
         data = get_chronic_absenteeism_report(school, threshold=threshold)
@@ -285,6 +324,9 @@ class TeacherWorkloadAPIView(BaseSchoolReportView):
         school = self.get_school(request)
         if not school:
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not (self.check_hr_access(request, school) or self.check_academic_access(request, school)):
+            return Response({"error": "غير مصرح لك بالاطلاع على تقرير نصاب المعلمين."}, status=status.HTTP_403_FORBIDDEN)
 
         data = get_teacher_workload_report(school)
         return Response(data)

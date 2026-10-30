@@ -92,6 +92,85 @@ class Student(TenantOwnedModel):
             raise ValidationError({"section": "الشعبة الصفية لا تتبع نفس المدرسة."})
         if self.section_id and self.grade_level_id and self.section.grade_id != self.grade_level_id:
             raise ValidationError({"section": "الشعبة المحددة لا تنتمي إلى الصف الدراسي المحدد."})
+        if self.section_id and self.academic_year_id and self.section.academic_year_id != self.academic_year_id:
+            raise ValidationError({"section": "الشعبة الصفية لا تنتمي إلى السنة الدراسية المحددة للطالب."})
+
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+        # Keep academic history / enrollment track synchronized
+        if self.academic_year_id and self.grade_level_id and self.section_id:
+            StudentEnrollment.objects.get_or_create(
+                school=self.school,
+                student=self,
+                academic_year=self.academic_year,
+                defaults={
+                    "grade_level": self.grade_level,
+                    "section": self.section,
+                    "enrollment_date": self.enrollment_date,
+                    "status": StudentEnrollment.Status.ENROLLED,
+                },
+            )
+
+
+class StudentEnrollment(TenantOwnedModel):
+    """السجل الأكاديمي وتاريخ قيد الطالب لكل عام دراسي (الترفيع، الإعادة، النقل، التخرج)."""
+    class Status(models.TextChoices):
+        ENROLLED = "enrolled", "مقيد ومنتظم"
+        PROMOTED = "promoted", "مرفع للصف الأعلى"
+        RETAINED = "retained", "معيد للسنة الدراسية"
+        TRANSFERRED = "transferred", "منقول لمدرسة أخرى"
+        WITHDRAWN = "withdrawn", "منسحب"
+        GRADUATED = "graduated", "متخرج"
+
+    class FinalResult(models.TextChoices):
+        PENDING = "pending", "قيد الدراسة"
+        PASSED = "passed", "ناجح"
+        FAILED = "failed", "راسب"
+
+    student = models.ForeignKey(
+        Student,
+        verbose_name="الطالب",
+        on_delete=models.CASCADE,
+        related_name="enrollment_history",
+    )
+    academic_year = models.ForeignKey(
+        "academics.AcademicYear",
+        verbose_name="السنة الدراسية",
+        on_delete=models.PROTECT,
+        related_name="enrollments",
+    )
+    grade_level = models.ForeignKey(
+        "academics.GradeLevel",
+        verbose_name="الصف الدراسي",
+        on_delete=models.PROTECT,
+        related_name="student_enrollments",
+    )
+    section = models.ForeignKey(
+        "academics.Section",
+        verbose_name="الشعبة الصفية",
+        on_delete=models.PROTECT,
+        related_name="student_enrollments",
+    )
+    enrollment_date = models.DateField("تاريخ القيد", default=timezone.now)
+    status = models.CharField("حالة القيد في هذا العام", max_length=20, choices=Status.choices, default=Status.ENROLLED)
+    final_result = models.CharField("النتيجة الختامية للعام", max_length=20, choices=FinalResult.choices, default=FinalResult.PENDING)
+    notes = models.TextField("ملاحظات وسجل الحركة الأكاديمية", blank=True)
+
+    class Meta:
+        verbose_name = "سجل قيد سنوي لطالب"
+        verbose_name_plural = "السجل الأكاديمي وتاريخ قيد الطلاب"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "student", "academic_year"],
+                condition=models.Q(is_archived=False),
+                name="students_enrollment_student_year_uniq",
+            )
+        ]
+        ordering = ["-academic_year__starts_on"]
+
+    def __str__(self) -> str:
+        return f"{self.student} - {self.academic_year.name}: {self.grade_level.name} ({self.get_status_display()})"
 
 
 class Guardian(TenantOwnedModel):

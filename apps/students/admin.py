@@ -9,6 +9,7 @@ from apps.students.models import (
     Student,
     StudentGuardianRelation,
     StudentIncidentReport,
+    StudentEnrollment,
 )
 
 
@@ -71,3 +72,12 @@ class SchoolComplaintAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("subject", "details", "submitter__phone")
     raw_id_fields = ("school", "branch", "submitter", "resolved_by")
     readonly_fields = ("id", "created_at", "updated_at", "resolved_at")
+
+
+@admin.register(StudentEnrollment)
+class StudentEnrollmentAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("student", "academic_year", "grade_level", "section", "status", "enrollment_date", "school")
+    list_filter = ("status", "academic_year", "grade_level", "school")
+    search_fields = ("student__first_name", "student__last_name", "student__student_id_number", "notes")
+    raw_id_fields = ("student", "academic_year", "grade_level", "section", "school", "branch")
+    readonly_fields = ("id", "created_at", "updated_at")

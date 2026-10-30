@@ -10,6 +10,21 @@ class SchoolContextMiddleware(MiddlewareMixin):
         request.school_membership = None
         request.school_context_error = None
         user = getattr(request, "user", None)
+
+        # Support DRF Token authentication in middleware for mobile apps / external APIs
+        if not user or not user.is_authenticated:
+            auth_header = request.headers.get("Authorization", "").strip()
+            if auth_header.startswith("Token ") or auth_header.startswith("Bearer "):
+                token_key = auth_header.split(" ", 1)[1].strip()
+                try:
+                    from rest_framework.authtoken.models import Token
+                    tok = Token.objects.select_related("user").filter(key=token_key).first()
+                    if tok and tok.user.is_active:
+                        user = tok.user
+                        request.user = user
+                except Exception:
+                    pass
+
         if not user or not user.is_authenticated:
             return None
 
@@ -19,7 +34,7 @@ class SchoolContextMiddleware(MiddlewareMixin):
 
         platform_operator = is_platform_operator(user)
         requested_code = (request.headers.get("X-School-Code") or "").strip().upper()
-        requested_id = request.session.get("active_school_id")
+        requested_id = (request.headers.get("X-School-ID") or "").strip() or request.session.get("active_school_id")
         membership_qs = SchoolMembership.objects.filter(
             user=user, status=SchoolMembership.Status.ACTIVE,
             school__status=School.Status.ACTIVE,

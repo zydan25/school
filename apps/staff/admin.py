@@ -2,7 +2,69 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 
 from apps.core.admin import AuditedAdminMixin
-from apps.staff.models import StaffMember, Teacher, TeacherAssignment
+from apps.staff.models import (
+    StaffMember,
+    Teacher,
+    TeacherAssignment,
+    Department,
+    WorkShift,
+    LeaveType,
+    LeaveRequest,
+    StaffAttendance,
+)
+
+
+@admin.register(Department)
+class DepartmentAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("code", "name", "manager", "school", "created_at")
+    list_filter = ("school",)
+    search_fields = ("code", "name", "description")
+    raw_id_fields = ("school", "branch", "manager")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(WorkShift)
+class WorkShiftAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("name", "start_time", "end_time", "grace_period_minutes", "school")
+    list_filter = ("school",)
+    search_fields = ("name",)
+    raw_id_fields = ("school", "branch")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(LeaveType)
+class LeaveTypeAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("code", "name", "days_allowed", "is_paid", "school")
+    list_filter = ("is_paid", "school")
+    search_fields = ("code", "name")
+    raw_id_fields = ("school", "branch")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(LeaveRequest)
+class LeaveRequestAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("get_applicant", "leave_type", "start_date", "end_date", "status", "approved_by", "school")
+    list_filter = ("status", "leave_type", "school")
+    search_fields = ("teacher__user__first_name", "teacher__user__last_name", "staff_member__user__first_name", "reason")
+    raw_id_fields = ("school", "branch", "teacher", "staff_member", "leave_type", "approved_by")
+    readonly_fields = ("id", "created_at", "updated_at", "action_at")
+
+    def get_applicant(self, obj):
+        return str(obj)
+    get_applicant.short_description = "الموظف"
+
+
+@admin.register(StaffAttendance)
+class StaffAttendanceAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("get_staff", "date", "status", "time_in", "time_out", "delay_minutes", "shift", "school")
+    list_filter = ("status", "date", "school")
+    search_fields = ("teacher__user__first_name", "teacher__user__last_name", "staff_member__user__first_name", "notes")
+    raw_id_fields = ("school", "branch", "teacher", "staff_member", "shift")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+    def get_staff(self, obj):
+        return str(obj)
+    get_staff.short_description = "الموظف"
 
 
 @admin.register(StaffMember)

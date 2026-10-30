@@ -16,8 +16,8 @@ from apps.student_fees.models import PaymentReceipt
 from apps.assets.models import AssetDepreciationEntry
 
 
-def _get_active_fiscal_period(school, target_date=None) -> Optional[FiscalPeriod]:
-    """البحث عن الفترة المالية المفتوحة للمدرسة الموافقة للتاريخ."""
+def _get_active_fiscal_period(school, target_date=None) -> FiscalPeriod:
+    """البحث عن الفترة المالية المفتوحة للمدرسة الموافقة للتاريخ، مع منع الترحيل خارج فترة وسنة مالية صالحة."""
     if target_date is None:
         target_date = timezone.localdate()
 
@@ -31,19 +31,33 @@ def _get_active_fiscal_period(school, target_date=None) -> Optional[FiscalPeriod
     ).first()
 
     if not period:
-        # Fallback to any open year's first period or create default
-        f_year = FiscalYear.objects.filter(school=school, is_closed=False, is_archived=False).first()
+        f_year = FiscalYear.objects.filter(
+            school=school,
+            is_closed=False,
+            start_date__lte=target_date,
+            end_date__gte=target_date,
+            is_archived=False,
+        ).first()
         if f_year:
-            period = f_year.periods.filter(is_closed=False, is_archived=False).first()
-            if not period:
-                period = FiscalPeriod.objects.create(
-                    school=school,
-                    fiscal_year=f_year,
-                    period_number=1,
-                    name=f"فترة {f_year.name}",
-                    start_date=f_year.start_date,
-                    end_date=f_year.end_date,
-                )
+            period_num = f_year.periods.count() + 1
+            # Standard month boundary inside the fiscal year
+            first_day = target_date.replace(day=1)
+            # Next month first day minus 1 day
+            if first_day.month == 12:
+                last_day = first_day.replace(year=first_day.year + 1, month=1, day=1) - timezone.timedelta(days=1)
+            else:
+                last_day = first_day.replace(month=first_day.month + 1, day=1) - timezone.timedelta(days=1)
+            period = FiscalPeriod.objects.create(
+                school=school,
+                fiscal_year=f_year,
+                period_number=period_num,
+                name=f"فترة {target_date.strftime('%m/%Y')}",
+                start_date=max(f_year.start_date, first_day),
+                end_date=min(f_year.end_date, last_day),
+            )
+        else:
+            from django.core.exceptions import ValidationError
+            raise ValidationError(f"لا توجد سنة مالية مفتوحة تغطي تاريخ المعاملة ({target_date}). يرجى فتح وتهيئة السنة المالية أولاً.")
 
     return period
 
@@ -54,11 +68,13 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
     الجانب المدين: الصندوق (1101) أو البنك (1102) حسب طريقة الدفع.
     الجانب الدائن: ذمم ورسوم الطلاب (1104) أو إيرادات الرسوم الدراسية (4101).
     """
+    if receipt.amount <= Decimal("0.00"):
+        raise ValueError("لا يمكن ترحيل سند قبض بمبلغ صفر أو سالب.")
+
     school = receipt.school
     period = _get_active_fiscal_period(school, receipt.paid_at.date())
 
     with transaction.atomic():
-        # Prevent duplicate posting
         existing = JournalEntry.objects.filter(
             school=school,
             source_module="student_fees",
@@ -68,7 +84,6 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
         if existing:
             return existing
 
-        # Identify Debit Account (Cash / Bank)
         if receipt.payment_method == PaymentReceipt.PaymentMethod.BANK_TRANSFER:
             debit_acc = Account.objects.filter(school=school, code="1102", is_leaf=True).first()
         elif receipt.payment_method == PaymentReceipt.PaymentMethod.POS:
@@ -76,7 +91,6 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
         else:
             debit_acc = Account.objects.filter(school=school, code="1101", is_leaf=True).first()
 
-        # Identify Credit Account (Student Receivables 1104 or Tuition Revenue 4101)
         credit_acc = Account.objects.filter(school=school, code="1104", is_leaf=True).first()
         if not credit_acc:
             credit_acc = Account.objects.filter(school=school, code="4101", is_leaf=True).first()
@@ -98,7 +112,6 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
             posted_by=receipt.received_by,
         )
 
-        # 1. Debit Line (الطرف المدين: الصندوق أو البنك)
         JournalEntryLine.objects.create(
             school=school,
             journal_entry=entry,
@@ -108,7 +121,6 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
             credit=Decimal("0.00"),
         )
 
-        # 2. Credit Line (الطرف الدائن: حساب ذمم الطلاب)
         JournalEntryLine.objects.create(
             school=school,
             journal_entry=entry,
@@ -118,6 +130,7 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
             credit=receipt.amount,
         )
 
+        validate_and_balance_journal_entry(entry)
         return entry
 
 
@@ -127,10 +140,31 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
     الجانب المدين: حساب المصروف أو المورد (voucher.debit_account).
     الجانب الدائن: حساب الصندوق أو البنك (voucher.credit_account).
     """
+    if voucher.amount <= Decimal("0.00"):
+        raise ValueError("لا يمكن ترحيل سند صرف مالي بمبلغ صفر أو سالب.")
+    if voucher.status == PaymentVoucher.Status.CANCELLED:
+        raise ValueError("لا يمكن ترحيل سند صرف ملغى.")
+
     school = voucher.school
+    if voucher.debit_account.school_id != school.id or voucher.credit_account.school_id != school.id:
+        raise ValueError("حسابات سند الصرف لا تنتمي إلى نفس مدرسة السند.")
+
     period = _get_active_fiscal_period(school, voucher.date)
 
     with transaction.atomic():
+        existing = JournalEntry.objects.filter(
+            school=school,
+            source_module="accounting_payment",
+            source_reference=voucher.voucher_number,
+            is_archived=False,
+        ).first()
+        if existing:
+            if not voucher.journal_entry_id:
+                voucher.journal_entry = existing
+                voucher.status = PaymentVoucher.Status.POSTED
+                voucher.save(update_fields=["journal_entry", "status", "updated_at"])
+            return existing
+
         entry_number = f"JV-PAY-{voucher.voucher_number}"
         entry = JournalEntry.objects.create(
             school=school,
@@ -144,7 +178,6 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
             posted_at=timezone.now(),
         )
 
-        # Debit: Expense Account
         JournalEntryLine.objects.create(
             school=school,
             journal_entry=entry,
@@ -155,7 +188,6 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
             credit=Decimal("0.00"),
         )
 
-        # Credit: Cash/Bank Account
         JournalEntryLine.objects.create(
             school=school,
             journal_entry=entry,
@@ -165,6 +197,7 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
             credit=voucher.amount,
         )
 
+        validate_and_balance_journal_entry(entry)
         voucher.status = PaymentVoucher.Status.POSTED
         voucher.journal_entry = entry
         voucher.save(update_fields=["status", "journal_entry", "updated_at"])
@@ -178,10 +211,31 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
     الجانب المدين: حساب الصندوق أو البنك (voucher.debit_account).
     الجانب الدائن: حساب الإيراد (voucher.credit_account).
     """
+    if voucher.amount <= Decimal("0.00"):
+        raise ValueError("لا يمكن ترحيل سند قبض عام بمبلغ صفر أو سالب.")
+    if voucher.status == ReceiptVoucher.Status.CANCELLED:
+        raise ValueError("لا يمكن ترحيل سند قبض ملغى.")
+
     school = voucher.school
+    if voucher.debit_account.school_id != school.id or voucher.credit_account.school_id != school.id:
+        raise ValueError("حسابات سند القبض لا تنتمي إلى نفس مدرسة السند.")
+
     period = _get_active_fiscal_period(school, voucher.date)
 
     with transaction.atomic():
+        existing = JournalEntry.objects.filter(
+            school=school,
+            source_module="accounting_receipt",
+            source_reference=voucher.voucher_number,
+            is_archived=False,
+        ).first()
+        if existing:
+            if not voucher.journal_entry_id:
+                voucher.journal_entry = existing
+                voucher.status = ReceiptVoucher.Status.POSTED
+                voucher.save(update_fields=["journal_entry", "status", "updated_at"])
+            return existing
+
         entry_number = f"JV-REC-GEN-{voucher.voucher_number}"
         entry = JournalEntry.objects.create(
             school=school,
@@ -195,7 +249,6 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
             posted_at=timezone.now(),
         )
 
-        # Debit: Cash/Bank Account
         JournalEntryLine.objects.create(
             school=school,
             journal_entry=entry,
@@ -205,7 +258,6 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
             credit=Decimal("0.00"),
         )
 
-        # Credit: Revenue Account
         JournalEntryLine.objects.create(
             school=school,
             journal_entry=entry,
@@ -216,6 +268,7 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
             credit=voucher.amount,
         )
 
+        validate_and_balance_journal_entry(entry)
         voucher.status = ReceiptVoucher.Status.POSTED
         voucher.journal_entry = entry
         voucher.save(update_fields=["status", "journal_entry", "updated_at"])
@@ -229,15 +282,27 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
     الجانب المدين: مصروف إهلاك الأصول السنوي (5209).
     الجانب الدائن: مجمع الإهلاك المتراكم للأصل (1209).
     """
+    if entry.depreciation_amount <= Decimal("0.00"):
+        raise ValueError("مبلغ إهلاك الأصل يجب أن يكون أكبر من الصفر.")
+
     school = entry.school
     period = _get_active_fiscal_period(school, entry.date)
 
     with transaction.atomic():
+        existing = JournalEntry.objects.filter(
+            school=school,
+            source_module="assets_depreciation",
+            source_reference=f"{entry.asset.code}-{entry.fiscal_year.id}",
+            is_archived=False,
+        ).first()
+        if existing:
+            return existing
+
         depreciation_expense = Account.objects.filter(school=school, code="5209", is_leaf=True).first()
         accumulated_depreciation = Account.objects.filter(school=school, code="1209", is_leaf=True).first()
 
         if not depreciation_expense or not accumulated_depreciation:
-            raise ValueError("حسابات إهلاك الأصول غير موجودة في دليل حسابات المدرسة.")
+            raise ValueError("حسابات إهلاك الأصول (5209 أو 1209) غير موجودة في دليل حسابات المدرسة.")
 
         journal_entry = JournalEntry.objects.create(
             school=school,
@@ -251,7 +316,6 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
             posted_at=timezone.now(),
         )
 
-        # Debit: Depreciation Expense
         JournalEntryLine.objects.create(
             school=school,
             journal_entry=journal_entry,
@@ -261,7 +325,6 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
             credit=Decimal("0.00"),
         )
 
-        # Credit: Accumulated Depreciation
         JournalEntryLine.objects.create(
             school=school,
             journal_entry=journal_entry,
@@ -271,22 +334,22 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
             credit=entry.depreciation_amount,
         )
 
-        # Update accumulated depreciation on the asset
+        validate_and_balance_journal_entry(journal_entry)
         entry.asset.accumulated_depreciation += entry.depreciation_amount
         entry.asset.save(update_fields=["accumulated_depreciation"])
 
         return journal_entry
 
 
-def post_student_invoice_to_journal(invoice) -> Optional[JournalEntry]:
+def post_student_invoice_to_journal(invoice) -> JournalEntry:
     """
     الترحيل الآلي لإصدار فاتورة رسوم الطالب إلى قيد استحقاق محاسبي.
     الجانب المدين: ذمم الطلاب وأولياء الأمور (1104).
     الجانب الدائن: إيرادات الرسوم الدراسية (4101).
     """
     school = invoice.school
-    invoice_date = getattr(invoice, "issue_date", None) or timezone.localdate()
-    period = _get_active_fiscal_period(school, invoice_date)
+    post_date = getattr(invoice, "due_date", None) or getattr(invoice, "issue_date", None) or timezone.localdate()
+    period = _get_active_fiscal_period(school, post_date)
 
     with transaction.atomic():
         existing = JournalEntry.objects.filter(
@@ -296,24 +359,27 @@ def post_student_invoice_to_journal(invoice) -> Optional[JournalEntry]:
             is_archived=False,
         ).first()
         if existing:
+            if not getattr(invoice, "journal_entry_id", None):
+                invoice.journal_entry = existing
+                invoice.save(update_fields=["journal_entry", "updated_at"])
             return existing
 
         net_amount = max(Decimal("0.00"), invoice.total_amount - invoice.discount_amount)
         if net_amount <= Decimal("0.00"):
-            return None
+            raise ValueError(f"صافي قيمة الفاتورة ({net_amount}) يجب أن يكون أكبر من الصفر لترحيلها.")
 
         debit_acc = Account.objects.filter(school=school, code="1104", is_leaf=True).first()
         credit_acc = Account.objects.filter(school=school, code="4101", is_leaf=True).first()
 
         if not debit_acc or not credit_acc:
-            return None
+            raise ValueError("شجرة الحسابات للمدرسة غير مهيأة (حساب ذمم الطلاب 1104 أو إيرادات الرسوم 4101 غير موجود).")
 
         entry_number = f"JV-INV-{invoice.invoice_number}"
         entry = JournalEntry.objects.create(
             school=school,
             fiscal_period=period,
             entry_number=entry_number,
-            date=invoice.due_date or timezone.localdate(),
+            date=post_date,
             status=JournalEntry.Status.POSTED,
             source_module="student_invoice",
             source_reference=invoice.invoice_number,
@@ -340,6 +406,9 @@ def post_student_invoice_to_journal(invoice) -> Optional[JournalEntry]:
         )
 
         validate_and_balance_journal_entry(entry)
+        if hasattr(invoice, "journal_entry"):
+            invoice.journal_entry = entry
+            invoice.save(update_fields=["journal_entry", "updated_at"])
         return entry
 
 

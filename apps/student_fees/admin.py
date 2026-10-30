@@ -11,6 +11,7 @@ from apps.student_fees.models import (
     PaymentReceipt,
     StudentInvoice,
     StudentInvoiceItem,
+    StudentCreditTransaction,
 )
 
 
@@ -85,4 +86,13 @@ class PaymentAllocationAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("status", "allocated_at", "school")
     search_fields = ("receipt__receipt_number", "invoice__invoice_number", "notes")
     raw_id_fields = ("receipt", "invoice", "installment", "allocated_by", "school", "branch")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentCreditTransaction)
+class StudentCreditTransactionAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("transaction_type", "student", "amount", "invoice", "receipt", "created_at", "school")
+    list_filter = ("transaction_type", "school", "created_at")
+    search_fields = ("student__first_name", "student__last_name", "notes")
+    raw_id_fields = ("student", "invoice", "receipt", "school", "branch")
     readonly_fields = ("id", "created_at", "updated_at")

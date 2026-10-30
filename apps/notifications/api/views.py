@@ -6,6 +6,7 @@ and automated authoritative Arabic replies.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import urllib.request
@@ -185,9 +186,20 @@ class WhatsAppWebhookAPIView(APIView):
 
         clean_phone = sender_phone.replace("+", "").replace(" ", "").strip()
 
-        # Prevent duplicate re-delivery within short window (Idempotency / Deduplication)
+        # Prevent duplicate re-delivery within short window (Deterministic Idempotency / Deduplication)
         from django.core.cache import cache
-        msg_sig = f"wa_msg_{clean_phone[-9:]}_{hash(message_text.strip())}"
+        provider_msg_id = (
+            payload.get("id") or 
+            payload.get("message_id") or 
+            payload.get("MessageSid") or
+            (payload.get("data") and isinstance(payload["data"], dict) and payload["data"].get("id"))
+        )
+        if provider_msg_id:
+            msg_sig = f"wa_msg_id_{provider_msg_id}"
+        else:
+            content_hash = hashlib.sha256(message_text.strip().encode("utf-8")).hexdigest()[:16]
+            msg_sig = f"wa_msg_{clean_phone[-9:]}_{content_hash}"
+
         if cache.get(msg_sig):
             return Response({"status": "duplicate_ignored", "reason": "Message already processed."}, status=status.HTTP_200_OK)
         cache.set(msg_sig, True, timeout=60)
@@ -262,3 +274,62 @@ def _dispatch_to_gateway(gateway: SchoolMessagingGateway, recipient: str, text: 
     except Exception:
         # Gateway failure is captured without breaking incoming webhook flow
         pass
+
+
+class UserNotificationsAPIView(APIView):
+    """
+    استعراض إشعارات المستخدم المسجل حالياً، وحساب عدد غير المقروء منها،
+    وإمكانية تحديد الكل كمقروء.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        notifications_qs = Notification.objects.filter(recipient=user).order_by("-created_at")
+        unread_only = request.query_params.get("unread_only", "").lower() in ("true", "1")
+        if unread_only:
+            notifications_qs = notifications_qs.filter(is_read=False)
+
+        unread_count = Notification.objects.filter(recipient=user, is_read=False).count()
+        recent = notifications_qs[:50]
+        data = [
+            {
+                "id": str(n.id),
+                "title": n.title,
+                "body": n.body,
+                "category": n.category,
+                "channel": n.channel,
+                "action_url": n.action_url,
+                "is_read": n.is_read,
+                "created_at": n.created_at.isoformat(),
+                "read_at": n.read_at.isoformat() if n.read_at else None,
+            }
+            for n in recent
+        ]
+        return Response({
+            "unread_count": unread_count,
+            "notifications": data,
+        })
+
+    def post(self, request, *args, **kwargs):
+        """تحديد جميع إشعارات المستخدم كمقروءة دفعة واحدة."""
+        user = request.user
+        now = timezone.now()
+        updated = Notification.objects.filter(recipient=user, is_read=False).update(
+            is_read=True,
+            read_at=now,
+            status=Notification.Status.READ,
+        )
+        return Response({"status": "success", "marked_read_count": updated})
+
+
+class MarkNotificationReadAPIView(APIView):
+    """
+    تحديد إشعار محدد كمقروء للمستخدم.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, notification_id, *args, **kwargs):
+        notification = get_object_or_404(Notification, id=notification_id, recipient=request.user)
+        notification.mark_read()
+        return Response({"status": "success", "id": str(notification.id), "is_read": True})

@@ -97,6 +97,14 @@ class StudentInvoice(TenantOwnedModel):
     status = models.CharField("حالة الفاتورة", max_length=20, choices=Status.choices, default=Status.UNPAID)
     issue_date = models.DateField("تاريخ إصدار الفاتورة", default=timezone.localdate)
     due_date = models.DateField("تاريخ الاستحقاق")
+    journal_entry = models.ForeignKey(
+        "accounting.JournalEntry",
+        verbose_name="قيد الاستحقاق المحاسبي",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="student_invoices",
+    )
 
     class Meta:
         verbose_name = "فاتورة طالب"
@@ -125,6 +133,15 @@ class StudentInvoice(TenantOwnedModel):
         super().clean()
         if self.student_id and self.student.school_id != self.school_id:
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
+
+    def post_to_journal(self):
+        """ترحيل الفاتورة إلى قيد استحقاق محاسبي مزدوج (Accrual Posting)."""
+        from apps.accounting.services.auto_posting import post_student_invoice_to_journal
+        entry = post_student_invoice_to_journal(self)
+        if entry and not self.journal_entry_id:
+            self.journal_entry = entry
+            self.save(update_fields=["journal_entry", "updated_at"])
+        return entry
 
 
 class StudentInvoiceItem(TenantOwnedModel):
@@ -188,6 +205,14 @@ class PaymentReceipt(TenantOwnedModel):
         on_delete=models.SET_NULL,
         related_name="collected_receipts",
     )
+    journal_entry = models.ForeignKey(
+        "accounting.JournalEntry",
+        verbose_name="قيد التحصيل المحاسبي",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="student_receipts",
+    )
     notes = models.TextField("ملاحظات إضافية على السند", blank=True)
 
     class Meta:
@@ -208,37 +233,84 @@ class PaymentReceipt(TenantOwnedModel):
     def __str__(self) -> str:
         return f"سند #{self.receipt_number} - {self.student}: {self.amount} ({self.get_payment_method_display()})"
 
+    def clean(self):
+        super().clean()
+        if self.amount <= Decimal("0.00"):
+            raise ValidationError({"amount": "مبلغ سند القبض يجب أن يكون أكبر من الصفر."})
+        if self.student_id and self.student.school_id != self.school_id:
+            raise ValidationError({"student": "الطالب لا ينتمي إلى نفس المدرسة."})
+        if self.invoice_id:
+            if self.invoice.school_id != self.school_id:
+                raise ValidationError({"invoice": "الفاتورة المحددة لا تتبع نفس المدرسة."})
+            if self.invoice.student_id != self.student_id:
+                raise ValidationError({"invoice": "الفاتورة المحددة لا تخص هذا الطالب."})
+            if self.invoice.status == StudentInvoice.Status.CANCELLED:
+                raise ValidationError({"invoice": "لا يمكن سداد أو ربط سند بفاتورة ملغاة."})
+
     def save(self, *args, **kwargs):
         is_new = self._state.adding
-        super().save(*args, **kwargs)
-        if is_new:
-            # Auto-update linked invoice or allocate to student's open invoices
-            from django.db import transaction
-            with transaction.atomic():
+        from django.db import transaction
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if is_new:
                 if self.invoice:
                     inv = StudentInvoice.objects.select_for_update().get(pk=self.invoice_id)
                     net = max(Decimal("0.00"), inv.total_amount - inv.discount_amount)
                     needed = max(Decimal("0.00"), net - inv.paid_amount)
-                    pay_part = min(self.amount, needed) if needed > 0 else self.amount
-                    inv.paid_amount += pay_part
-                    if inv.paid_amount >= net:
-                        inv.status = StudentInvoice.Status.PAID
-                    elif inv.paid_amount > Decimal("0.00"):
-                        inv.status = StudentInvoice.Status.PARTIAL
-                    inv.save(update_fields=["paid_amount", "status", "updated_at"])
+                    pay_part = min(self.amount, needed) if needed > Decimal("0.00") else Decimal("0.00")
+                    if pay_part > Decimal("0.00"):
+                        inv.paid_amount += pay_part
+                        if inv.paid_amount >= net:
+                            inv.status = StudentInvoice.Status.PAID
+                        else:
+                            inv.status = StudentInvoice.Status.PARTIAL
+                        inv.save(update_fields=["paid_amount", "status", "updated_at"])
 
-                    PaymentAllocation.objects.create(
-                        school=self.school,
-                        receipt=self,
-                        invoice=inv,
-                        allocated_amount=pay_part,
-                        allocated_by=self.received_by,
-                        notes="تخصيص مباشر للفاتورة المحددة بالسند",
-                    )
+                        # Also allocate to installment if linked plan exists
+                        installment = inv.installment_plans.filter(
+                            is_archived=False
+                        ).first()
+                        inst_obj = None
+                        if installment:
+                            inst_obj = installment.installments.filter(
+                                status__in=[FeeInstallment.Status.PENDING, FeeInstallment.Status.OVERDUE]
+                            ).order_by("due_date").first()
+                            if inst_obj:
+                                inst_obj.status = FeeInstallment.Status.PAID
+                                inst_obj.paid_date = self.paid_at.date()
+                                inst_obj.receipt = self
+                                inst_obj.save(update_fields=["status", "paid_date", "receipt", "updated_at"])
+
+                        PaymentAllocation.objects.create(
+                            school=self.school,
+                            receipt=self,
+                            invoice=inv,
+                            installment=inst_obj,
+                            allocated_amount=pay_part,
+                            allocated_by=self.received_by,
+                            notes="تخصيص مباشر للفاتورة المحددة بالسند",
+                        )
+
                     excess = self.amount - pay_part
                     if excess > Decimal("0.00"):
-                        self.student.credit_balance += excess
-                        self.student.save(update_fields=["credit_balance"])
+                        student = self.student
+                        bal_before = student.credit_balance
+                        bal_after = bal_before + excess
+                        student.credit_balance = bal_after
+                        student.save(update_fields=["credit_balance"])
+
+                        StudentCreditTransaction.objects.create(
+                            school=self.school,
+                            student=student,
+                            transaction_type=StudentCreditTransaction.TransactionType.DEPOSIT,
+                            amount=excess,
+                            balance_before=bal_before,
+                            balance_after=bal_after,
+                            receipt=self,
+                            invoice=inv,
+                            created_by=self.received_by,
+                            notes=f"إيداع فائض سداد سند قبض #{self.receipt_number}",
+                        )
                 else:
                     # Allocate chronologically across open unpaid invoices
                     remaining = self.amount
@@ -254,6 +326,8 @@ class PaymentReceipt(TenantOwnedModel):
                             break
                         net = max(Decimal("0.00"), inv.total_amount - inv.discount_amount)
                         needed = max(Decimal("0.00"), net - inv.paid_amount)
+                        if needed <= Decimal("0.00"):
+                            continue
                         pay_part = min(remaining, needed)
                         inv.paid_amount += pay_part
                         remaining -= pay_part
@@ -263,10 +337,23 @@ class PaymentReceipt(TenantOwnedModel):
                             inv.status = StudentInvoice.Status.PARTIAL
                         inv.save(update_fields=["paid_amount", "status", "updated_at"])
 
+                        inst_obj = None
+                        plan = inv.installment_plans.filter(is_archived=False).first()
+                        if plan:
+                            inst_obj = plan.installments.filter(
+                                status__in=[FeeInstallment.Status.PENDING, FeeInstallment.Status.OVERDUE]
+                            ).order_by("due_date").first()
+                            if inst_obj:
+                                inst_obj.status = FeeInstallment.Status.PAID
+                                inst_obj.paid_date = self.paid_at.date()
+                                inst_obj.receipt = self
+                                inst_obj.save(update_fields=["status", "paid_date", "receipt", "updated_at"])
+
                         PaymentAllocation.objects.create(
                             school=self.school,
                             receipt=self,
                             invoice=inv,
+                            installment=inst_obj,
                             allocated_amount=pay_part,
                             allocated_by=self.received_by,
                             notes="تخصيص آلي حسب تاريخ الاستحقاق",
@@ -274,8 +361,124 @@ class PaymentReceipt(TenantOwnedModel):
 
                     # If student paid more than all open invoices, credit the excess to their credit_balance
                     if remaining > Decimal("0.00"):
-                        self.student.credit_balance += remaining
-                        self.student.save(update_fields=["credit_balance"])
+                        student = self.student
+                        bal_before = student.credit_balance
+                        bal_after = bal_before + remaining
+                        student.credit_balance = bal_after
+                        student.save(update_fields=["credit_balance"])
+
+                        StudentCreditTransaction.objects.create(
+                            school=self.school,
+                            student=student,
+                            transaction_type=StudentCreditTransaction.TransactionType.DEPOSIT,
+                            amount=remaining,
+                            balance_before=bal_before,
+                            balance_after=bal_after,
+                            receipt=self,
+                            created_by=self.received_by,
+                            notes=f"إيداع فائض سداد سند قبض #{self.receipt_number}",
+                        )
+
+                # Automatic posting to journal if chart of accounts exists
+                try:
+                    from apps.accounting.services.auto_posting import post_student_receipt_to_journal
+                    entry = post_student_receipt_to_journal(self)
+                    if entry and not self.journal_entry_id:
+                        self.journal_entry = entry
+                        super().save(update_fields=["journal_entry", "updated_at"])
+                except Exception:
+                    pass
+
+
+class StudentCreditTransaction(TenantOwnedModel):
+    """دفتر حركة الأرصدة الدائنة للطلاب (سجل عمليات الفائض، السداد، والاسترداد)."""
+    class TransactionType(models.TextChoices):
+        DEPOSIT = "deposit", "إيداع رصيد دائن (فائض سداد سند)"
+        USAGE = "usage", "استخدام رصيد دائن لسداد فاتورة"
+        REFUND = "refund", "استرداد نقدي لولي الأمر"
+        ADJUSTMENT = "adjustment", "تسوية إدارية / قيد تسوية"
+
+    student = models.ForeignKey(
+        "students.Student",
+        verbose_name="الطالب",
+        on_delete=models.CASCADE,
+        related_name="credit_transactions",
+    )
+    transaction_type = models.CharField("نوع الحركة", max_length=20, choices=TransactionType.choices)
+    amount = models.DecimalField("مبلغ الحركة", max_digits=12, decimal_places=2)
+    balance_before = models.DecimalField("الرصيد قبل الحركة", max_digits=12, decimal_places=2)
+    balance_after = models.DecimalField("الرصيد بعد الحركة", max_digits=12, decimal_places=2)
+    receipt = models.ForeignKey(
+        PaymentReceipt,
+        verbose_name="سند القبض المرتبط (إن وجد)",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="credit_transactions",
+    )
+    invoice = models.ForeignKey(
+        StudentInvoice,
+        verbose_name="الفاتورة المرتبطة (إن وجدت)",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="credit_transactions",
+    )
+    created_at = models.DateTimeField("تاريخ الحركة", default=timezone.now)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المستخدم المنفذ",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="student_credit_transactions",
+    )
+    notes = models.TextField("ملاحظات وشرح الحركة", blank=True)
+
+    class Meta:
+        verbose_name = "حركة رصيد دائن لطالب"
+        verbose_name_plural = "دفتر الأرصدة الدائنة للطلاب"
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.student} - {self.get_transaction_type_display()}: {self.amount} (الرصيد: {self.balance_after})"
+
+
+def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: Decimal, user=None):
+    """استخدام الرصيد الدائن للطالب لسداد فاتورة مستحقة وتوثيق العملية في دفتر الأرصدة الدائنة."""
+    from django.db import transaction
+    if amount <= Decimal("0.00"):
+        raise ValidationError("المبلغ المراد استخدامه يجب أن يكون أكبر من الصفر.")
+    if student.credit_balance < amount:
+        raise ValidationError(f"رصيد الطالب الدائن ({student.credit_balance}) غير كافٍ لسداد المبلغ المطلوب ({amount}).")
+    if invoice.remaining_amount < amount:
+        raise ValidationError(f"المبلغ المطلوب سداده ({amount}) يتجاوز المتبقي على الفاتورة ({invoice.remaining_amount}).")
+
+    with transaction.atomic():
+        bal_before = student.credit_balance
+        bal_after = bal_before - amount
+        student.credit_balance = bal_after
+        student.save(update_fields=["credit_balance"])
+
+        invoice.paid_amount += amount
+        if invoice.remaining_amount <= Decimal("0.00"):
+            invoice.status = StudentInvoice.Status.PAID
+        else:
+            invoice.status = StudentInvoice.Status.PARTIAL
+        invoice.save(update_fields=["paid_amount", "status", "updated_at"])
+
+        tx = StudentCreditTransaction.objects.create(
+            school=student.school,
+            student=student,
+            transaction_type=StudentCreditTransaction.TransactionType.USAGE,
+            amount=amount,
+            balance_before=bal_before,
+            balance_after=bal_after,
+            invoice=invoice,
+            created_by=user,
+            notes=f"سداد الفاتورة #{invoice.invoice_number} من الرصيد الدائن للطالب",
+        )
+        return tx
 
 
 class PaymentAllocation(TenantOwnedModel):

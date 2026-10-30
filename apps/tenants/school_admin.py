@@ -307,7 +307,10 @@ class SchoolInvitationAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # New Operational Modules Registered in School Admin
 # -----------------------------------------------------------------------------
-from apps.staff.models import StaffMember, Teacher, TeacherAssignment
+from apps.staff.models import (
+    StaffMember, Teacher, TeacherAssignment,
+    Department, WorkShift, LeaveType, LeaveRequest, StaffAttendance,
+)
 from apps.students.models import (
     AdministrativeSummon,
     Guardian,
@@ -315,6 +318,7 @@ from apps.students.models import (
     Student,
     StudentGuardianRelation,
     StudentIncidentReport,
+    StudentEnrollment,
 )
 from apps.timetable.models import ClassSchedule, DailyLessonLog
 from apps.assignments.models import Homework, HomeworkSubmission
@@ -349,6 +353,55 @@ class SchoolTeacherAssignmentAdmin(SchoolScopedAdmin):
     readonly_fields = ("id", "created_at", "updated_at")
 
 
+@admin.register(Department, site=school_admin_site)
+class SchoolDepartmentAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name", "manager", "created_at")
+    search_fields = ("code", "name")
+    raw_id_fields = ("manager",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(WorkShift, site=school_admin_site)
+class SchoolWorkShiftAdmin(SchoolScopedAdmin):
+    list_display = ("name", "start_time", "end_time", "grace_period_minutes")
+    search_fields = ("name",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(LeaveType, site=school_admin_site)
+class SchoolLeaveTypeAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name", "days_allowed", "is_paid")
+    list_filter = ("is_paid",)
+    search_fields = ("code", "name")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(LeaveRequest, site=school_admin_site)
+class SchoolLeaveRequestAdmin(SchoolScopedAdmin):
+    list_display = ("get_applicant", "leave_type", "start_date", "end_date", "status", "approved_by")
+    list_filter = ("status", "leave_type")
+    search_fields = ("teacher__user__first_name", "staff_member__user__first_name", "reason")
+    raw_id_fields = ("teacher", "staff_member", "leave_type", "approved_by")
+    readonly_fields = ("id", "created_at", "updated_at", "action_at")
+
+    def get_applicant(self, obj):
+        return str(obj)
+    get_applicant.short_description = "الموظف"
+
+
+@admin.register(StaffAttendance, site=school_admin_site)
+class SchoolStaffAttendanceAdmin(SchoolScopedAdmin):
+    list_display = ("get_staff", "date", "status", "time_in", "time_out", "delay_minutes", "shift")
+    list_filter = ("status", "date")
+    search_fields = ("teacher__user__first_name", "staff_member__user__first_name")
+    raw_id_fields = ("teacher", "staff_member", "shift")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+    def get_staff(self, obj):
+        return str(obj)
+    get_staff.short_description = "الموظف"
+
+
 @admin.register(Student, site=school_admin_site)
 class SchoolStudentAdmin(SchoolScopedAdmin):
     list_display = ("get_full_name", "student_id_number", "grade_level", "section", "status")
@@ -356,6 +409,15 @@ class SchoolStudentAdmin(SchoolScopedAdmin):
     search_fields = ("student_id_number", "first_name", "last_name", "national_id")
     autocomplete_fields = ("grade_level", "section", "academic_year")
     raw_id_fields = ("user",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentEnrollment, site=school_admin_site)
+class SchoolStudentEnrollmentAdmin(SchoolScopedAdmin):
+    list_display = ("student", "academic_year", "grade_level", "section", "status", "enrollment_date")
+    list_filter = ("status", "academic_year", "grade_level")
+    search_fields = ("student__first_name", "student__last_name", "student__student_id_number")
+    autocomplete_fields = ("student", "academic_year", "grade_level", "section")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
@@ -840,7 +902,12 @@ class SchoolBookRequisitionItemAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # Fee Installment Plans in School Admin
 # -----------------------------------------------------------------------------
-from apps.student_fees.models import FeeInstallmentPlan, FeeInstallment, PaymentAllocation
+from apps.student_fees.models import (
+    FeeInstallmentPlan,
+    FeeInstallment,
+    PaymentAllocation,
+    StudentCreditTransaction,
+)
 
 
 @admin.register(FeeInstallmentPlan, site=school_admin_site)
@@ -866,6 +933,15 @@ class SchoolPaymentAllocationAdmin(SchoolScopedAdmin):
     list_filter = ("status", "allocated_at")
     search_fields = ("receipt__receipt_number", "invoice__invoice_number", "notes")
     raw_id_fields = ("receipt", "invoice", "installment", "allocated_by")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentCreditTransaction, site=school_admin_site)
+class SchoolStudentCreditTransactionAdmin(SchoolScopedAdmin):
+    list_display = ("transaction_type", "student", "amount", "invoice", "receipt", "created_at")
+    list_filter = ("transaction_type", "created_at")
+    search_fields = ("student__first_name", "student__last_name", "notes")
+    raw_id_fields = ("student", "invoice", "receipt")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
