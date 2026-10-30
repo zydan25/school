@@ -1,0 +1,384 @@
+"""Automated tests for extended ERP modules:
+- Accounting Vouchers & Chart of Accounts Seeder
+- Payroll Management & Payslip Calculation
+- Fixed Assets & Depreciation
+- Procurement & Inventory Movements
+- School Support Services (Buses, Library, Clinic)
+- Fee Installment Plans & Exam Control
+- Comprehensive Reporting Engine
+"""
+from datetime import date
+from decimal import Decimal
+from django.test import TestCase
+
+from apps.accounts.models import User
+from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section, Subject
+from apps.staff.models import Teacher
+from apps.students.models import Student
+from apps.tenants.models import School
+
+from apps.accounting.models import Account, FiscalYear, PaymentVoucher, ReceiptVoucher, ExpenseCategory
+from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
+from apps.accounting.services.financial_reports import get_income_statement, get_balance_sheet, get_trial_balance
+
+from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRun, Payslip
+from apps.payroll.services import generate_monthly_payroll, post_payroll_to_accounting
+
+from apps.assets.models import AssetCategory, FixedAsset, AssetDepreciationEntry
+from apps.inventory.models import Supplier, Warehouse, InventoryItem, StockMovement, PurchaseOrder
+from apps.school_services.models import BusRoute, StudentBusSubscription, LibraryBook, BookLoan, StudentHealthProfile, ClinicVisit
+from apps.student_fees.models import FeeCategory, StudentInvoice, PaymentReceipt, FeeInstallmentPlan, FeeInstallment
+from apps.assessments.models import AssessmentType, GradeBook, ExamCommittee, ExamSeating
+
+from apps.reports.selectors.financial_reports import get_student_statement_of_account, get_aging_receivables_report, get_daily_cash_register_report
+from apps.reports.selectors.academic_reports import get_student_report_card, get_class_ranking_report, get_subject_grade_distribution
+from apps.reports.selectors.attendance_reports import get_section_attendance_summary, get_chronic_absenteeism_report
+from apps.reports.selectors.hr_reports import get_teacher_workload_report, get_payroll_summary_report
+
+
+class ExtendedModulesTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = User.objects.create_user(
+            phone="+967777333001", password="StrongPassword123!",
+            first_name="علي", last_name="العتّاب",
+        )
+        cls.school = School.objects.create(
+            owner=cls.user,
+            code="SCH_EXT_1",
+            name="مدرسة الأندلس الدولية",
+            status=School.Status.ACTIVE,
+        )
+        cls.academic_year = AcademicYear.objects.create(
+            school=cls.school,
+            code="2026-2027",
+            name="2026-2027",
+            starts_on=date(2026, 9, 1),
+            ends_on=date(2027, 6, 30),
+        )
+        cls.stage = EducationalStage.objects.create(school=cls.school, code="SEC", name="المرحلة الثانوية", sequence=1)
+        cls.grade = GradeLevel.objects.create(school=cls.school, stage=cls.stage, code="G10", name="الصف العاشر", sequence=1)
+        cls.section = Section.objects.create(school=cls.school, academic_year=cls.academic_year, grade=cls.grade, code="10-A", name="عاشر / أ")
+        cls.subject = Subject.objects.create(school=cls.school, grade=cls.grade, code="MATH10", name="الرياضيات المتقدمة")
+
+        cls.teacher_user = User.objects.create_user(
+            phone="+967777333002", password="StrongPassword123!",
+            first_name="فهد", last_name="الأستاذ",
+        )
+        cls.teacher = Teacher.objects.create(
+            school=cls.school,
+            user=cls.teacher_user,
+            employee_number="EMP-001",
+            specialization="رياضيات",
+            weekly_period_quota=20,
+        )
+
+        cls.student = Student.objects.create(
+            school=cls.school,
+            student_id_number="STD-EXT-1",
+            first_name="سالم",
+            last_name="المجتهد",
+            grade_level=cls.grade,
+            section=cls.section,
+            academic_year=cls.academic_year,
+        )
+
+    def test_chart_of_accounts_and_vouchers(self):
+        """التحقق من إنشاء شجرة الحسابات وسندات الصرف والقبض المحاسبية."""
+        accounts = seed_default_chart_of_accounts(self.school)
+        self.assertGreater(len(accounts), 10)
+        
+        cash_account = Account.objects.get(school=self.school, code="111")
+        expense_account = Account.objects.get(school=self.school, code="511")
+        revenue_account = Account.objects.get(school=self.school, code="411")
+
+        # Create Payment Voucher (سند صرف مصاريف)
+        pv = PaymentVoucher.objects.create(
+            school=self.school,
+            voucher_number="PV-2026-001",
+            paid_to="شركة صيانة المكيفات",
+            amount=Decimal("500.00"),
+            payment_method=PaymentVoucher.PaymentMethod.CASH,
+            credit_account=cash_account,
+            debit_account=expense_account,
+            description="صيانة دورية لقاعات الثانوية",
+            status=PaymentVoucher.Status.POSTED,
+        )
+        self.assertEqual(pv.amount, Decimal("500.00"))
+
+        # Create Receipt Voucher (سند قبض إيرادات)
+        rv = ReceiptVoucher.objects.create(
+            school=self.school,
+            voucher_number="RV-2026-001",
+            received_from="راعي الحفل المدرسي",
+            amount=Decimal("1500.00"),
+            payment_method=ReceiptVoucher.PaymentMethod.CASH,
+            debit_account=cash_account,
+            credit_account=revenue_account,
+            description="دعم الحفل السنوي",
+            status=ReceiptVoucher.Status.POSTED,
+        )
+        self.assertEqual(rv.amount, Decimal("1500.00"))
+
+        # Verify Financial Reports
+        income_stmt = get_income_statement(self.school)
+        self.assertIn("net_income", income_stmt)
+        bal_sheet = get_balance_sheet(self.school)
+        self.assertIn("total_assets", bal_sheet)
+
+    def test_payroll_management_flow(self):
+        """التحقق من دورة الرواتب: العقد، السلفة، وتوليد مسير الرواتب."""
+        contract = EmployeeContract.objects.create(
+            school=self.school,
+            teacher=self.teacher,
+            contract_number="CNT-2026-01",
+            start_date=date(2026, 9, 1),
+            basic_salary=Decimal("5000.00"),
+            housing_allowance=Decimal("1000.00"),
+            transport_allowance=Decimal("500.00"),
+            insurance_deduction=Decimal("200.00"),
+        )
+        self.assertEqual(contract.gross_salary, Decimal("6500.00"))
+        self.assertEqual(contract.net_salary, Decimal("6300.00"))
+
+        # Employee Advance / Loan
+        loan = EmployeeLoanAdvance.objects.create(
+            school=self.school,
+            teacher=self.teacher,
+            loan_number="LN-001",
+            amount=Decimal("3000.00"),
+            monthly_installment=Decimal("500.00"),
+            start_date=date(2026, 10, 1),
+        )
+        self.assertEqual(loan.remaining_amount, Decimal("3000.00"))
+
+        # Generate monthly payroll for October 2026
+        payroll_run = generate_monthly_payroll(
+            school=self.school,
+            year=2026,
+            month=10,
+            generated_by=self.user,
+        )
+        self.assertEqual(payroll_run.payslips.count(), 1)
+        payslip = payroll_run.payslips.first()
+        # Basic 5000 + 1500 allowances - 200 insurance - 500 loan installment = 5800
+        self.assertEqual(payslip.net_salary, Decimal("5800.00"))
+        self.assertEqual(payslip.loan_deduction, Decimal("500.00"))
+
+    def test_fixed_assets_and_depreciation(self):
+        """التحقق من إدارة الأصول الثابتة وتسجيل الإهلاك."""
+        cat = AssetCategory.objects.create(
+            school=self.school,
+            code="COMP",
+            name="أجهزة حاسوب وشاشات",
+            annual_depreciation_rate=Decimal("20.00"),
+            useful_life_years=5,
+        )
+        asset = FixedAsset.objects.create(
+            school=self.school,
+            category=cat,
+            code="PC-LAB-01",
+            name="حاسوب معمل الذكاء الاصطناعي",
+            purchase_date=date(2026, 1, 1),
+            purchase_cost=Decimal("4000.00"),
+            accumulated_depreciation=Decimal("800.00"),
+            custodian=self.teacher,
+        )
+        self.assertEqual(asset.current_book_value, Decimal("3200.00"))
+
+    def test_inventory_and_stock_movements(self):
+        """التحقق من الموردين، المستودعات، وحركات المخزون وصرف المواد."""
+        supplier = Supplier.objects.create(
+            school=self.school,
+            code="SUPP-01",
+            name="دار الكتب للطباعة والتوزيع",
+            phone="012345678",
+        )
+        warehouse = Warehouse.objects.create(
+            school=self.school,
+            code="WH-MAIN",
+            name="المستودع المركزي",
+            manager=self.teacher,
+        )
+        item = InventoryItem.objects.create(
+            school=self.school,
+            code="BK-MATH-10",
+            name="كتاب الرياضيات للصف العاشر",
+            warehouse=warehouse,
+            unit=InventoryItem.Unit.BOOK,
+            current_stock=Decimal("0.00"),
+            unit_cost=Decimal("25.00"),
+            reorder_level=Decimal("10.00"),
+        )
+
+        # Receipt movement (وارد 100 كتاب)
+        StockMovement.objects.create(
+            school=self.school,
+            item=item,
+            movement_type=StockMovement.MovementType.RECEIPT,
+            quantity=Decimal("100.00"),
+            unit_cost=Decimal("25.00"),
+            reference="PO-991",
+        )
+        item.refresh_from_db()
+        self.assertEqual(item.current_stock, Decimal("100.00"))
+
+        # Issue movement (صرف 30 كتاباً للطلاب)
+        StockMovement.objects.create(
+            school=self.school,
+            item=item,
+            movement_type=StockMovement.MovementType.ISSUE,
+            quantity=Decimal("30.00"),
+            recipient_name="شعبة عاشر / أ",
+        )
+        item.refresh_from_db()
+        self.assertEqual(item.current_stock, Decimal("70.00"))
+
+    def test_school_services_buses_library_clinic(self):
+        """التحقق من خدمات النقل، المكتبة، والعيادة المدرسية."""
+        # 1. Bus Transport
+        bus = BusRoute.objects.create(
+            school=self.school,
+            route_code="BUS-R1",
+            route_name="خط حي الأندلس والزهراء",
+            bus_number="4412-YEM",
+            driver_name="أحمد السائق",
+            driver_phone="770000001",
+            monthly_fee=Decimal("150.00"),
+        )
+        sub = StudentBusSubscription.objects.create(
+            school=self.school,
+            student=self.student,
+            bus_route=bus,
+            academic_year=self.academic_year,
+            subscription_type=StudentBusSubscription.SubscriptionType.TWO_WAY,
+        )
+        self.assertEqual(sub.status, StudentBusSubscription.Status.ACTIVE)
+
+        # 2. Library
+        book = LibraryBook.objects.create(
+            school=self.school,
+            isbn="978-0123456789",
+            title="مقدمة في علم البيانات والخوارزميات",
+            author="د. عبد الرحمن الخوارزمي",
+            total_copies=5,
+            available_copies=5,
+        )
+        loan = BookLoan.objects.create(
+            school=self.school,
+            book=book,
+            student=self.student,
+            borrow_date=date(2026, 10, 1),
+            due_date=date(2026, 10, 15),
+        )
+        book.refresh_from_db()
+        self.assertEqual(book.available_copies, 4)
+
+        # 3. Clinic
+        health = StudentHealthProfile.objects.create(
+            school=self.school,
+            student=self.student,
+            blood_type="O+",
+            allergies="حساسية من البنسلين",
+            emergency_contact_name="والد الطالب",
+            emergency_contact_phone="771111222",
+        )
+        visit = ClinicVisit.objects.create(
+            school=self.school,
+            student=self.student,
+            symptoms="صداع وارتفاع خفيف في الحرارة",
+            temperature=Decimal("37.8"),
+            treatment_given="إسعافات أولية وخافض حرارة",
+        )
+        self.assertFalse(visit.sent_home)
+
+    def test_fee_installment_plans_and_exam_control(self):
+        """التحقق من خطط تقسيط الرسوم ولجان الامتحانات وأرقام الجلوس."""
+        # Fee Invoice & Installment Plan
+        inv = StudentInvoice.objects.create(
+            school=self.school,
+            student=self.student,
+            academic_year=self.academic_year,
+            invoice_number="INV-2026-90",
+            total_amount=Decimal("1200.00"),
+            due_date=date(2026, 12, 31),
+        )
+        plan = FeeInstallmentPlan.objects.create(
+            school=self.school,
+            student=self.student,
+            invoice=inv,
+            plan_name="خطة تقسيط فصلية",
+            total_amount=Decimal("1200.00"),
+            number_of_installments=3,
+        )
+        inst1 = FeeInstallment.objects.create(
+            school=self.school,
+            plan=plan,
+            installment_number=1,
+            title="القسط الأول",
+            amount=Decimal("400.00"),
+            due_date=date(2026, 10, 1),
+            status=FeeInstallment.Status.PAID,
+        )
+        inst2 = FeeInstallment.objects.create(
+            school=self.school,
+            plan=plan,
+            installment_number=2,
+            title="القسط الثاني",
+            amount=Decimal("400.00"),
+            due_date=date(2026, 11, 1),
+            status=FeeInstallment.Status.PENDING,
+        )
+        self.assertEqual(plan.installments.count(), 2)
+
+        # Exam Committee & Seating
+        committee = ExamCommittee.objects.create(
+            school=self.school,
+            name="لجنة الشهادة الثانوية رقم 1",
+            committee_number="COMM-01",
+            location_room="قاعة الأندلس الكبرى",
+            capacity=30,
+            head_supervisor=self.teacher,
+        )
+        seating = ExamSeating.objects.create(
+            school=self.school,
+            academic_year=self.academic_year,
+            committee=committee,
+            student=self.student,
+            seating_number=1001,
+            secret_code="SEC-X-77",
+        )
+        self.assertEqual(seating.seating_number, 1001)
+
+    def test_reporting_engine_selectors(self):
+        """التحقق من محرك التقارير الشامل: مالي، أكاديمي، حضور، وموارد بشرية."""
+        # 1. Statement of Account
+        stmt = get_student_statement_of_account(self.student)
+        self.assertIn("summary", stmt)
+        self.assertIn("invoices", stmt)
+
+        # 2. Aging of Receivables
+        aging = get_aging_receivables_report(self.school)
+        self.assertIn("buckets", aging)
+
+        # 3. Academic Report Card
+        GradeBook.objects.create(
+            school=self.school,
+            student=self.student,
+            subject=self.subject,
+            assessment_title="اختبار نصف الفصل",
+            score=Decimal("95.00"),
+            max_score=Decimal("100.00"),
+            is_published=True,
+        )
+        report_card = get_student_report_card(self.student)
+        self.assertEqual(report_card["overall_summary"]["overall_percentage"], 95.0)
+        self.assertEqual(report_card["overall_summary"]["overall_grade"], "ممتاز (A)")
+
+        # 4. Class Ranking
+        ranking = get_class_ranking_report(self.section)
+        self.assertGreater(len(ranking["rankings"]), 0)
+
+        # 5. Teacher Workload Report
+        workload = get_teacher_workload_report(self.school)
+        self.assertGreater(workload["teachers_count"], 0)

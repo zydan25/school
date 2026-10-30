@@ -520,3 +520,268 @@ class SchoolJournalEntryAdmin(SchoolScopedAdmin):
     search_fields = ("entry_number", "description", "source_reference")
     raw_id_fields = ("posted_by", "fiscal_period")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# Accounting Vouchers & Expenses in School Admin
+# -----------------------------------------------------------------------------
+from apps.accounting.models import ExpenseCategory, PaymentVoucher, ReceiptVoucher
+
+
+@admin.register(ExpenseCategory, site=school_admin_site)
+class SchoolExpenseCategoryAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name", "default_account")
+    search_fields = ("code", "name")
+    raw_id_fields = ("default_account",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(PaymentVoucher, site=school_admin_site)
+class SchoolPaymentVoucherAdmin(SchoolScopedAdmin):
+    list_display = ("voucher_number", "date", "paid_to", "amount", "payment_method", "credit_account", "debit_account", "status")
+    list_filter = ("status", "payment_method", "date")
+    search_fields = ("voucher_number", "paid_to", "description")
+    raw_id_fields = ("credit_account", "debit_account", "cost_center", "journal_entry")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(ReceiptVoucher, site=school_admin_site)
+class SchoolReceiptVoucherAdmin(SchoolScopedAdmin):
+    list_display = ("voucher_number", "date", "received_from", "amount", "payment_method", "debit_account", "credit_account", "status")
+    list_filter = ("status", "payment_method", "date")
+    search_fields = ("voucher_number", "received_from", "description")
+    raw_id_fields = ("debit_account", "credit_account", "cost_center", "journal_entry")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# Payroll & Human Resources in School Admin
+# -----------------------------------------------------------------------------
+from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRun, Payslip
+
+
+@admin.register(EmployeeContract, site=school_admin_site)
+class SchoolEmployeeContractAdmin(SchoolScopedAdmin):
+    list_display = ("contract_number", "teacher", "contract_type", "basic_salary", "gross_salary", "net_salary", "is_active")
+    list_filter = ("contract_type", "is_active")
+    search_fields = ("contract_number", "teacher__user__first_name", "teacher__user__last_name")
+    raw_id_fields = ("teacher",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(EmployeeLoanAdvance, site=school_admin_site)
+class SchoolEmployeeLoanAdvanceAdmin(SchoolScopedAdmin):
+    list_display = ("loan_number", "teacher", "amount", "monthly_installment", "repaid_amount", "remaining_amount", "status")
+    list_filter = ("status",)
+    search_fields = ("loan_number", "teacher__user__first_name", "teacher__user__last_name")
+    raw_id_fields = ("teacher",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(PayrollRun, site=school_admin_site)
+class SchoolPayrollRunAdmin(SchoolScopedAdmin):
+    list_display = ("name", "year", "month", "total_basic", "total_allowances", "total_deductions", "total_net", "status")
+    list_filter = ("status", "year")
+    search_fields = ("name",)
+    raw_id_fields = ("approved_by", "journal_entry")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Payslip, site=school_admin_site)
+class SchoolPayslipAdmin(SchoolScopedAdmin):
+    list_display = ("teacher", "payroll_run", "basic_salary", "total_earnings", "total_deductions", "net_salary", "is_paid")
+    list_filter = ("is_paid", "payroll_run__year")
+    search_fields = ("teacher__user__first_name", "teacher__user__last_name", "payroll_run__name")
+    raw_id_fields = ("payroll_run", "teacher")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# Fixed Assets in School Admin
+# -----------------------------------------------------------------------------
+from apps.assets.models import AssetCategory, FixedAsset, AssetDepreciationEntry
+
+
+@admin.register(AssetCategory, site=school_admin_site)
+class SchoolAssetCategoryAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name", "annual_depreciation_rate", "useful_life_years")
+    search_fields = ("code", "name")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(FixedAsset, site=school_admin_site)
+class SchoolFixedAssetAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name", "category", "purchase_date", "purchase_cost", "accumulated_depreciation", "current_book_value", "status")
+    list_filter = ("category", "status")
+    search_fields = ("code", "name", "location_room")
+    raw_id_fields = ("category", "custodian")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(AssetDepreciationEntry, site=school_admin_site)
+class SchoolAssetDepreciationEntryAdmin(SchoolScopedAdmin):
+    list_display = ("asset", "fiscal_year", "depreciation_amount", "date")
+    list_filter = ("fiscal_year",)
+    search_fields = ("asset__name", "asset__code")
+    raw_id_fields = ("asset", "fiscal_year")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# Procurement & Inventory in School Admin
+# -----------------------------------------------------------------------------
+from apps.inventory.models import Supplier, Warehouse, InventoryItem, StockMovement, PurchaseOrder
+
+
+@admin.register(Supplier, site=school_admin_site)
+class SchoolSupplierAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name", "contact_person", "phone", "email", "is_active")
+    list_filter = ("is_active",)
+    search_fields = ("code", "name", "contact_person", "phone")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Warehouse, site=school_admin_site)
+class SchoolWarehouseAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name", "manager", "location")
+    search_fields = ("code", "name", "location")
+    raw_id_fields = ("manager", "branch")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(InventoryItem, site=school_admin_site)
+class SchoolInventoryItemAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name", "warehouse", "category", "unit", "current_stock", "unit_cost", "reorder_level")
+    list_filter = ("category", "warehouse")
+    search_fields = ("code", "name", "category")
+    raw_id_fields = ("warehouse",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StockMovement, site=school_admin_site)
+class SchoolStockMovementAdmin(SchoolScopedAdmin):
+    list_display = ("date", "movement_type", "item", "quantity", "unit_cost", "reference", "recipient_name")
+    list_filter = ("movement_type", "date")
+    search_fields = ("item__name", "item__code", "reference", "recipient_name")
+    raw_id_fields = ("item",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(PurchaseOrder, site=school_admin_site)
+class SchoolPurchaseOrderAdmin(SchoolScopedAdmin):
+    list_display = ("order_number", "supplier", "warehouse", "order_date", "total_amount", "status")
+    list_filter = ("status", "order_date")
+    search_fields = ("order_number", "supplier__name")
+    raw_id_fields = ("supplier", "warehouse", "approved_by")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# School Services (Buses, Library, Clinic) in School Admin
+# -----------------------------------------------------------------------------
+from apps.school_services.models import (
+    BusRoute,
+    StudentBusSubscription,
+    LibraryBook,
+    BookLoan,
+    StudentHealthProfile,
+    ClinicVisit,
+)
+
+
+@admin.register(BusRoute, site=school_admin_site)
+class SchoolBusRouteAdmin(SchoolScopedAdmin):
+    list_display = ("route_code", "route_name", "bus_number", "driver_name", "driver_phone", "bus_capacity", "monthly_fee", "is_active")
+    list_filter = ("is_active",)
+    search_fields = ("route_code", "route_name", "bus_number", "driver_name")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentBusSubscription, site=school_admin_site)
+class SchoolStudentBusSubscriptionAdmin(SchoolScopedAdmin):
+    list_display = ("student", "bus_route", "academic_year", "subscription_type", "status")
+    list_filter = ("status", "subscription_type", "academic_year")
+    search_fields = ("student__first_name", "student__last_name", "bus_route__route_name")
+    raw_id_fields = ("student", "bus_route", "academic_year")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(LibraryBook, site=school_admin_site)
+class SchoolLibraryBookAdmin(SchoolScopedAdmin):
+    list_display = ("isbn", "title", "author", "category", "total_copies", "available_copies", "shelf_location")
+    list_filter = ("category",)
+    search_fields = ("isbn", "title", "author", "publisher")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(BookLoan, site=school_admin_site)
+class SchoolBookLoanAdmin(SchoolScopedAdmin):
+    list_display = ("book", "student", "teacher", "borrow_date", "due_date", "return_date", "status", "fine_amount")
+    list_filter = ("status", "borrow_date")
+    search_fields = ("book__title", "student__first_name", "teacher__user__first_name")
+    raw_id_fields = ("book", "student", "teacher")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentHealthProfile, site=school_admin_site)
+class SchoolStudentHealthProfileAdmin(SchoolScopedAdmin):
+    list_display = ("student", "blood_type", "emergency_contact_name", "emergency_contact_phone")
+    list_filter = ("blood_type",)
+    search_fields = ("student__first_name", "student__last_name", "emergency_contact_name")
+    raw_id_fields = ("student",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(ClinicVisit, site=school_admin_site)
+class SchoolClinicVisitAdmin(SchoolScopedAdmin):
+    list_display = ("student", "visit_date", "symptoms", "temperature", "sent_home", "parent_notified", "attended_by")
+    list_filter = ("sent_home", "parent_notified", "visit_date")
+    search_fields = ("student__first_name", "student__last_name", "diagnosis")
+    raw_id_fields = ("student",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# Fee Installment Plans in School Admin
+# -----------------------------------------------------------------------------
+from apps.student_fees.models import FeeInstallmentPlan, FeeInstallment
+
+
+@admin.register(FeeInstallmentPlan, site=school_admin_site)
+class SchoolFeeInstallmentPlanAdmin(SchoolScopedAdmin):
+    list_display = ("plan_name", "student", "invoice", "total_amount", "number_of_installments")
+    search_fields = ("plan_name", "student__first_name", "student__last_name", "invoice__invoice_number")
+    raw_id_fields = ("student", "invoice")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(FeeInstallment, site=school_admin_site)
+class SchoolFeeInstallmentAdmin(SchoolScopedAdmin):
+    list_display = ("installment_number", "title", "plan", "amount", "due_date", "paid_date", "status")
+    list_filter = ("status", "due_date")
+    search_fields = ("title", "plan__student__first_name", "plan__student__last_name")
+    raw_id_fields = ("plan", "receipt")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# Exam Control Room & Committees in School Admin
+# -----------------------------------------------------------------------------
+from apps.assessments.models import ExamCommittee, ExamSeating
+
+
+@admin.register(ExamCommittee, site=school_admin_site)
+class SchoolExamCommitteeAdmin(SchoolScopedAdmin):
+    list_display = ("committee_number", "name", "location_room", "capacity", "head_supervisor")
+    search_fields = ("committee_number", "name", "location_room")
+    raw_id_fields = ("head_supervisor",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(ExamSeating, site=school_admin_site)
+class SchoolExamSeatingAdmin(SchoolScopedAdmin):
+    list_display = ("seating_number", "student", "committee", "academic_year", "secret_code")
+    list_filter = ("academic_year", "committee")
+    search_fields = ("seating_number", "secret_code", "student__first_name", "student__last_name")
+    raw_id_fields = ("student", "committee", "academic_year")
+    readonly_fields = ("id", "created_at", "updated_at")

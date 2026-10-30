@@ -2,7 +2,17 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
 from apps.core.admin import AuditedAdminMixin
-from apps.accounting.models import Account, CostCenter, FiscalPeriod, FiscalYear, JournalEntry, JournalEntryLine
+from apps.accounting.models import (
+    Account,
+    CostCenter,
+    ExpenseCategory,
+    FiscalPeriod,
+    FiscalYear,
+    JournalEntry,
+    JournalEntryLine,
+    PaymentVoucher,
+    ReceiptVoucher,
+)
 
 
 class FiscalPeriodInline(TabularInline):
@@ -61,3 +71,28 @@ class JournalEntryAdmin(AuditedAdminMixin, ModelAdmin):
     autocomplete_fields = ("school", "branch", "fiscal_period")
     readonly_fields = ("id", "created_at", "updated_at")
     inlines = (JournalEntryLineInline,)
+
+
+@admin.register(ExpenseCategory)
+class ExpenseCategoryAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("code", "name", "default_account", "school")
+    list_filter = ("school",)
+    search_fields = ("code", "name")
+    raw_id_fields = ("default_account", "school", "branch")
+
+
+@admin.register(PaymentVoucher)
+class PaymentVoucherAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("voucher_number", "date", "paid_to", "amount", "payment_method", "credit_account", "debit_account", "status", "school")
+    list_filter = ("school", "status", "payment_method", "date")
+    search_fields = ("voucher_number", "paid_to", "description")
+    raw_id_fields = ("credit_account", "debit_account", "cost_center", "journal_entry", "school", "branch")
+
+
+@admin.register(ReceiptVoucher)
+class ReceiptVoucherAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("voucher_number", "date", "received_from", "amount", "payment_method", "debit_account", "credit_account", "status", "school")
+    list_filter = ("school", "status", "payment_method", "date")
+    search_fields = ("voucher_number", "received_from", "description")
+    raw_id_fields = ("debit_account", "credit_account", "cost_center", "journal_entry", "school", "branch")
+

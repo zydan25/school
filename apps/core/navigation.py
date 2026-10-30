@@ -184,7 +184,55 @@ def school_navigation():
                 {"title": _("دليل الحسابات"), "icon": "account_balance", "link": reverse_lazy("school_admin:accounting_account_changelist"), "permission": _school_check("accounting.view_account")},
                 {"title": _("قيود اليومية"), "icon": "menu_book", "link": reverse_lazy("school_admin:accounting_journalentry_changelist"), "permission": _school_check("accounting.view_journalentry")},
                 {"title": _("السنوات المالية"), "icon": "date_range", "link": reverse_lazy("school_admin:accounting_fiscalyear_changelist"), "permission": _school_check("accounting.view_fiscalyear")},
-                {"title": _("مراكز التكلفة"), "icon": "pie_chart", "link": reverse_lazy("school_admin:accounting_costcenter_changelist"), "permission": _school_check("accounting.view_costcenter")},
+                                {"title": _("مراكز التكلفة"), "icon": "pie_chart", "link": reverse_lazy("school_admin:accounting_costcenter_changelist"), "permission": _school_check("accounting.view_costcenter")},
+                {"title": _("سندات الصرف"), "icon": "receipt_long", "link": reverse_lazy("school_admin:accounting_paymentvoucher_changelist"), "permission": _school_check("accounting.view_paymentvoucher")},
+                {"title": _("سندات القبض العامة"), "icon": "price_check", "link": reverse_lazy("school_admin:accounting_receiptvoucher_changelist"), "permission": _school_check("accounting.view_receiptvoucher")},
+                {"title": _("تصنيفات المصروفات"), "icon": "category", "link": reverse_lazy("school_admin:accounting_expensecategory_changelist"), "permission": _school_check("accounting.view_expensecategory")},
+            ],
+        },
+        {
+            "title": _("إدارة الرواتب وشؤون الموظفين"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("عقود الموظفين والرواتب"), "icon": "badge", "link": reverse_lazy("school_admin:payroll_employeecontract_changelist"), "permission": _school_check("payroll.view_employeecontract")},
+                {"title": _("مسيرات الرواتب الشهرية"), "icon": "payments", "link": reverse_lazy("school_admin:payroll_payrollrun_changelist"), "permission": _school_check("payroll.view_payrollrun")},
+                {"title": _("قسائم الرواتب"), "icon": "request_quote", "link": reverse_lazy("school_admin:payroll_payslip_changelist"), "permission": _school_check("payroll.view_payslip")},
+                {"title": _("سلف وقروض الموظفين"), "icon": "credit_card", "link": reverse_lazy("school_admin:payroll_employeeloanadvance_changelist"), "permission": _school_check("payroll.view_employeeloanadvance")},
+            ],
+        },
+        {
+            "title": _("المشتريات والمستودعات"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("الموردون المعتمدون"), "icon": "local_shipping", "link": reverse_lazy("school_admin:inventory_supplier_changelist"), "permission": _school_check("inventory.view_supplier")},
+                {"title": _("المستودعات والمخازن"), "icon": "store", "link": reverse_lazy("school_admin:inventory_warehouse_changelist"), "permission": _school_check("inventory.view_warehouse")},
+                {"title": _("دليل الأصناف والمواد"), "icon": "inventory", "link": reverse_lazy("school_admin:inventory_inventoryitem_changelist"), "permission": _school_check("inventory.view_inventoryitem")},
+                {"title": _("سجل حركات المخزون"), "icon": "swap_horiz", "link": reverse_lazy("school_admin:inventory_stockmovement_changelist"), "permission": _school_check("inventory.view_stockmovement")},
+                {"title": _("أوامر الشراء والتوريد"), "icon": "shopping_cart", "link": reverse_lazy("school_admin:inventory_purchaseorder_changelist"), "permission": _school_check("inventory.view_purchaseorder")},
+            ],
+        },
+        {
+            "title": _("الأصول الثابتة والإهلاك"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("سجل الأصول الثابتة"), "icon": "devices", "link": reverse_lazy("school_admin:assets_fixedasset_changelist"), "permission": _school_check("assets.view_fixedasset")},
+                {"title": _("تصنيفات الأصول"), "icon": "category", "link": reverse_lazy("school_admin:assets_assetcategory_changelist"), "permission": _school_check("assets.view_assetcategory")},
+                {"title": _("سجلات الإهلاك الدوري"), "icon": "trending_down", "link": reverse_lazy("school_admin:assets_assetdepreciationentry_changelist"), "permission": _school_check("assets.view_assetdepreciationentry")},
+            ],
+        },
+        {
+            "title": _("الخدمات المساندة (النقل والمكتبة والعيادة)"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("خطوط النقل المدرسي"), "icon": "directions_bus", "link": reverse_lazy("school_admin:school_services_busroute_changelist"), "permission": _school_check("school_services.view_busroute")},
+                {"title": _("اشتراكات حافلات الطلاب"), "icon": "commute", "link": reverse_lazy("school_admin:school_services_studentbussubscription_changelist"), "permission": _school_check("school_services.view_studentbussubscription")},
+                {"title": _("المكتبة والكتب"), "icon": "local_library", "link": reverse_lazy("school_admin:school_services_librarybook_changelist"), "permission": _school_check("school_services.view_librarybook")},
+                {"title": _("إعارات الكتب"), "icon": "menu_book", "link": reverse_lazy("school_admin:school_services_bookloan_changelist"), "permission": _school_check("school_services.view_bookloan")},
+                {"title": _("الملفات الصحية للطلاب"), "icon": "health_and_safety", "link": reverse_lazy("school_admin:school_services_studenthealthprofile_changelist"), "permission": _school_check("school_services.view_studenthealthprofile")},
+                {"title": _("زيارات العيادة المدرسية"), "icon": "medical_services", "link": reverse_lazy("school_admin:school_services_clinicvisit_changelist"), "permission": _school_check("school_services.view_clinicvisit")},
+            ],
+        },
+        {
+            "title": _("كنترول الامتحانات وأرقام الجلوس"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("لجان الامتحانات والكنترول"), "icon": "co_present", "link": reverse_lazy("school_admin:assessments_examcommittee_changelist"), "permission": _school_check("assessments.view_examcommittee")},
+                {"title": _("أرقام الجلوس والكنترول"), "icon": "pin", "link": reverse_lazy("school_admin:assessments_examseating_changelist"), "permission": _school_check("assessments.view_examseating")},
             ],
         },
     ]

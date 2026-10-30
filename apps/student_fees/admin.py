@@ -2,7 +2,15 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
 from apps.core.admin import AuditedAdminMixin
-from apps.student_fees.models import FeeCategory, FeeStructure, PaymentReceipt, StudentInvoice, StudentInvoiceItem
+from apps.student_fees.models import (
+    FeeCategory,
+    FeeInstallment,
+    FeeInstallmentPlan,
+    FeeStructure,
+    PaymentReceipt,
+    StudentInvoice,
+    StudentInvoiceItem,
+)
 
 
 class StudentInvoiceItemInline(TabularInline):
@@ -45,3 +53,26 @@ class PaymentReceiptAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("receipt_number", "reference_number", "student__first_name", "student__last_name", "school__name")
     autocomplete_fields = ("school", "branch", "student", "invoice")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+class FeeInstallmentInline(TabularInline):
+    model = FeeInstallment
+    extra = 1
+    raw_id_fields = ("receipt",)
+
+
+@admin.register(FeeInstallmentPlan)
+class FeeInstallmentPlanAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("plan_name", "student", "invoice", "total_amount", "number_of_installments", "school")
+    list_filter = ("school",)
+    search_fields = ("plan_name", "student__first_name", "student__last_name", "invoice__invoice_number")
+    raw_id_fields = ("student", "invoice", "school", "branch")
+    inlines = (FeeInstallmentInline,)
+
+
+@admin.register(FeeInstallment)
+class FeeInstallmentAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("installment_number", "title", "plan", "amount", "due_date", "paid_date", "status", "school")
+    list_filter = ("status", "due_date", "school")
+    search_fields = ("title", "plan__student__first_name", "plan__student__last_name")
+    raw_id_fields = ("plan", "receipt", "school", "branch")

@@ -1,4 +1,4 @@
-"""Student fees, invoicing, and payment receipt domain models."""
+"""Student fees, invoicing, installment plans, and payment receipt domain models."""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -207,3 +207,67 @@ class PaymentReceipt(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"سند #{self.receipt_number} - {self.student}: {self.amount} ({self.get_payment_method_display()})"
+
+
+class FeeInstallmentPlan(TenantOwnedModel):
+    """خطة تقسيط الرسوم الدراسية المعتمدة للطالب."""
+    student = models.ForeignKey(
+        "students.Student",
+        verbose_name="الطالب",
+        on_delete=models.CASCADE,
+        related_name="installment_plans",
+    )
+    invoice = models.ForeignKey(
+        StudentInvoice,
+        verbose_name="الفاتورة المرتبطة",
+        on_delete=models.CASCADE,
+        related_name="installment_plans",
+    )
+    plan_name = models.CharField("اسم خطة التقسيط (مثال: تقسيط ربع سنوي)", max_length=150)
+    total_amount = models.DecimalField("إجمالي مبلغ الخطة", max_digits=12, decimal_places=2)
+    number_of_installments = models.PositiveSmallIntegerField("عدد الأقساط", default=3)
+    notes = models.TextField("ملاحظات وشروط الاتفاق", blank=True)
+
+    class Meta:
+        verbose_name = "خطة تقسيط رسوم"
+        verbose_name_plural = "خطط تقسيط الرسوم"
+
+    def __str__(self) -> str:
+        return f"{self.plan_name} - {self.student}: {self.total_amount}"
+
+
+class FeeInstallment(TenantOwnedModel):
+    """القسط الفردي ضمن خطة تقسيط رسوم الطالب."""
+    class Status(models.TextChoices):
+        PENDING = "pending", "مستحق (قيد السداد)"
+        PAID = "paid", "مسدد بالكامل"
+        OVERDUE = "overdue", "متأخر عن موعد الاستحقاق"
+
+    plan = models.ForeignKey(
+        FeeInstallmentPlan,
+        verbose_name="خطة التقسيط",
+        on_delete=models.CASCADE,
+        related_name="installments",
+    )
+    installment_number = models.PositiveSmallIntegerField("رقم القسط (1, 2, 3...)")
+    title = models.CharField("بيان القسط (مثل: قسط شهر نوفمبر)", max_length=150)
+    amount = models.DecimalField("مبلغ القسط", max_digits=12, decimal_places=2)
+    due_date = models.DateField("تاريخ الاستحقاق")
+    paid_date = models.DateField("تاريخ السداد الفعلي", null=True, blank=True)
+    status = models.CharField("حالة القسط", max_length=20, choices=Status.choices, default=Status.PENDING)
+    receipt = models.ForeignKey(
+        PaymentReceipt,
+        verbose_name="سند السداد المرتبط",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="installments",
+    )
+
+    class Meta:
+        verbose_name = "قسط مالي مجدول"
+        verbose_name_plural = "الأقساط المالية المجدولة"
+        ordering = ["due_date", "installment_number"]
+
+    def __str__(self) -> str:
+        return f"قسط #{self.installment_number} ({self.title}) - {self.amount} [{self.get_status_display()}]"

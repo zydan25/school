@@ -1,0 +1,213 @@
+"""Payroll, salary contracts, employee advances, and payslips domain models."""
+from __future__ import annotations
+
+from decimal import Decimal
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.utils import timezone
+
+from apps.core.models import TenantOwnedModel
+
+
+class EmployeeContract(TenantOwnedModel):
+    """عقود العمل والهياكل الراتبية للمعلمين وموظفي المدرسة."""
+    class ContractType(models.TextChoices):
+        FULL_TIME = "full_time", "دوام كامل (سنوي)"
+        PART_TIME = "part_time", "دوام جزئي / بالحصة"
+        TEMPORARY = "temporary", "عقد مؤقت / فصلي"
+        PROBATION = "probation", "فترة تجربة"
+
+    teacher = models.ForeignKey(
+        "staff.Teacher",
+        verbose_name="المعلم / الموظف",
+        on_delete=models.CASCADE,
+        related_name="contracts",
+    )
+    contract_number = models.CharField("رقم العقد الوظيفي", max_length=50, db_index=True)
+    contract_type = models.CharField("نوع العقد", max_length=20, choices=ContractType.choices, default=ContractType.FULL_TIME)
+    start_date = models.DateField("تاريخ بدء العقد")
+    end_date = models.DateField("تاريخ نهاية العقد (إن وجد)", null=True, blank=True)
+    
+    # Financial components
+    basic_salary = models.DecimalField("الراتب الأساسي", max_digits=12, decimal_places=2)
+    housing_allowance = models.DecimalField("بدل السكن", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    transport_allowance = models.DecimalField("بدل المواصلات", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    other_allowances = models.DecimalField("بدلات ومزايا أخرى", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    insurance_deduction = models.DecimalField("استقطاع التأمينات الاجتماعية", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    
+    bank_name = models.CharField("اسم البنك المحول إليه", max_length=100, blank=True)
+    iban = models.CharField("رقم الآيبان البنكي (IBAN)", max_length=50, blank=True)
+    is_active = models.BooleanField("عقد نشط وسارٍ", default=True)
+
+    class Meta:
+        verbose_name = "عقد موظف"
+        verbose_name_plural = "عقود الموظفين والرواتب"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "contract_number"],
+                condition=models.Q(is_archived=False),
+                name="payroll_contract_num_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.contract_number} - {self.teacher}: {self.gross_salary}"
+
+    @property
+    def total_allowances(self) -> Decimal:
+        return self.housing_allowance + self.transport_allowance + self.other_allowances
+
+    @property
+    def gross_salary(self) -> Decimal:
+        return self.basic_salary + self.total_allowances
+
+    @property
+    def net_salary(self) -> Decimal:
+        return max(Decimal("0.00"), self.gross_salary - self.insurance_deduction)
+
+    def clean(self):
+        super().clean()
+        if self.teacher_id and self.teacher.school_id != self.school_id:
+            raise ValidationError({"teacher": "المعلم لا يتبع نفس المدرسة."})
+
+
+class EmployeeLoanAdvance(TenantOwnedModel):
+    """سلف وقروض الموظفين وأقساط السداد الشهرية."""
+    class Status(models.TextChoices):
+        ACTIVE = "active", "نشطة (قيد الاستقطاع)"
+        FULLY_REPAID = "fully_repaid", "مسددة بالكامل"
+        WRITTEN_OFF = "written_off", "معفاة / مشطوبة"
+
+    teacher = models.ForeignKey(
+        "staff.Teacher",
+        verbose_name="المعلم المستفيد من السلفة",
+        on_delete=models.CASCADE,
+        related_name="loans",
+    )
+    loan_number = models.CharField("رقم السلفة", max_length=50, db_index=True)
+    amount = models.DecimalField("مبلغ السلفة الإجمالي", max_digits=12, decimal_places=2)
+    monthly_installment = models.DecimalField("القسط الشهري للاستقطاع", max_digits=12, decimal_places=2)
+    repaid_amount = models.DecimalField("المبلغ المسدد حتى الآن", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    start_date = models.DateField("تاريخ بدء الاستقطاع")
+    status = models.CharField("حالة السلفة", max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    notes = models.TextField("سبب السلفة وملاحظاتها", blank=True)
+
+    class Meta:
+        verbose_name = "سلفة موظف"
+        verbose_name_plural = "سلف وقروض الموظفين"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "loan_number"],
+                condition=models.Q(is_archived=False),
+                name="payroll_loan_num_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"سلفة #{self.loan_number} - {self.teacher}: {self.amount} (المتبقي: {self.remaining_amount})"
+
+    @property
+    def remaining_amount(self) -> Decimal:
+        return max(Decimal("0.00"), self.amount - self.repaid_amount)
+
+
+class PayrollRun(TenantOwnedModel):
+    """مسير الرواتب الشهري المجمع للمدرسة."""
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة (قيد التجهيز)"
+        APPROVED = "approved", "معتمد من الإدارة"
+        PAID = "paid", "مصروف ومرحل مالياً"
+
+    name = models.CharField("اسم المسير (مثل: مسير رواتب أكتوبر 2026)", max_length=150)
+    year = models.PositiveSmallIntegerField("السنة")
+    month = models.PositiveSmallIntegerField("الشهر (1-12)")
+    
+    total_basic = models.DecimalField("إجمالي الأساسي", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    total_allowances = models.DecimalField("إجمالي البدلات", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    total_deductions = models.DecimalField("إجمالي الاستقطاعات", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    total_net = models.DecimalField("صافي الرواتب المستحقة للتحويل", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    
+    status = models.CharField("حالة المسير", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المعتمد",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_payrolls",
+    )
+    journal_entry = models.ForeignKey(
+        "accounting.JournalEntry",
+        verbose_name="القيد المحاسبي المولد للمسير",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payroll_runs",
+    )
+
+    class Meta:
+        verbose_name = "مسير رواتب شهري"
+        verbose_name_plural = "مسيرات الرواتب الشهرية"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "year", "month"],
+                condition=models.Q(is_archived=False),
+                name="payroll_school_year_month_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.get_status_display()}) - {self.total_net}"
+
+
+class Payslip(TenantOwnedModel):
+    """قسيمة الراتب التفصيلية للموظف للشهر المحدد."""
+    payroll_run = models.ForeignKey(
+        PayrollRun,
+        verbose_name="مسير الرواتب التابع له",
+        on_delete=models.CASCADE,
+        related_name="payslips",
+    )
+    teacher = models.ForeignKey(
+        "staff.Teacher",
+        verbose_name="المعلم / الموظف",
+        on_delete=models.PROTECT,
+        related_name="payslips",
+    )
+    basic_salary = models.DecimalField("الراتب الأساسي", max_digits=12, decimal_places=2)
+    housing_allowance = models.DecimalField("بدل السكن", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    transport_allowance = models.DecimalField("بدل المواصلات", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    other_allowances = models.DecimalField("بدلات أخرى", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    overtime_amount = models.DecimalField("مكافآت وحصص إضافية", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    
+    # Deductions
+    loan_deduction = models.DecimalField("استقطاع سلفة", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    absence_deduction = models.DecimalField("خصم غياب وتأخر", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    insurance_deduction = models.DecimalField("استقطاع تأمينات", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    
+    net_salary = models.DecimalField("الصافي المستحق", max_digits=12, decimal_places=2)
+    payment_date = models.DateField("تاريخ الصرف الفعلي", null=True, blank=True)
+    is_paid = models.BooleanField("تم التحويل والصرف", default=False)
+
+    class Meta:
+        verbose_name = "قسيمة راتب"
+        verbose_name_plural = "قسائم رواتب الموظفين"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "payroll_run", "teacher"],
+                condition=models.Q(is_archived=False),
+                name="payroll_payslip_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.teacher}: {self.net_salary} ({self.payroll_run.name})"
+
+    @property
+    def total_earnings(self) -> Decimal:
+        return self.basic_salary + self.housing_allowance + self.transport_allowance + self.other_allowances + self.overtime_amount
+
+    @property
+    def total_deductions(self) -> Decimal:
+        return self.loan_deduction + self.absence_deduction + self.insurance_deduction

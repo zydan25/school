@@ -210,3 +210,164 @@ class JournalEntryLine(TenantOwnedModel):
             raise ValidationError({"account": "لا يمكن الترحيل على حساب رئيسي تجميعي؛ يرجى اختيار حساب تفصيلي."})
         if self.debit > 0 and self.credit > 0:
             raise ValidationError("لا يمكن أن يكون نفس السطر مديناً ودائناً في الوقت ذاته.")
+
+
+# -----------------------------------------------------------------------------
+# Expense Categories & Accounting Vouchers (سندات الصرف والقبض والمصروفات)
+# -----------------------------------------------------------------------------
+
+class ExpenseCategory(TenantOwnedModel):
+    """تصنيفات المصروفات التشغيلية للمدرسة (إيجارات، فواتير، صيانة...)."""
+    name = models.CharField("اسم تصنيف المصروف", max_length=150)
+    code = models.CharField("رمز التصنيف", max_length=50)
+    default_account = models.ForeignKey(
+        Account,
+        verbose_name="الحساب المحاسبي المرتبط في الدليل",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="expense_categories",
+    )
+    description = models.TextField("وصف التصنيف", blank=True)
+
+    class Meta:
+        verbose_name = "تصنيف مصروفات"
+        verbose_name_plural = "تصنيفات المصروفات"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "code"],
+                condition=models.Q(is_archived=False),
+                name="accounting_exp_cat_code_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.code})"
+
+
+class PaymentVoucher(TenantOwnedModel):
+    """سند صرف محاسبي للمصروفات، الإيجارات، وفواتير الموردين."""
+    class PaymentMethod(models.TextChoices):
+        CASH = "cash", "نقداً (صندوق المدرسة)"
+        BANK_TRANSFER = "bank_transfer", "تحويل بنكي"
+        CHEQUE = "cheque", "شيك مصرفي"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة"
+        POSTED = "posted", "مرحل في القيود"
+        CANCELLED = "cancelled", "ملغى"
+
+    voucher_number = models.CharField("رقم سند الصرف", max_length=50, db_index=True)
+    date = models.DateField("تاريخ الصرف", default=timezone.localdate)
+    paid_to = models.CharField("صُرف إلى (المستفيد / الجهة)", max_length=200)
+    amount = models.DecimalField("المبلغ المصروف", max_digits=14, decimal_places=2)
+    payment_method = models.CharField("طريقة الدفع", max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.CASH)
+    credit_account = models.ForeignKey(
+        Account,
+        verbose_name="حساب الدفع (الصندوق أو البنك الدائن)",
+        on_delete=models.PROTECT,
+        related_name="credit_payment_vouchers",
+    )
+    debit_account = models.ForeignKey(
+        Account,
+        verbose_name="حساب النفقة (حساب المصروف المدين)",
+        on_delete=models.PROTECT,
+        related_name="debit_payment_vouchers",
+    )
+    cost_center = models.ForeignKey(
+        CostCenter,
+        verbose_name="مركز التكلفة",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="payment_vouchers",
+    )
+    description = models.TextField("البيان وسبب الصرف")
+    reference_number = models.CharField("رقم الشيك أو المرجع البنكي", max_length=100, blank=True)
+    status = models.CharField("حالة السند", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    journal_entry = models.ForeignKey(
+        JournalEntry,
+        verbose_name="القيد اليومي المولد",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="source_payment_vouchers",
+    )
+
+    class Meta:
+        verbose_name = "سند صرف مالي"
+        verbose_name_plural = "سندات الصرف المالي"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "voucher_number"],
+                condition=models.Q(is_archived=False),
+                name="accounting_pay_voucher_num_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"سند صرف #{self.voucher_number} - {self.paid_to}: {self.amount}"
+
+
+class ReceiptVoucher(TenantOwnedModel):
+    """سند قبض محاسبي عام للإيرادات المتنوعة بخلاف رسوم الطلاب (إيجار مرافق، تبرعات، أرباح...)."""
+    class PaymentMethod(models.TextChoices):
+        CASH = "cash", "نقداً (صندوق المدرسة)"
+        BANK_TRANSFER = "bank_transfer", "تحويل بنكي"
+        CHEQUE = "cheque", "شيك مصرفي"
+
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة"
+        POSTED = "posted", "مرحل في القيود"
+        CANCELLED = "cancelled", "ملغى"
+
+    voucher_number = models.CharField("رقم سند القبض العام", max_length=50, db_index=True)
+    date = models.DateField("تاريخ القبض", default=timezone.localdate)
+    received_from = models.CharField("قُبض من (الجهة / الشخص)", max_length=200)
+    amount = models.DecimalField("المبلغ المقبوض", max_digits=14, decimal_places=2)
+    payment_method = models.CharField("طريقة الاستلام", max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.CASH)
+    debit_account = models.ForeignKey(
+        Account,
+        verbose_name="حساب الاستلام (الصندوق أو البنك المدين)",
+        on_delete=models.PROTECT,
+        related_name="debit_receipt_vouchers",
+    )
+    credit_account = models.ForeignKey(
+        Account,
+        verbose_name="حساب الإيراد (الحساب الدائن)",
+        on_delete=models.PROTECT,
+        related_name="credit_receipt_vouchers",
+    )
+    cost_center = models.ForeignKey(
+        CostCenter,
+        verbose_name="مركز التكلفة",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="receipt_vouchers",
+    )
+    description = models.TextField("البيان والغرض من القبض")
+    reference_number = models.CharField("رقم الشيك أو المرجع البنكي", max_length=100, blank=True)
+    status = models.CharField("حالة السند", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    journal_entry = models.ForeignKey(
+        JournalEntry,
+        verbose_name="القيد اليومي المولد",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="source_receipt_vouchers",
+    )
+
+    class Meta:
+        verbose_name = "سند قبض عام"
+        verbose_name_plural = "سندات القبض العامة"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "voucher_number"],
+                condition=models.Q(is_archived=False),
+                name="accounting_rec_voucher_num_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"سند قبض عام #{self.voucher_number} - {self.received_from}: {self.amount}"
