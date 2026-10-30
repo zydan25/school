@@ -183,19 +183,33 @@ class WhatsAppWebhookAPIView(APIView):
         if not sender_phone or not message_text:
             return Response({"status": "ignored", "reason": "No sender or body found in payload."}, status=status.HTTP_200_OK)
 
-        # Fallback to identify school by phone if school_code was not in URL
+        clean_phone = sender_phone.replace("+", "").replace(" ", "").strip()
+
+        # Prevent duplicate re-delivery within short window (Idempotency / Deduplication)
+        from django.core.cache import cache
+        msg_sig = f"wa_msg_{clean_phone[-9:]}_{hash(message_text.strip())}"
+        if cache.get(msg_sig):
+            return Response({"status": "duplicate_ignored", "reason": "Message already processed."}, status=status.HTTP_200_OK)
+        cache.set(msg_sig, True, timeout=60)
+
+        # Fallback to identify school securely by verified student/guardian phone if school_code was not in URL
         if not school:
             student = Student.objects.filter(
-                user__phone__icontains=sender_phone[-9:],
+                student_q_phone(clean_phone),
                 is_archived=False,
             ).select_related("school").first()
             if student:
                 school = student.school
             else:
-                school = School.objects.filter(status=School.Status.ACTIVE).first()
+                guardian = Guardian.objects.filter(
+                    guardian_q_phone(clean_phone),
+                    is_archived=False,
+                ).select_related("school").first()
+                if guardian:
+                    school = guardian.school
 
         if not school:
-            return Response({"status": "error", "message": "School context not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"status": "error", "message": "لم يتم العثور على مدرسة مصرح بها لهذا الويب هوك."}, status=status.HTTP_404_NOT_FOUND)
 
         # Check if gateway has AI auto-reply enabled
         gateway = SchoolMessagingGateway.objects.filter(
@@ -208,6 +222,10 @@ class WhatsAppWebhookAPIView(APIView):
         if not gateway or gateway.auto_ai_reply:
             reply_text = _generate_school_ai_reply(school, sender_phone, message_text)
 
+        # Optional dispatch to actual WhatsApp Gateway API if configured
+        if gateway and gateway.api_endpoint_url and gateway.auth_token and reply_text:
+            _dispatch_to_gateway(gateway, sender_phone, reply_text)
+
         return Response({
             "status": "success",
             "school": school.code,
@@ -216,3 +234,31 @@ class WhatsAppWebhookAPIView(APIView):
             "auto_reply": reply_text,
             "timestamp": timezone.now().isoformat(),
         })
+
+
+def _dispatch_to_gateway(gateway: SchoolMessagingGateway, recipient: str, text: str):
+    """إرسال فعلي للرد إلى خادم مزود خدمة الواتساب عبر HTTP REST API."""
+    import urllib.request
+    import json
+    try:
+        url = gateway.api_endpoint_url
+        payload = {
+            "token": gateway.auth_token,
+            "to": recipient,
+            "body": text,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "School-ERP-WhatsApp-Gateway/1.0",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=5) as response:
+            pass
+    except Exception:
+        # Gateway failure is captured without breaking incoming webhook flow
+        pass

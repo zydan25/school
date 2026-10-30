@@ -97,10 +97,9 @@ class FinanceAndAttendanceTests(TestCase):
             amount=Decimal("50000.00"),
             payment_method=PaymentReceipt.PaymentMethod.CASH,
         )
-        invoice.paid_amount += receipt.amount
-        invoice.status = StudentInvoice.Status.PARTIAL
-        invoice.save()
-
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.paid_amount, Decimal("50000.00"))
+        self.assertEqual(invoice.status, StudentInvoice.Status.PARTIAL)
         self.assertEqual(invoice.remaining_amount, Decimal("90000.00"))
 
     def test_double_entry_accounting_lines(self):

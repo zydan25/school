@@ -87,6 +87,8 @@ class TeacherAssignment(TenantOwnedModel):
 
     def clean(self):
         super().clean()
+        if self.school_id and self.academic_year_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "السنة الدراسية لا تتبع نفس المدرسة."})
         if self.teacher_id and self.teacher.school_id != self.school_id:
             raise ValidationError({"teacher": "المعلم المحدد لا يتبع نفس المدرسة."})
         if self.subject_id and self.subject.school_id != self.school_id:

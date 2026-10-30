@@ -88,6 +88,12 @@ class User(AbstractBaseUser, PermissionsMixin, UUIDTimestampedModel):
     def __str__(self):
         return self.full_name or f"{self.first_name} {self.last_name}".strip() or self.phone
 
+    def get_full_name(self) -> str:
+        return self.full_name or f"{self.first_name} {self.last_name}".strip() or self.phone
+
+    def get_short_name(self) -> str:
+        return self.first_name or self.phone
+
     def clean(self):
         super().clean()
         self.phone = normalize_phone(self.phone)

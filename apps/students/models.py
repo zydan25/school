@@ -82,6 +82,8 @@ class Student(TenantOwnedModel):
 
     def clean(self):
         super().clean()
+        if self.school_id and self.academic_year_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "السنة الدراسية لا تتبع نفس المدرسة."})
         if self.grade_level_id and self.grade_level.school_id != self.school_id:
             raise ValidationError({"grade_level": "الصف الدراسي لا يتبع نفس المدرسة."})
         if self.section_id and self.section.school_id != self.school_id:

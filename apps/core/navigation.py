@@ -168,6 +168,8 @@ def central_navigation():
             "items": [
                 {"title": _("خطوط النقل المدرسي والحافلات"), "icon": "directions_bus", "link": reverse_lazy("admin:school_services_busroute_changelist"), "permission": _central_check("school_services.view_busroute")},
                 {"title": _("اشتراكات حافلات الطلاب"), "icon": "commute", "link": reverse_lazy("admin:school_services_studentbussubscription_changelist"), "permission": _central_check("school_services.view_studentbussubscription")},
+                {"title": _("المحاسبة المالية للباصات والسائقين"), "icon": "account_balance_wallet", "link": reverse_lazy("admin:school_services_busfinancialsettlement_changelist"), "permission": _central_check("school_services.view_busfinancialsettlement")},
+                {"title": _("توزيع وتسليم الكتب المدرسية"), "icon": "auto_stories", "link": reverse_lazy("admin:school_services_studentbookdistribution_changelist"), "permission": _central_check("school_services.view_studentbookdistribution")},
                 {"title": _("المكتبة المدرسية والكتب"), "icon": "local_library", "link": reverse_lazy("admin:school_services_librarybook_changelist"), "permission": _central_check("school_services.view_librarybook")},
                 {"title": _("سجل إعارات واسترجاع الكتب"), "icon": "menu_book", "link": reverse_lazy("admin:school_services_bookloan_changelist"), "permission": _central_check("school_services.view_bookloan")},
                 {"title": _("الملفات الصحية للطلاب"), "icon": "health_and_safety", "link": reverse_lazy("admin:school_services_studenthealthprofile_changelist"), "permission": _central_check("school_services.view_studenthealthprofile")},
@@ -310,6 +312,8 @@ def school_navigation():
             "items": [
                 {"title": _("خطوط النقل المدرسي"), "icon": "directions_bus", "link": reverse_lazy("school_admin:school_services_busroute_changelist"), "permission": _school_check("school_services.view_busroute")},
                 {"title": _("اشتراكات حافلات الطلاب"), "icon": "commute", "link": reverse_lazy("school_admin:school_services_studentbussubscription_changelist"), "permission": _school_check("school_services.view_studentbussubscription")},
+                {"title": _("المحاسبة المالية للباصات والسائقين"), "icon": "account_balance_wallet", "link": reverse_lazy("school_admin:school_services_busfinancialsettlement_changelist"), "permission": _school_check("school_services.view_busfinancialsettlement")},
+                {"title": _("توزيع وتسليم الكتب المدرسية"), "icon": "auto_stories", "link": reverse_lazy("school_admin:school_services_studentbookdistribution_changelist"), "permission": _school_check("school_services.view_studentbookdistribution")},
                 {"title": _("المكتبة والكتب"), "icon": "local_library", "link": reverse_lazy("school_admin:school_services_librarybook_changelist"), "permission": _school_check("school_services.view_librarybook")},
                 {"title": _("إعارات الكتب"), "icon": "menu_book", "link": reverse_lazy("school_admin:school_services_bookloan_changelist"), "permission": _school_check("school_services.view_bookloan")},
                 {"title": _("الملفات الصحية للطلاب"), "icon": "health_and_safety", "link": reverse_lazy("school_admin:school_services_studenthealthprofile_changelist"), "permission": _school_check("school_services.view_studenthealthprofile")},

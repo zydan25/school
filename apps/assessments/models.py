@@ -96,8 +96,14 @@ class GradeBook(TenantOwnedModel):
 
     def clean(self):
         super().clean()
+        if self.score is not None and self.max_score is not None and self.score > self.max_score:
+            raise ValidationError({"score": "الدرجة المحصلة لا يمكن أن تتجاوز الدرجة العظمى."})
         if self.student_id and self.student.school_id != self.school_id:
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
+        if self.subject_id and self.subject.school_id != self.school_id:
+            raise ValidationError({"subject": "المادة لا تتبع نفس المدرسة."})
+        if self.graded_by_id and self.graded_by.school_id != self.school_id:
+            raise ValidationError({"graded_by": "المعلم لا يتبع نفس المدرسة."})
 
 
 # -----------------------------------------------------------------------------
@@ -175,3 +181,21 @@ class ExamSeating(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"رقم جلوس ({self.seating_number}) - {self.student} [لجنة: {self.committee.name}]"
+
+    def clean(self):
+        super().clean()
+        if self.school_id and self.academic_year_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "العام الدراسي لا يتبع نفس المدرسة."})
+        if self.committee_id and self.committee.school_id != self.school_id:
+            raise ValidationError({"committee": "اللجنة لا تتبع نفس المدرسة."})
+        if self.student_id and self.student.school_id != self.school_id:
+            raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
+        if self.committee_id and self.academic_year_id:
+            count = ExamSeating.objects.filter(
+                school=self.school,
+                committee=self.committee,
+                academic_year=self.academic_year,
+                is_archived=False,
+            ).exclude(pk=self.pk).count()
+            if count >= self.committee.capacity:
+                raise ValidationError({"committee": f"تجاوزت اللجنة سعتها الاستيعابية القصوى ({self.committee.capacity} طالب)."})

@@ -469,3 +469,116 @@ class ExtendedModulesTests(TestCase):
         )
         self.assertEqual(post_res.status_code, 200)
         self.assertEqual(post_res.data["status"], "success")
+
+    def test_bus_financial_settlement_and_book_distribution(self):
+        """التحقق من التسوية المالية للباصات ومستحقات السائق وتوزيع الكتب المدرسية."""
+        from apps.school_services.models import BusRoute, StudentBusSubscription, BusFinancialSettlement, StudentBookDistribution
+
+        bus = BusRoute.objects.create(
+            school=self.school,
+            route_code="BUS-FIN-01",
+            route_name="خط النزهة والروضة",
+            destination_area="حي النزهة",
+            bus_number="9876-YEM",
+            driver_name="صالح السائق",
+            driver_phone="771122334",
+            compensation_type=BusRoute.CompensationType.PER_STUDENT,
+            contract_amount=Decimal("50.00"),
+            contractor_type=BusRoute.ContractorType.EXTERNAL,
+            monthly_fee=Decimal("150.00"),
+        )
+
+        StudentBusSubscription.objects.create(
+            school=self.school,
+            student=self.student,
+            bus_route=bus,
+            academic_year=self.academic_year,
+            status=StudentBusSubscription.Status.ACTIVE,
+        )
+
+        settlement = BusFinancialSettlement.objects.create(
+            school=self.school,
+            bus_route=bus,
+            academic_year=self.academic_year,
+            month=10,
+            year=2026,
+            advances_withdrawn=Decimal("15.00"),
+        )
+        settlement.calculate_due()
+        settlement.save()
+
+        # 1 active student * 50 = 50 gross due, minus 15 advance = 35 net payable
+        self.assertEqual(settlement.student_count, 1)
+        self.assertEqual(settlement.gross_due, Decimal("50.00"))
+        self.assertEqual(settlement.net_payable, Decimal("35.00"))
+
+        # Book distribution test
+        dist = StudentBookDistribution.objects.create(
+            school=self.school,
+            student=self.student,
+            academic_year=self.academic_year,
+            book_title="كتاب الفيزياء المتقدم",
+            fee_amount=Decimal("120.00"),
+            delivery_status=StudentBookDistribution.DeliveryStatus.DELIVERED,
+        )
+        self.assertEqual(dist.delivery_status, "delivered")
+
+    def test_journal_reversal_and_auto_allocation(self):
+        """التحقق من عكس القيود المحاسبية وتخصيص الدفعات التلقائي على الفواتير."""
+        from apps.accounting.services.auto_posting import reverse_journal_entry
+        from apps.accounting.models import JournalEntry
+        from apps.student_fees.models import StudentInvoice, PaymentReceipt
+
+        # 1. Test Journal Reversal
+        entry = JournalEntry.objects.filter(school=self.school, status=JournalEntry.Status.POSTED).first()
+        if entry:
+            rev_entry = reverse_journal_entry(entry, reason="خطأ في تسجيل المستند الأصلي")
+            entry.refresh_from_db()
+            self.assertEqual(entry.status, JournalEntry.Status.CANCELLED)
+            self.assertEqual(rev_entry.status, JournalEntry.Status.POSTED)
+            self.assertIn("REV-", rev_entry.entry_number)
+
+        # 2. Test Payment Receipt Auto Allocation to Student Invoice
+        inv = StudentInvoice.objects.create(
+            school=self.school,
+            student=self.student,
+            academic_year=self.academic_year,
+            invoice_number="INV-AUTO-ALLOC-99",
+            total_amount=Decimal("1000.00"),
+            discount_amount=Decimal("100.00"),
+            due_date=date(2026, 12, 1),
+        )
+        # Net payable is 900. Pay 400
+        receipt = PaymentReceipt.objects.create(
+            school=self.school,
+            student=self.student,
+            invoice=inv,
+            receipt_number="RCP-AUTO-99",
+            amount=Decimal("400.00"),
+        )
+        inv.refresh_from_db()
+        self.assertEqual(inv.paid_amount, Decimal("400.00"))
+        self.assertEqual(inv.status, StudentInvoice.Status.PARTIAL)
+        self.assertEqual(inv.remaining_amount, Decimal("500.00"))
+
+    def test_security_copilot_and_reports_access_control(self):
+        """التحقق الأمني من منع تسريب بيانات الطلاب ومنع غير المصرح لهم من رؤية التقارير المالية."""
+        from rest_framework.test import APIClient
+        from apps.accounts.models import User
+
+        unauth_user = User.objects.create_user(
+            phone="770000002",
+            first_name="زائر",
+            last_name="غير مصرح",
+            password="pass_test_123",
+        )
+        client = APIClient()
+        client.force_authenticate(user=unauth_user)
+
+        # 1. Copilot today lessons without linked student must return 403 Forbidden (no arbitrary leakage)
+        copilot_res = client.get("/api/v1/copilot/student/today-lessons/")
+        self.assertEqual(copilot_res.status_code, 403)
+
+        # 2. Trial balance without finance role must return 403 Forbidden
+        fin_res = client.get("/api/v1/reports/trial-balance/")
+        self.assertEqual(fin_res.status_code, 403)

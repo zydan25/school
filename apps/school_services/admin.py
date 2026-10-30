@@ -6,6 +6,8 @@ from apps.core.admin import AuditedAdminMixin
 from apps.school_services.models import (
     BusRoute,
     StudentBusSubscription,
+    BusFinancialSettlement,
+    StudentBookDistribution,
     LibraryBook,
     BookLoan,
     StudentHealthProfile,
@@ -15,9 +17,25 @@ from apps.school_services.models import (
 
 @admin.register(BusRoute)
 class BusRouteAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("route_code", "route_name", "bus_number", "driver_name", "driver_phone", "bus_capacity", "monthly_fee", "is_active", "school")
-    list_filter = ("school", "is_active")
-    search_fields = ("route_code", "route_name", "bus_number", "driver_name", "driver_phone")
+    list_display = ("route_code", "route_name", "bus_number", "driver_name", "driver_phone", "compensation_type", "contract_amount", "contractor_type", "monthly_fee", "is_active", "school")
+    list_filter = ("school", "is_active", "compensation_type", "contractor_type")
+    search_fields = ("route_code", "route_name", "bus_number", "driver_name", "driver_phone", "destination_area")
+
+
+@admin.register(BusFinancialSettlement)
+class BusFinancialSettlementAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("bus_route", "month", "year", "student_count", "rate_applied", "gross_due", "advances_withdrawn", "net_payable", "status", "school")
+    list_filter = ("school", "status", "year", "month")
+    search_fields = ("bus_route__bus_number", "bus_route__driver_name", "notes")
+    raw_id_fields = ("bus_route", "academic_year", "approved_by", "payment_voucher", "school", "branch")
+
+
+@admin.register(StudentBookDistribution)
+class StudentBookDistributionAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("student", "book_title", "fee_amount", "delivery_status", "delivered_at", "delivered_by", "school")
+    list_filter = ("school", "delivery_status", "academic_year")
+    search_fields = ("student__first_name", "student__last_name", "book_title")
+    raw_id_fields = ("student", "academic_year", "delivered_by", "invoice", "school", "branch")
 
 
 @admin.register(StudentBusSubscription)

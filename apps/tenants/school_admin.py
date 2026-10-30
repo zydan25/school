@@ -682,6 +682,8 @@ class SchoolPurchaseOrderAdmin(SchoolScopedAdmin):
 from apps.school_services.models import (
     BusRoute,
     StudentBusSubscription,
+    BusFinancialSettlement,
+    StudentBookDistribution,
     LibraryBook,
     BookLoan,
     StudentHealthProfile,
@@ -691,9 +693,27 @@ from apps.school_services.models import (
 
 @admin.register(BusRoute, site=school_admin_site)
 class SchoolBusRouteAdmin(SchoolScopedAdmin):
-    list_display = ("route_code", "route_name", "bus_number", "driver_name", "driver_phone", "bus_capacity", "monthly_fee", "is_active")
-    list_filter = ("is_active",)
-    search_fields = ("route_code", "route_name", "bus_number", "driver_name")
+    list_display = ("route_code", "route_name", "bus_number", "driver_name", "driver_phone", "compensation_type", "contract_amount", "contractor_type", "monthly_fee", "is_active")
+    list_filter = ("is_active", "compensation_type", "contractor_type")
+    search_fields = ("route_code", "route_name", "bus_number", "driver_name", "destination_area")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(BusFinancialSettlement, site=school_admin_site)
+class SchoolBusFinancialSettlementAdmin(SchoolScopedAdmin):
+    list_display = ("bus_route", "month", "year", "student_count", "rate_applied", "gross_due", "advances_withdrawn", "net_payable", "status")
+    list_filter = ("status", "year", "month")
+    search_fields = ("bus_route__bus_number", "bus_route__driver_name", "notes")
+    raw_id_fields = ("bus_route", "academic_year", "approved_by", "payment_voucher")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentBookDistribution, site=school_admin_site)
+class SchoolStudentBookDistributionAdmin(SchoolScopedAdmin):
+    list_display = ("student", "book_title", "fee_amount", "delivery_status", "delivered_at", "delivered_by")
+    list_filter = ("delivery_status", "academic_year")
+    search_fields = ("student__first_name", "student__last_name", "book_title")
+    raw_id_fields = ("student", "academic_year", "delivered_by", "invoice")
     readonly_fields = ("id", "created_at", "updated_at")
 
 

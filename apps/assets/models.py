@@ -110,3 +110,17 @@ class AssetDepreciationEntry(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.asset.name} - {self.fiscal_year.name}: {self.depreciation_amount}"
+
+    def clean(self):
+        super().clean()
+        if self.asset_id and self.asset.school_id != self.school_id:
+            raise ValidationError({"asset": "الأصل لا يتبع نفس المدرسة."})
+        if self.fiscal_year_id and self.fiscal_year.school_id != self.school_id:
+            raise ValidationError({"fiscal_year": "السنة المالية لا تتبع نفس المدرسة."})
+        if self.asset_id:
+            depreciable_base = max(Decimal("0.00"), self.asset.purchase_cost - self.asset.salvage_value)
+            max_allowed = max(Decimal("0.00"), depreciable_base - self.asset.accumulated_depreciation)
+            if self._state.adding and self.depreciation_amount > max_allowed:
+                raise ValidationError({
+                    "depreciation_amount": f"مبلغ الإهلاك ({self.depreciation_amount}) يتجاوز القيمة القابلة للإهلاك المتبقية ({max_allowed})."
+                })

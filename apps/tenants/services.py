@@ -32,31 +32,132 @@ def require_school(request) -> School:
 
 
 def _create_default_roles(school: School, membership: SchoolMembership):
-    """Create least-privilege starter roles; schools may subsequently customize them."""
-    module_models = {
-        "tenants": None,
-        "academics": None,
-        "accounts": {"schoolmembership", "schoolrole", "membershiprole"},
-        "notifications": {"notification", "notificationtemplate", "notificationpreference"},
-    }
-    all_permissions = Permission.objects.none()
-    for app_label, model_names in module_models.items():
-        query = Permission.objects.filter(content_type__app_label=app_label)
-        if model_names is not None:
-            query = query.filter(content_type__model__in=model_names)
-        query = query.filter(Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_"))
-        all_permissions = all_permissions | query
+    """تهيئة مصفوفة الأدوار والصلاحيات التشغيلية الافتراضية للمدرسة."""
+    all_school_apps = [
+        "academics", "students", "staff", "timetable", "attendance",
+        "assignments", "assessments", "student_fees", "accounting",
+        "payroll", "assets", "inventory", "school_services", "reports",
+        "notifications", "accounts", "tenants",
+    ]
+    
+    # 1. دور مدير المدرسة (صلاحيات شاملة لكافة وحدات المدرسة)
+    director_permissions = Permission.objects.filter(
+        content_type__app_label__in=all_school_apps
+    ).filter(
+        Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+    )
 
     director, _ = SchoolRole.objects.get_or_create(
         school=school, code="school-director",
-        defaults={"name": "مدير المدرسة", "description": "إدارة شؤون المدرسة والهيكل الأكاديمي والمستخدمين ضمن هذه المدرسة فقط.", "is_system": True},
+        defaults={
+            "name": "مدير المدرسة",
+            "description": "إدارة شؤون المدرسة والعمليات التشغيلية والأكاديمية والمالية بالكامل.",
+            "is_system": True,
+        },
     )
-    director.permissions.set(all_permissions.distinct())
+    director.permissions.set(director_permissions.distinct())
     MembershipRole.objects.get_or_create(
         membership=membership, role=director,
         defaults={"valid_from": timezone.localdate()},
     )
 
+    # 2. المحاسب المالي (Accounting & Finance)
+    acc_permissions = Permission.objects.filter(
+        content_type__app_label__in=["accounting", "student_fees", "payroll", "assets"]
+    ).filter(
+        Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+    )
+    accountant, _ = SchoolRole.objects.get_or_create(
+        school=school, code="accountant",
+        defaults={
+            "name": "المحاسب المالي",
+            "description": "إدارة الدفاتر المحاسبية وشجرة الحسابات والقيود وسندات الصرف والقبض والرواتب.",
+            "is_system": True,
+        },
+    )
+    accountant.permissions.set(acc_permissions.distinct())
+
+    # 3. أمين الصندوق / كاشير الرسوم
+    cashier_permissions = Permission.objects.filter(
+        content_type__app_label__in=["student_fees", "accounting"]
+    ).filter(
+        Q(codename__in=["view_studentinvoice", "add_paymentreceipt", "view_paymentreceipt", "view_receiptvoucher"])
+    )
+    cashier, _ = SchoolRole.objects.get_or_create(
+        school=school, code="cashier",
+        defaults={
+            "name": "أمين الصندوق / الكاشير",
+            "description": "تحصيل رسوم الطلاب وإصدار سندات القبض والاطلاع على فواتير الرسوم.",
+            "is_system": True,
+        },
+    )
+    cashier.permissions.set(cashier_permissions.distinct())
+
+    # 4. شؤون الطلاب والقبول
+    student_affairs_permissions = Permission.objects.filter(
+        content_type__app_label__in=["students", "attendance", "academics"]
+    ).filter(
+        Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+    )
+    student_affairs, _ = SchoolRole.objects.get_or_create(
+        school=school, code="student-affairs",
+        defaults={
+            "name": "شؤون الطلاب والقبول",
+            "description": "تسجيل وقبول الطلاب، توزيع الشعب، ومتابعة سجلات الحضور والانضباط.",
+            "is_system": True,
+        },
+    )
+    student_affairs.permissions.set(student_affairs_permissions.distinct())
+
+    # 5. المعلم / الكادر الأكاديمي
+    teacher_permissions = Permission.objects.filter(
+        content_type__app_label__in=["attendance", "assignments", "assessments", "timetable"]
+    ).filter(
+        Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+    )
+    teacher_role, _ = SchoolRole.objects.get_or_create(
+        school=school, code="teacher",
+        defaults={
+            "name": "معلم / كادر تدريسي",
+            "description": "رصد الحضور اليومي، إعداد الواجبات والاختبارات، ورصد الدرجات والتقييمات.",
+            "is_system": True,
+        },
+    )
+    teacher_role.permissions.set(teacher_permissions.distinct())
+
+    # 6. مسؤول النقل المدرسي والحافلات
+    transport_permissions = Permission.objects.filter(
+        content_type__app_label="school_services"
+    ).filter(
+        Q(codename__icontains="bus")
+    )
+    transport_mgr, _ = SchoolRole.objects.get_or_create(
+        school=school, code="transport-supervisor",
+        defaults={
+            "name": "مسؤول النقل والحافلات",
+            "description": "إدارة خطوط الحافلات، اشتراكات الطلاب، ومتابعة السائقين والتسويات المالية للباصات.",
+            "is_system": True,
+        },
+    )
+    transport_mgr.permissions.set(transport_permissions.distinct())
+
+    # 7. أمين المستودع والمخزون
+    store_permissions = Permission.objects.filter(
+        content_type__app_label__in=["inventory", "school_services"]
+    ).filter(
+        Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+    )
+    store_keeper, _ = SchoolRole.objects.get_or_create(
+        school=school, code="store-keeper",
+        defaults={
+            "name": "أمين المستودع والتوزيع",
+            "description": "إدارة الأصناف المخزنية، حركات الوارد والمنصرف، وتوزيع الكتب المدرسية والزي.",
+            "is_system": True,
+        },
+    )
+    store_keeper.permissions.set(store_permissions.distinct())
+
+    # 8. منسق أكاديمي
     academic_permissions = Permission.objects.filter(content_type__app_label="academics").filter(
         Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
     )
@@ -66,10 +167,13 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     academic.permissions.set(academic_permissions.distinct())
 
-    auditor_permissions = Permission.objects.filter(content_type__app_label__in=["academics", "tenants"]).filter(codename__startswith="view_")
+    # 9. مراجع مدرسي (اطلاع فقط)
+    auditor_permissions = Permission.objects.filter(
+        content_type__app_label__in=all_school_apps
+    ).filter(codename__startswith="view_")
     auditor, _ = SchoolRole.objects.get_or_create(
         school=school, code="school-auditor",
-        defaults={"name": "مراجع مدرسي", "description": "اطلاع فقط على إعدادات المدرسة والهيكل الأكاديمي.", "is_system": True},
+        defaults={"name": "مراجع مدرسي", "description": "اطلاع وتدقيق لكافة السجلات والتقارير دون تعديل.", "is_system": True},
     )
     auditor.permissions.set(auditor_permissions.distinct())
 

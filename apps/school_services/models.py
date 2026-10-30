@@ -15,18 +15,63 @@ from apps.core.models import TenantOwnedModel
 # -----------------------------------------------------------------------------
 
 class BusRoute(TenantOwnedModel):
-    """خطوط سير الحافلات المدرسية وسائقيها ومشرفيها."""
+    """خطوط سير الحافلات المدرسية وسائقيها ومشرفيها والتعاقد المالي."""
     route_name = models.CharField("اسم خط السير", max_length=150)
     route_code = models.CharField("رمز الخط", max_length=50, db_index=True)
+    destination_area = models.CharField("الوجهة / المنطقة المغطاة", max_length=200, blank=True)
     bus_number = models.CharField("رقم الحافلة / اللوحة", max_length=50)
     bus_capacity = models.PositiveSmallIntegerField("سعة الحافلة (مقاعد)", default=30)
     driver_name = models.CharField("اسم السائق", max_length=120)
     driver_phone = models.CharField("هاتف السائق", max_length=30)
-    supervisor_name = models.CharField("اسم مشرف/ة الحافلة", max_length=120, blank=True)
+    driver_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="حساب تسجيل الدخول للسائق (إن وجد)",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="driven_buses",
+    )
+    supervisor_teacher = models.ForeignKey(
+        "staff.Teacher",
+        verbose_name="المعلم المشرف على الحافلة",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="supervised_buses",
+    )
+    supervisor_name = models.CharField("اسم مشرف/ة الحافلة (نصي)", max_length=120, blank=True)
     supervisor_phone = models.CharField("هاتف المشرف/ة", max_length=30, blank=True)
     morning_pickup_time = models.TimeField("وقت بداية الانطلاق الصباحي", null=True, blank=True)
     afternoon_dropoff_time = models.TimeField("وقت بداية رحلة العودة", null=True, blank=True)
-    monthly_fee = models.DecimalField("رسوم الاشتراك الشهري", max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    monthly_fee = models.DecimalField("رسوم اشتراك الطالب الشهري", max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    
+    # Financial Contract with Bus / Driver
+    class CompensationType(models.TextChoices):
+        MONTHLY_FLAT = "monthly_flat", "مبلغ شهري مقطوع ثابت"
+        PER_STUDENT = "per_student", "عمولة / أجر شهري بحسب عدد الطلاب الركاب"
+
+    class ContractorType(models.TextChoices):
+        EMPLOYEE = "employee", "موظف في كادر المدرسة (راتب وسحوبات)"
+        EXTERNAL = "external", "متعهد / سائق خارجي (ذمم موردين)"
+
+    compensation_type = models.CharField(
+        "طريقة احتساب مستحقات الباص",
+        max_length=20,
+        choices=CompensationType.choices,
+        default=CompensationType.MONTHLY_FLAT,
+    )
+    contract_amount = models.DecimalField(
+        "قيمة التعاقد (المبلغ المقطوع أو نصيب الراكب)",
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+    )
+    contractor_type = models.CharField(
+        "صفة تعاقد السائق/الحافلة",
+        max_length=20,
+        choices=ContractorType.choices,
+        default=ContractorType.EMPLOYEE,
+    )
     is_active = models.BooleanField("خط نشط وسارٍ", default=True)
 
     class Meta:
@@ -99,6 +144,8 @@ class StudentBusSubscription(TenantOwnedModel):
 
     def clean(self):
         super().clean()
+        if self.school_id and self.academic_year_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "العام الدراسي لا ينتمي إلى هذه المدرسة."})
         if self.student_id and self.student.school_id != self.school_id:
             raise ValidationError({"student": "الطالب لا ينتمي إلى هذه المدرسة."})
         if self.bus_route_id and self.bus_route.school_id != self.school_id:
@@ -178,22 +225,173 @@ class BookLoan(TenantOwnedModel):
         super().clean()
         if not self.student and not self.teacher:
             raise ValidationError("يجب تحديد المستعير (طالب أو معلم).")
+        if self._state.adding and self.status == self.Status.BORROWED:
+            if self.book.available_copies <= 0:
+                raise ValidationError({"book": "لا توجد نسخ متاحة حالياً من هذا الكتاب للإعارة."})
 
     def save(self, *args, **kwargs):
         is_new = self._state.adding
-        super().save(*args, **kwargs)
-        if is_new and self.status == self.Status.BORROWED:
-            if self.book.available_copies > 0:
-                self.book.available_copies -= 1
-                self.book.save(update_fields=["available_copies"])
-        elif self.status == self.Status.RETURNED and self.return_date:
-            if self.book.available_copies < self.book.total_copies:
-                self.book.available_copies += 1
-                self.book.save(update_fields=["available_copies"])
+        previous_status = None
+        if not is_new and self.pk:
+            previous_status = type(self).objects.filter(pk=self.pk).values_list("status", flat=True).first()
+
+        from django.db import transaction
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if is_new and self.status == self.Status.BORROWED:
+                if self.book.available_copies > 0:
+                    self.book.available_copies -= 1
+                    self.book.save(update_fields=["available_copies"])
+            elif previous_status != self.Status.RETURNED and self.status == self.Status.RETURNED:
+                if self.book.available_copies < self.book.total_copies:
+                    self.book.available_copies += 1
+                    self.book.save(update_fields=["available_copies"])
 
 
 # -----------------------------------------------------------------------------
-# 3. School Clinic & Health (العيادة المدرسية وصحة الطلاب)
+# 3. Transportation Financial Settlements (المحاسبة المالية للحافلات والسائقين)
+# -----------------------------------------------------------------------------
+
+class BusFinancialSettlement(TenantOwnedModel):
+    """
+    سجل المحاسبة المالية للحافلة والسائق.
+    يحاسب السائق/المتعهد إما كموظف أو متعهد، وبحسب عدد الطلاب أو مبلغ مقطوع،
+    مع رصد السحوبات والمستحقات والربط بالقيود وسندات الصرف.
+    """
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة تسوية"
+        APPROVED = "approved", "معتمدة"
+        PAID = "paid", "مصروفة بالكامل"
+
+    bus_route = models.ForeignKey(
+        BusRoute,
+        verbose_name="خط السير / الحافلة",
+        on_delete=models.PROTECT,
+        related_name="settlements",
+    )
+    academic_year = models.ForeignKey(
+        "academics.AcademicYear",
+        verbose_name="السنة الدراسية",
+        on_delete=models.PROTECT,
+        related_name="bus_settlements",
+    )
+    month = models.PositiveSmallIntegerField("الشهر المالي (1-12)")
+    year = models.PositiveSmallIntegerField("السنة المالية (مثال: 2026)")
+    settlement_date = models.DateField("تاريخ التسوية", default=timezone.localdate)
+    student_count = models.PositiveSmallIntegerField("عدد الطلاب الركاب الفعلي", default=0)
+    rate_applied = models.DecimalField("معدل الاحتساب المطبق", max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    gross_due = models.DecimalField("إجمالي المستحق للسائق/المتعهد", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    advances_withdrawn = models.DecimalField("إجمالي السحوبات والدفعات المقدمة", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    net_payable = models.DecimalField("صافي المبلغ المتبقي المستحق", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    status = models.CharField("حالة التسوية", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المعتمد",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_bus_settlements",
+    )
+    payment_voucher = models.ForeignKey(
+        "accounting.PaymentVoucher",
+        verbose_name="سند الصرف المالي المرتبط",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bus_settlements",
+    )
+    notes = models.TextField("ملاحظات وشرح التسوية", blank=True)
+
+    class Meta:
+        verbose_name = "تسوية مالية لحافلة"
+        verbose_name_plural = "المحاسبة المالية للحافلات والسائقين"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "bus_route", "academic_year", "year", "month"],
+                condition=models.Q(is_archived=False),
+                name="school_services_bus_settlement_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"تسوية {self.bus_route.bus_number} - شهر {self.month}/{self.year}: صافي {self.net_payable}"
+
+    def calculate_due(self):
+        """احتساب المستحق آلياً بحسب طريقة التعاقد وعدد الطلاب المسجلين."""
+        active_subs = self.bus_route.student_subscriptions.filter(
+            status=StudentBusSubscription.Status.ACTIVE,
+            academic_year=self.academic_year,
+            is_archived=False,
+        ).count()
+        self.student_count = active_subs
+        self.rate_applied = self.bus_route.contract_amount
+
+        if self.bus_route.compensation_type == BusRoute.CompensationType.PER_STUDENT:
+            self.gross_due = Decimal(self.student_count) * self.rate_applied
+        else:
+            self.gross_due = self.rate_applied
+
+        self.net_payable = max(Decimal("0.00"), self.gross_due - self.advances_withdrawn)
+
+
+# -----------------------------------------------------------------------------
+# 4. Student Textbooks & Fee Delivery (توزيع الكتب والرسوم الخاصة)
+# -----------------------------------------------------------------------------
+
+class StudentBookDistribution(TenantOwnedModel):
+    """
+    تسليم وتوزيع الكتب المدرسية والرسوم الخاصة بها على الطلاب.
+    يتيح متابعة استلام كل طالب للكتب ورسومها وتحديث الفاتورة المالية.
+    """
+    class DeliveryStatus(models.TextChoices):
+        PENDING = "pending", "بانتظار الصرف والتسليم"
+        DELIVERED = "delivered", "تم التسليم للطالب"
+        RETURNED = "returned", "مسترجع للمستودع"
+
+    student = models.ForeignKey(
+        "students.Student",
+        verbose_name="الطالب",
+        on_delete=models.CASCADE,
+        related_name="book_distributions",
+    )
+    academic_year = models.ForeignKey(
+        "academics.AcademicYear",
+        verbose_name="العام الدراسي",
+        on_delete=models.PROTECT,
+        related_name="book_distributions",
+    )
+    book_title = models.CharField("اسم الكتاب / الحزمة المدرسية", max_length=200)
+    fee_amount = models.DecimalField("قيمة رسم الكتاب المقيد على الطالب", max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    delivery_status = models.CharField("حالة التسليم", max_length=20, choices=DeliveryStatus.choices, default=DeliveryStatus.PENDING)
+    delivered_at = models.DateTimeField("تاريخ ووقت التسليم الفعلي", null=True, blank=True)
+    delivered_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="الموظف المسلّم",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="delivered_books",
+    )
+    invoice = models.ForeignKey(
+        "student_fees.StudentInvoice",
+        verbose_name="الفاتورة المقيد عليها الرسم",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="book_distributions",
+    )
+    notes = models.TextField("ملاحظات التسليم", blank=True)
+
+    class Meta:
+        verbose_name = "تسليم كتب مدرسية"
+        verbose_name_plural = "توزيع الكتب المدرسية ورسومها"
+
+    def __str__(self) -> str:
+        return f"{self.student.first_name}: {self.book_title} [{self.get_delivery_status_display()}]"
+
+
+# -----------------------------------------------------------------------------
+# 5. School Clinic & Health (العيادة المدرسية وصحة الطلاب)
 # -----------------------------------------------------------------------------
 
 class StudentHealthProfile(TenantOwnedModel):

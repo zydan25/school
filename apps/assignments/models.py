@@ -122,3 +122,7 @@ class HomeworkSubmission(TenantOwnedModel):
             raise ValidationError({"homework": "الواجب لا يتبع نفس المدرسة."})
         if self.student_id and self.student.school_id != self.school_id:
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
+        if self.homework_id and self.student_id and self.student.section_id != self.homework.section_id:
+            raise ValidationError({"student": "الطالب لا ينتمي إلى شعبة هذا الواجب المحدد."})
+        if self.score is not None and self.homework_id and self.score > self.homework.max_score:
+            raise ValidationError({"score": f"الدرجة المحرزة ({self.score}) لا يمكن أن تتجاوز الدرجة العظمى للواجب ({self.homework.max_score})."})

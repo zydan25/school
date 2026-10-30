@@ -144,16 +144,31 @@ class StockMovement(TenantOwnedModel):
     def __str__(self) -> str:
         return f"{self.get_movement_type_display()} - {self.item.name}: {self.quantity}"
 
+    def clean(self):
+        super().clean()
+        if self.quantity <= Decimal("0.00"):
+            raise ValidationError({"quantity": "يجب أن تكون كمية الحركة أكبر من الصفر."})
+        if self.movement_type in [self.MovementType.ISSUE, self.MovementType.ADJUSTMENT_SUB]:
+            if self._state.adding and self.item.current_stock < self.quantity:
+                raise ValidationError({
+                    "quantity": f"الكمية المطلوبة للصرف ({self.quantity}) تتجاوز الرصيد المتاح بالمستودع ({self.item.current_stock})."
+                })
+
     def save(self, *args, **kwargs):
         is_new = self._state.adding
-        super().save(*args, **kwargs)
-        if is_new:
-            # Update item current stock
-            if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
-                self.item.current_stock += self.quantity
-            else:
-                self.item.current_stock = max(Decimal("0.00"), self.item.current_stock - self.quantity)
-            self.item.save(update_fields=["current_stock"])
+        from django.db import transaction
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if is_new:
+                # Lock item row to prevent race conditions
+                locked_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
+                if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
+                    locked_item.current_stock += self.quantity
+                else:
+                    if locked_item.current_stock < self.quantity:
+                        raise ValidationError(f"الكمية المطلوبة تتجاوز الرصيد المتاح.")
+                    locked_item.current_stock -= self.quantity
+                locked_item.save(update_fields=["current_stock"])
 
 
 class PurchaseOrder(TenantOwnedModel):

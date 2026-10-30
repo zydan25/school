@@ -208,6 +208,46 @@ class PaymentReceipt(TenantOwnedModel):
     def __str__(self) -> str:
         return f"سند #{self.receipt_number} - {self.student}: {self.amount} ({self.get_payment_method_display()})"
 
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+        if is_new:
+            # Auto-update linked invoice or allocate to student's open invoices
+            from django.db import transaction
+            with transaction.atomic():
+                if self.invoice:
+                    inv = StudentInvoice.objects.select_for_update().get(pk=self.invoice_id)
+                    inv.paid_amount += self.amount
+                    net = max(Decimal("0.00"), inv.total_amount - inv.discount_amount)
+                    if inv.paid_amount >= net:
+                        inv.status = StudentInvoice.Status.PAID
+                    elif inv.paid_amount > Decimal("0.00"):
+                        inv.status = StudentInvoice.Status.PARTIAL
+                    inv.save(update_fields=["paid_amount", "status", "updated_at"])
+                else:
+                    # Allocate chronologically across open unpaid invoices
+                    remaining = self.amount
+                    open_invoices = StudentInvoice.objects.filter(
+                        school=self.school,
+                        student=self.student,
+                        status__in=[StudentInvoice.Status.UNPAID, StudentInvoice.Status.PARTIAL],
+                        is_archived=False,
+                    ).order_by("due_date", "created_at").select_for_update()
+
+                    for inv in open_invoices:
+                        if remaining <= Decimal("0.00"):
+                            break
+                        net = max(Decimal("0.00"), inv.total_amount - inv.discount_amount)
+                        needed = max(Decimal("0.00"), net - inv.paid_amount)
+                        pay_part = min(remaining, needed)
+                        inv.paid_amount += pay_part
+                        remaining -= pay_part
+                        if inv.paid_amount >= net:
+                            inv.status = StudentInvoice.Status.PAID
+                        else:
+                            inv.status = StudentInvoice.Status.PARTIAL
+                        inv.save(update_fields=["paid_amount", "status", "updated_at"])
+
 
 class FeeInstallmentPlan(TenantOwnedModel):
     """خطة تقسيط الرسوم الدراسية المعتمدة للطالب."""

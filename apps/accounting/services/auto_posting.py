@@ -58,6 +58,16 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
     period = _get_active_fiscal_period(school, receipt.paid_at.date())
 
     with transaction.atomic():
+        # Prevent duplicate posting
+        existing = JournalEntry.objects.filter(
+            school=school,
+            source_module="student_fees",
+            source_reference=receipt.receipt_number,
+            is_archived=False,
+        ).first()
+        if existing:
+            return existing
+
         # Identify Debit Account (Cash / Bank)
         if receipt.payment_method == PaymentReceipt.PaymentMethod.BANK_TRANSFER:
             debit_acc = Account.objects.filter(school=school, code="1102", is_leaf=True).first()
@@ -266,3 +276,56 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
         entry.asset.save(update_fields=["accumulated_depreciation"])
 
         return journal_entry
+
+
+def validate_and_balance_journal_entry(entry: JournalEntry) -> bool:
+    """التحقق الصارم من توازن القيد اليومي (تطابق إجمالي المدين والدائن)."""
+    lines = entry.lines.all()
+    if not lines.exists():
+        raise ValueError("لا يمكن ترحيل قيد محاسبي بدون أسطر.")
+    total_debit = sum(line.debit for line in lines)
+    total_credit = sum(line.credit for line in lines)
+    if total_debit != total_credit:
+        raise ValueError(f"القيد المحاسبي غير متوازن! إجمالي المدين ({total_debit}) لا يساوي إجمالي الدائن ({total_credit}).")
+    return True
+
+
+def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by=None) -> JournalEntry:
+    """
+    إنشاء قيد عكسي محاسبي متكامل لقيد سابق لإلغاء أثره المالي دون حذف السجل التاريخي.
+    الأطراف المدينة تصبح دائنة، والأطراف الدائنة تصبح مدينة.
+    """
+    school = original_entry.school
+    period = _get_active_fiscal_period(school, timezone.localdate())
+
+    with transaction.atomic():
+        reversal_num = f"REV-{original_entry.entry_number}"
+        rev_entry = JournalEntry.objects.create(
+            school=school,
+            fiscal_period=period,
+            entry_number=reversal_num,
+            date=timezone.localdate(),
+            status=JournalEntry.Status.POSTED,
+            source_module="reversal",
+            source_reference=original_entry.entry_number,
+            description=f"قيد عكسي للقيد #{original_entry.entry_number} - السبب: {reason}",
+            posted_at=timezone.now(),
+            posted_by=reversed_by,
+        )
+
+        for line in original_entry.lines.all():
+            JournalEntryLine.objects.create(
+                school=school,
+                journal_entry=rev_entry,
+                account=line.account,
+                cost_center=line.cost_center,
+                description=f"عكس: {line.description}",
+                debit=line.credit,  # swap
+                credit=line.debit,  # swap
+            )
+
+        validate_and_balance_journal_entry(rev_entry)
+        original_entry.status = JournalEntry.Status.CANCELLED
+        original_entry.save(update_fields=["status", "updated_at"])
+
+        return rev_entry

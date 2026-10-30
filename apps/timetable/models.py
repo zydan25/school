@@ -90,6 +90,10 @@ class ClassSchedule(TenantOwnedModel):
 
     def clean(self):
         super().clean()
+        if self.school_id and self.academic_year_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "السنة الدراسية لا تتبع نفس المدرسة."})
+        if self.start_time and self.end_time and self.start_time >= self.end_time:
+            raise ValidationError({"end_time": "وقت نهاية الحصة يجب أن يكون بعد وقت البداية."})
         if self.section_id and self.section.school_id != self.school_id:
             raise ValidationError({"section": "الشعبة المحددة لا تتبع نفس المدرسة."})
         if self.subject_id and self.subject.school_id != self.school_id:
@@ -98,6 +102,18 @@ class ClassSchedule(TenantOwnedModel):
             raise ValidationError({"teacher": "المعلم المحدد لا يتبع نفس المدرسة."})
         if self.classroom_id and self.classroom.school_id != self.school_id:
             raise ValidationError({"classroom": "القاعة المحددة لا تتبع نفس المدرسة."})
+        # Check classroom conflict
+        if self.classroom_id:
+            conflict = ClassSchedule.objects.filter(
+                school=self.school,
+                academic_year=self.academic_year,
+                classroom=self.classroom,
+                day_of_week=self.day_of_week,
+                period_number=self.period_number,
+                is_archived=False,
+            ).exclude(pk=self.pk).exists()
+            if conflict:
+                raise ValidationError({"classroom": "القاعة المحددة محجوزة لحصة أخرى في نفس اليوم والفترة."})
 
 
 class DailyLessonLog(TenantOwnedModel):

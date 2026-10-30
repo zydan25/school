@@ -11,6 +11,7 @@ import os
 from typing import Any, Dict, List, Optional
 
 from django.conf import settings
+from django.db import models
 from django.utils import timezone
 
 from apps.assignments.models import Homework, HomeworkSubmission
