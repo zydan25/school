@@ -119,7 +119,7 @@ class Report2AuditFixesTests(TestCase):
         )
         cls.section = Section.objects.create(
             school=cls.school,
-            grade_level=cls.grade,
+            grade=cls.grade,
             academic_year=cls.academic_year,
             name="شعبة أ",
             code="G1-A",
@@ -361,7 +361,7 @@ class Report2AuditFixesTests(TestCase):
         )
         other_section = Section.objects.create(
             school=self.school,
-            grade_level=self.grade,
+            grade=self.grade,
             academic_year=other_year,
             name="شعبة ب سنة أخرى",
             code="G1-B-OTHER",

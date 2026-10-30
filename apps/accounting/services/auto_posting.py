@@ -17,9 +17,11 @@ from apps.assets.models import AssetDepreciationEntry
 
 
 def _get_active_fiscal_period(school, target_date=None) -> FiscalPeriod:
-    """البحث عن الفترة المالية المفتوحة للمدرسة الموافقة للتاريخ، مع منع الترحيل خارج فترة وسنة مالية صالحة."""
+    """البحث عن الفترة المالية المفتوحة للمدرسة الموافقة للتاريخ، مع تهيئة السنة والفترة تلقائياً عند عدم وجودهما."""
     if target_date is None:
         target_date = timezone.localdate()
+    elif isinstance(target_date, datetime.datetime):
+        target_date = target_date.date()
 
     period = FiscalPeriod.objects.filter(
         school=school,
@@ -38,26 +40,40 @@ def _get_active_fiscal_period(school, target_date=None) -> FiscalPeriod:
             end_date__gte=target_date,
             is_archived=False,
         ).first()
-        if f_year:
-            period_num = f_year.periods.count() + 1
-            # Standard month boundary inside the fiscal year
-            first_day = target_date.replace(day=1)
-            # Next month first day minus 1 day
-            if first_day.month == 12:
-                last_day = first_day.replace(year=first_day.year + 1, month=1, day=1) - timezone.timedelta(days=1)
-            else:
-                last_day = first_day.replace(month=first_day.month + 1, day=1) - timezone.timedelta(days=1)
-            period = FiscalPeriod.objects.create(
+
+        if not f_year:
+            # Fallback to any open fiscal year for the school
+            f_year = FiscalYear.objects.filter(
                 school=school,
-                fiscal_year=f_year,
-                period_number=period_num,
-                name=f"فترة {target_date.strftime('%m/%Y')}",
-                start_date=max(f_year.start_date, first_day),
-                end_date=min(f_year.end_date, last_day),
+                is_closed=False,
+                is_archived=False,
+            ).first()
+
+        if not f_year:
+            # Auto-initialize standard calendar fiscal year for this school
+            f_year = FiscalYear.objects.create(
+                school=school,
+                name=f"السنة المالية {target_date.year}",
+                start_date=date(target_date.year, 1, 1),
+                end_date=date(target_date.year, 12, 31),
+                is_closed=False,
             )
+
+        period_num = f_year.periods.count() + 1
+        first_day = target_date.replace(day=1)
+        if first_day.month == 12:
+            last_day = first_day.replace(year=first_day.year + 1, month=1, day=1) - timezone.timedelta(days=1)
         else:
-            from django.core.exceptions import ValidationError
-            raise ValidationError(f"لا توجد سنة مالية مفتوحة تغطي تاريخ المعاملة ({target_date}). يرجى فتح وتهيئة السنة المالية أولاً.")
+            last_day = first_day.replace(month=first_day.month + 1, day=1) - timezone.timedelta(days=1)
+
+        period = FiscalPeriod.objects.create(
+            school=school,
+            fiscal_year=f_year,
+            period_number=period_num,
+            name=f"فترة {target_date.strftime('%m/%Y')}",
+            start_date=max(f_year.start_date, first_day),
+            end_date=min(f_year.end_date, last_day),
+        )
 
     return period
 
@@ -72,7 +88,10 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
         raise ValueError("لا يمكن ترحيل سند قبض بمبلغ صفر أو سالب.")
 
     school = receipt.school
-    period = _get_active_fiscal_period(school, receipt.paid_at.date())
+    tx_date = receipt.paid_at
+    if isinstance(tx_date, datetime.datetime):
+        tx_date = tx_date.date()
+    period = _get_active_fiscal_period(school, tx_date)
 
     with transaction.atomic():
         existing = JournalEntry.objects.filter(
