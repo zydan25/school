@@ -252,7 +252,8 @@ class SchoolMembershipRoleAdmin(SchoolScopedAdmin):
     school_lookup = "membership__school"
     list_display = ("membership", "role", "valid_from", "valid_until", "assigned_by")
     list_filter = ("role",)
-    autocomplete_fields = ("membership", "role", "assigned_by")
+    autocomplete_fields = ("membership", "role")
+    raw_id_fields = ("assigned_by",)
     readonly_fields = ("id", "created_at", "updated_at")
 
 
@@ -314,7 +315,7 @@ class SchoolTeacherAdmin(SchoolScopedAdmin):
     list_display = ("user", "specialization", "employee_number", "max_weekly_periods", "is_active_teaching")
     list_filter = ("is_active_teaching",)
     search_fields = ("user__phone", "user__first_name", "user__last_name", "specialization")
-    autocomplete_fields = ("user",)
+    raw_id_fields = ("user",)
     readonly_fields = ("id", "created_at", "updated_at")
 
 
@@ -332,7 +333,8 @@ class SchoolStudentAdmin(SchoolScopedAdmin):
     list_display = ("get_full_name", "student_id_number", "grade_level", "section", "status")
     list_filter = ("status", "grade_level", "academic_year")
     search_fields = ("student_id_number", "first_name", "last_name", "national_id")
-    autocomplete_fields = ("user", "grade_level", "section", "academic_year")
+    autocomplete_fields = ("grade_level", "section", "academic_year")
+    raw_id_fields = ("user",)
     readonly_fields = ("id", "created_at", "updated_at")
 
 
@@ -341,7 +343,7 @@ class SchoolGuardianAdmin(SchoolScopedAdmin):
     list_display = ("user", "relationship_type", "national_id", "emergency_phone")
     list_filter = ("relationship_type",)
     search_fields = ("user__phone", "user__first_name", "user__last_name", "national_id")
-    autocomplete_fields = ("user",)
+    raw_id_fields = ("user",)
     readonly_fields = ("id", "created_at", "updated_at")
 
 
@@ -420,5 +422,5 @@ class SchoolAIChatSessionAdmin(SchoolScopedAdmin):
     list_display = ("title", "role_scope", "user", "model_name", "is_active", "created_at")
     list_filter = ("role_scope", "is_active")
     search_fields = ("title", "user__phone", "user__first_name")
-    autocomplete_fields = ("user",)
+    raw_id_fields = ("user",)
     readonly_fields = ("id", "created_at", "updated_at")
