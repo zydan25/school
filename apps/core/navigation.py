@@ -180,6 +180,7 @@ def central_navigation():
                 {"title": _("سجل التدقيق والأمان"), "icon": "shield", "link": reverse_lazy("admin:auditlog_auditevent_changelist"), "permission": _central_check("auditlog.view_auditevent")},
                 {"title": _("إشعارات النظام"), "icon": "notifications", "link": reverse_lazy("admin:notifications_notification_changelist"), "permission": _central_check("notifications.view_notification")},
                 {"title": _("قوالب الإشعار"), "icon": "drafts", "link": reverse_lazy("admin:notifications_notificationtemplate_changelist"), "permission": _central_check("notifications.view_notificationtemplate")},
+                {"title": _("بوابات الرسائل والواتساب"), "icon": "chat", "link": reverse_lazy("admin:notifications_schoolmessaginggateway_changelist"), "permission": _central_check("notifications.view_notification")},
             ],
         },
     ]
@@ -321,6 +322,7 @@ def school_navigation():
                 {"title": _("إشعارات المدرسة"), "icon": "notifications", "link": reverse_lazy("school_admin:notifications_notification_changelist"), "permission": _school_check("notifications.view_notification")},
                 {"title": _("قوالب الإشعار"), "icon": "drafts", "link": reverse_lazy("school_admin:notifications_notificationtemplate_changelist"), "permission": _school_check("notifications.view_notificationtemplate")},
                 {"title": _("تفضيلات الإشعار"), "icon": "notifications_active", "link": reverse_lazy("school_admin:notifications_notificationpreference_changelist"), "permission": _school_check("notifications.view_notificationpreference")},
+                {"title": _("بوابات الواتساب والرسائل"), "icon": "chat", "link": reverse_lazy("school_admin:notifications_schoolmessaginggateway_changelist"), "permission": _school_check("notifications.view_notification")},
             ],
         },
     ]

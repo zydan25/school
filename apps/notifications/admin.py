@@ -2,7 +2,13 @@ from apps.core.admin import AuditedAdminMixin
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
-from apps.notifications.models import Notification, NotificationPreference, NotificationTemplate, OutboxEvent
+from apps.notifications.models import (
+    Notification,
+    NotificationPreference,
+    NotificationTemplate,
+    OutboxEvent,
+    SchoolMessagingGateway,
+)
 
 
 @admin.register(Notification)
@@ -37,6 +43,15 @@ class NotificationPreferenceAdmin(AuditedAdminMixin, ModelAdmin):
     readonly_fields = ("id", "created_at", "updated_at")
 
 
+@admin.register(SchoolMessagingGateway)
+class SchoolMessagingGatewayAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("name", "school", "channel", "provider", "sender_id", "auto_ai_reply", "is_active")
+    list_filter = ("channel", "provider", "auto_ai_reply", "is_active", "school")
+    search_fields = ("name", "sender_id", "api_endpoint_url", "school__name")
+    autocomplete_fields = ("school",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
 @admin.register(OutboxEvent)
 class OutboxEventAdmin(ModelAdmin):
     list_display = ("event_name", "school", "aggregate_type", "aggregate_id", "status", "attempts", "available_at", "processed_at")
@@ -46,10 +61,4 @@ class OutboxEventAdmin(ModelAdmin):
     readonly_fields = ("id", "event_name", "school", "aggregate_type", "aggregate_id", "payload", "status", "idempotency_key", "available_at", "attempts", "max_attempts", "last_error", "processed_at", "created_at", "updated_at")
 
     def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return request.method in ("GET", "HEAD", "OPTIONS")
-
-    def has_delete_permission(self, request, obj=None):
         return False

@@ -785,3 +785,17 @@ class SchoolExamSeatingAdmin(SchoolScopedAdmin):
     search_fields = ("seating_number", "secret_code", "student__first_name", "student__last_name")
     raw_id_fields = ("student", "committee", "academic_year")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# Messaging Gateways (WhatsApp / SMS) in School Admin
+# -----------------------------------------------------------------------------
+from apps.notifications.models import SchoolMessagingGateway
+
+
+@admin.register(SchoolMessagingGateway, site=school_admin_site)
+class SchoolMessagingGatewayAdmin(SchoolScopedAdmin):
+    list_display = ("name", "channel", "provider", "sender_id", "auto_ai_reply", "is_active")
+    list_filter = ("channel", "provider", "auto_ai_reply", "is_active")
+    search_fields = ("name", "sender_id", "api_endpoint_url")
+    readonly_fields = ("id", "created_at", "updated_at")

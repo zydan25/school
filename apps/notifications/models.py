@@ -1,4 +1,4 @@
-"""In-app messages and transactional outbox foundation."""
+"""In-app messages, transactional outbox, and WhatsApp/SMS gateway integrations."""
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
@@ -133,3 +133,71 @@ class OutboxEvent(UUIDTimestampedModel):
 
     def __str__(self):
         return f"{self.event_name} - {self.status}"
+
+
+# -----------------------------------------------------------------------------
+# WhatsApp & SMS Gateway Integrations per School (ربط بوابات الرسائل والواتساب)
+# -----------------------------------------------------------------------------
+
+class SchoolMessagingGateway(UUIDTimestampedModel):
+    """إعدادات وتكامل بوابة الرسائل والواتساب لكل مدرسة أو مركزياً للمنصة."""
+    class Channel(models.TextChoices):
+        WHATSAPP = "whatsapp", "واتساب للأعمال (WhatsApp)"
+        SMS = "sms", "رسائل نصية قصيرة (SMS)"
+
+    class Provider(models.TextChoices):
+        CUSTOM_WEBHOOK = "custom_webhook", "رابط ويب هوك مخصص (Custom API)"
+        ULTRAMSG = "ultramsg", "UltraMsg WhatsApp API"
+        TWILIO = "twilio", "Twilio"
+        INFOBIP = "infobip", "Infobip"
+        LOCAL_GATEWAY = "local_gateway", "بوابة محلية (Local Gateway)"
+
+    school = models.ForeignKey(
+        "tenants.School",
+        verbose_name="المدرسة (فارغ = بوابة المنصة العامة)",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="messaging_gateways",
+    )
+    name = models.CharField("اسم البوابة / التوصيف", max_length=150)
+    channel = models.CharField("القناة", max_length=12, choices=Channel.choices, default=Channel.WHATSAPP)
+    provider = models.CharField("المزود التقني", max_length=20, choices=Provider.choices, default=Provider.CUSTOM_WEBHOOK)
+    
+    # Endpoint & Authentication
+    api_endpoint_url = models.URLField("رابط واجهة الإرسال (API Endpoint URL)", max_length=500)
+    auth_token = models.CharField("مفتاح المصادقة والتوكن (API Key / Token)", max_length=255, blank=True)
+    sender_id = models.CharField("معرف المرسل أو رقم الهاتف (Instance ID / Sender Phone)", max_length=100, blank=True)
+    webhook_verify_token = models.CharField("المفتاح السري للتحقق من الرسائل الواردة (Webhook Secret)", max_length=100, blank=True)
+    
+    # AI Auto-Reply Behavior
+    auto_ai_reply = models.BooleanField(
+        "تفعيل الرد الآلي الذكي (AI Auto-Responder)",
+        default=True,
+        help_text="عند استقبال رسالة من عميل أو ولي أمر أو طالب، يجيب الذكاء الاصطناعي للمدرسة آلياً استناداً لبيانات المدرسة.",
+    )
+    
+    # Templates & Headers
+    custom_headers = models.JSONField("ترويسات HTTP إضافية (Custom Headers)", default=dict, blank=True)
+    custom_payload_template = models.JSONField(
+        "شكل حمولة البيانات المتوقع (JSON Payload Template)",
+        default=dict,
+        blank=True,
+        help_text="مثال: {'to': '{phone}', 'body': '{message}'}",
+    )
+    is_active = models.BooleanField("بوابة نشطة ومفعلة", default=True)
+
+    class Meta:
+        verbose_name = "بوابة ربط رسائل / واتساب"
+        verbose_name_plural = "بوابات ربط الرسائل والواتساب"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "channel", "name"],
+                condition=Q(school__isnull=False),
+                name="notifications_gateway_school_uniq",
+            )
+        ]
+
+    def __str__(self):
+        owner = self.school.name if self.school else "المنصة المركزية"
+        return f"{self.name} ({self.get_channel_display()}) - {owner}"

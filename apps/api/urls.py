@@ -10,4 +10,5 @@ urlpatterns = [
     path("<str:version>/school-context/", SwitchSchoolContextView.as_view(), name="switch-school-context"),
     path("<str:version>/copilot/", include("apps.copilot.api.urls")),
     path("<str:version>/reports/", include("apps.reports.urls")),
+    path("<str:version>/notifications/", include("apps.notifications.api.urls")),
 ]

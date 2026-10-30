@@ -381,3 +381,77 @@ class ExtendedModulesTests(TestCase):
         # 5. Teacher Workload Report
         workload = get_teacher_workload_report(self.school)
         self.assertGreater(workload["teachers_count"], 0)
+
+    def test_auto_posting_double_entry_integration(self):
+        """التحقق من الترحيل الآلي المزدوج الشامل (Onyx Pro Integration)."""
+        from apps.accounting.services.auto_posting import post_student_receipt_to_journal, post_payment_voucher_to_journal
+        from apps.student_fees.models import PaymentReceipt
+        from apps.accounting.models import Account, PaymentVoucher
+
+        seed_default_chart_of_accounts(self.school)
+
+        # 1. Post student fee receipt
+        receipt = PaymentReceipt.objects.create(
+            school=self.school,
+            student=self.student,
+            receipt_number="REC-AUTO-101",
+            amount=Decimal("750.00"),
+            payment_method=PaymentReceipt.PaymentMethod.CASH,
+        )
+        entry = post_student_receipt_to_journal(receipt)
+        self.assertEqual(entry.lines.count(), 2)
+        debit_line = entry.lines.filter(debit__gt=0).first()
+        credit_line = entry.lines.filter(credit__gt=0).first()
+        self.assertEqual(debit_line.debit, Decimal("750.00"))
+        self.assertEqual(credit_line.credit, Decimal("750.00"))
+
+        # 2. Post payment voucher
+        cash_acc = Account.objects.get(school=self.school, code="1101")
+        exp_acc = Account.objects.get(school=self.school, code="5204")
+        voucher = PaymentVoucher.objects.create(
+            school=self.school,
+            voucher_number="PV-AUTO-202",
+            paid_to="مورد القرطاسية",
+            amount=Decimal("350.00"),
+            credit_account=cash_acc,
+            debit_account=exp_acc,
+            description="شراء أدوات نظافة",
+        )
+        v_entry = post_payment_voucher_to_journal(voucher)
+        self.assertEqual(v_entry.lines.count(), 2)
+        voucher.refresh_from_db()
+        self.assertEqual(voucher.status, PaymentVoucher.Status.POSTED)
+
+    def test_whatsapp_gateway_and_ai_auto_reply(self):
+        """التحقق من بوابة الواتساب والرد الآلي الذكي لكل مدرسة."""
+        from apps.notifications.models import SchoolMessagingGateway
+        from apps.notifications.api.views import _generate_school_ai_reply
+
+        gateway = SchoolMessagingGateway.objects.create(
+            school=self.school,
+            name="بوابة واتساب الأندلس",
+            channel=SchoolMessagingGateway.Channel.WHATSAPP,
+            provider=SchoolMessagingGateway.Provider.ULTRAMSG,
+            api_endpoint_url="https://api.ultramsg.com/instance123/messages/chat",
+            auth_token="test_token_abc",
+            sender_id="+967777333000",
+            auto_ai_reply=True,
+        )
+        self.assertTrue(gateway.auto_ai_reply)
+
+        # Student query over WhatsApp
+        reply = _generate_school_ai_reply(
+            school=self.school,
+            sender_phone=self.student.student_id_number,
+            message_text="ما هو جدول الحصص اليوم؟",
+        )
+        self.assertIn("جدول", reply)
+
+        # General visitor inquiry over WhatsApp
+        general_reply = _generate_school_ai_reply(
+            school=self.school,
+            sender_phone="967770999888",
+            message_text="هل التسجيل متاح لديكم في الصف العاشر؟",
+        )
+        self.assertIn(self.school.name, general_reply)
+        self.assertIn("القبول والتسجيل", general_reply)
