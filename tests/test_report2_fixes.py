@@ -14,6 +14,7 @@ from datetime import date, time
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework import status
 from rest_framework.authtoken.models import Token
@@ -310,7 +311,7 @@ class Report2AuditFixesTests(TestCase):
         )
         payslip = run.payslips.filter(staff_member=staff).first()
         self.assertIsNotNone(payslip)
-        self.assertEqual(payslip.loan_deductions, Decimal("15000.00"))
+        self.assertEqual(payslip.loan_deduction, Decimal("15000.00"))
         # Gross = 130000; Deductions = 5000 (insurance) + 15000 (loan) = 20000; Net = 110000
         self.assertEqual(payslip.net_salary, Decimal("110000.00"))
 
