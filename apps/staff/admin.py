@@ -7,9 +7,9 @@ from apps.staff.models import StaffMember, Teacher, TeacherAssignment
 
 @admin.register(StaffMember)
 class StaffMemberAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("user", "staff_role", "job_title", "floor_wing_assigned", "school", "employee_number", "is_active", "hire_date")
-    list_filter = ("staff_role", "is_active", "school")
-    search_fields = ("user__phone", "user__first_name", "user__last_name", "job_title", "employee_number", "school__name", "floor_wing_assigned")
+    list_display = ("user", "role", "job_title", "assigned_floor_wing", "school", "employee_number", "is_active", "hire_date")
+    list_filter = ("role", "is_active", "school")
+    search_fields = ("user__phone", "user__first_name", "user__last_name", "job_title", "employee_number", "school__name", "assigned_floor_wing")
     autocomplete_fields = ("school", "branch", "user")
     readonly_fields = ("id", "created_at", "updated_at")
 

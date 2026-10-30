@@ -324,9 +324,9 @@ from apps.copilot.models import CurriculumDocument, AIChatSession
 
 @admin.register(StaffMember, site=school_admin_site)
 class SchoolStaffMemberAdmin(SchoolScopedAdmin):
-    list_display = ("user", "staff_role", "job_title", "floor_wing_assigned", "employee_number", "is_active", "hire_date")
-    list_filter = ("staff_role", "is_active")
-    search_fields = ("user__phone", "user__first_name", "user__last_name", "job_title", "employee_number", "floor_wing_assigned")
+    list_display = ("user", "role", "job_title", "assigned_floor_wing", "employee_number", "is_active", "hire_date")
+    list_filter = ("role", "is_active")
+    search_fields = ("user__phone", "user__first_name", "user__last_name", "job_title", "employee_number", "assigned_floor_wing")
     raw_id_fields = ("user",)
     readonly_fields = ("id", "created_at", "updated_at")
 
@@ -379,28 +379,28 @@ class SchoolStudentGuardianRelationAdmin(SchoolScopedAdmin):
 
 @admin.register(StudentIncidentReport, site=school_admin_site)
 class SchoolStudentIncidentReportAdmin(SchoolScopedAdmin):
-    list_display = ("title", "student", "reported_by", "severity", "incident_date", "status", "notified_guardian")
-    list_filter = ("severity", "status", "notified_guardian")
-    search_fields = ("title", "student__first_name", "student__last_name", "reported_by__phone", "description")
-    raw_id_fields = ("student", "reported_by")
-    readonly_fields = ("id", "created_at", "updated_at", "guardian_notified_at")
+    list_display = ("title", "student", "reporter", "severity", "incident_type", "date", "parent_notified", "is_resolved")
+    list_filter = ("severity", "incident_type", "parent_notified", "is_resolved")
+    search_fields = ("title", "student__first_name", "student__last_name", "reporter__phone", "details")
+    raw_id_fields = ("student", "reporter")
+    readonly_fields = ("id", "created_at", "updated_at", "parent_seen_at")
 
 
 @admin.register(AdministrativeSummon, site=school_admin_site)
 class SchoolAdministrativeSummonAdmin(SchoolScopedAdmin):
-    list_display = ("student", "guardian", "summon_type", "scheduled_at", "status", "created_by")
-    list_filter = ("summon_type", "status")
-    search_fields = ("student__first_name", "student__last_name", "guardian__user__first_name", "reason")
-    raw_id_fields = ("student", "guardian", "created_by")
-    readonly_fields = ("id", "created_at", "updated_at")
+    list_display = ("summon_type", "target_user", "student", "appointment_date", "is_attended", "issued_by")
+    list_filter = ("summon_type", "is_attended")
+    search_fields = ("student__first_name", "student__last_name", "target_user__phone", "target_user__first_name", "reason")
+    raw_id_fields = ("student", "target_user", "issued_by")
+    readonly_fields = ("id", "created_at", "updated_at", "attended_at")
 
 
 @admin.register(SchoolComplaint, site=school_admin_site)
 class SchoolComplaintAdmin(SchoolScopedAdmin):
-    list_display = ("ticket_number", "subject", "category", "priority", "status", "complainant_user", "student")
-    list_filter = ("category", "priority", "status")
-    search_fields = ("ticket_number", "subject", "description", "complainant_user__phone", "student__first_name")
-    raw_id_fields = ("complainant_user", "student", "assigned_to")
+    list_display = ("subject", "category", "status", "submitter", "resolved_by", "resolved_at")
+    list_filter = ("category", "status")
+    search_fields = ("subject", "details", "submitter__phone")
+    raw_id_fields = ("submitter", "resolved_by")
     readonly_fields = ("id", "created_at", "updated_at", "resolved_at")
 
 
@@ -817,24 +817,23 @@ from unfold.admin import TabularInline
 class SchoolBookRequisitionItemInline(TabularInline):
     model = BookRequisitionItem
     extra = 1
-    raw_id_fields = ("book_item",)
 
 
 @admin.register(BookRequisitionOrder, site=school_admin_site)
 class SchoolBookRequisitionOrderAdmin(SchoolScopedAdmin):
-    list_display = ("order_number", "requested_by", "academic_year", "status", "approved_by", "fulfilled_by", "created_at")
+    list_display = ("order_number", "requested_by", "academic_year", "grade_level", "section", "status", "approved_by", "fulfilled_by", "created_at")
     list_filter = ("status", "academic_year")
     search_fields = ("order_number", "requested_by__phone", "notes")
-    raw_id_fields = ("requested_by", "approved_by", "fulfilled_by", "academic_year")
+    raw_id_fields = ("requested_by", "approved_by", "fulfilled_by", "academic_year", "grade_level", "section")
     readonly_fields = ("id", "created_at", "updated_at", "approved_at", "fulfilled_at")
     inlines = (SchoolBookRequisitionItemInline,)
 
 
 @admin.register(BookRequisitionItem, site=school_admin_site)
 class SchoolBookRequisitionItemAdmin(SchoolScopedAdmin):
-    list_display = ("order", "custom_book_name", "book_item", "requested_quantity", "approved_quantity", "dispensed_quantity")
-    search_fields = ("custom_book_name", "order__order_number", "book_item__name")
-    raw_id_fields = ("order", "book_item")
+    list_display = ("requisition", "book_title", "quantity_requested", "quantity_approved", "quantity_dispatched")
+    search_fields = ("book_title", "requisition__order_number")
+    raw_id_fields = ("requisition",)
     readonly_fields = ("id", "created_at", "updated_at")
 
 

@@ -85,22 +85,21 @@ from unfold.admin import TabularInline
 class BookRequisitionItemInline(TabularInline):
     model = BookRequisitionItem
     extra = 1
-    raw_id_fields = ("book_item",)
 
 
 @admin.register(BookRequisitionOrder)
 class BookRequisitionOrderAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("order_number", "requested_by", "academic_year", "status", "approved_by", "fulfilled_by", "created_at", "school")
+    list_display = ("order_number", "requested_by", "academic_year", "grade_level", "section", "status", "approved_by", "fulfilled_by", "created_at", "school")
     list_filter = ("school", "status", "academic_year")
     search_fields = ("order_number", "requested_by__phone", "requested_by__first_name", "requested_by__last_name", "notes")
-    raw_id_fields = ("requested_by", "approved_by", "fulfilled_by", "academic_year", "school", "branch")
+    raw_id_fields = ("requested_by", "approved_by", "fulfilled_by", "academic_year", "grade_level", "section", "school", "branch")
     readonly_fields = ("id", "created_at", "updated_at", "approved_at", "fulfilled_at")
     inlines = (BookRequisitionItemInline,)
 
 
 @admin.register(BookRequisitionItem)
 class BookRequisitionItemAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("order", "custom_book_name", "book_item", "requested_quantity", "approved_quantity", "dispensed_quantity", "school")
+    list_display = ("requisition", "book_title", "quantity_requested", "quantity_approved", "quantity_dispatched", "school")
     list_filter = ("school",)
-    search_fields = ("custom_book_name", "order__order_number", "book_item__name")
-    raw_id_fields = ("order", "book_item", "school", "branch")
+    search_fields = ("book_title", "requisition__order_number")
+    raw_id_fields = ("requisition", "school", "branch")

@@ -48,26 +48,26 @@ class StudentGuardianRelationAdmin(AuditedAdminMixin, ModelAdmin):
 
 @admin.register(StudentIncidentReport)
 class StudentIncidentReportAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("title", "student", "reported_by", "severity", "incident_date", "status", "notified_guardian", "school")
-    list_filter = ("severity", "status", "notified_guardian", "school")
-    search_fields = ("title", "student__first_name", "student__last_name", "reported_by__phone", "description")
-    autocomplete_fields = ("school", "branch", "student", "reported_by")
-    readonly_fields = ("id", "created_at", "updated_at", "guardian_notified_at")
+    list_display = ("title", "student", "reporter", "severity", "incident_type", "date", "parent_notified", "is_resolved", "school")
+    list_filter = ("severity", "incident_type", "parent_notified", "is_resolved", "school")
+    search_fields = ("title", "student__first_name", "student__last_name", "reporter__phone", "details")
+    raw_id_fields = ("school", "branch", "student", "reporter")
+    readonly_fields = ("id", "created_at", "updated_at", "parent_seen_at")
 
 
 @admin.register(AdministrativeSummon)
 class AdministrativeSummonAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("student", "guardian", "summon_type", "scheduled_at", "status", "created_by", "school")
-    list_filter = ("summon_type", "status", "school")
-    search_fields = ("student__first_name", "student__last_name", "guardian__user__first_name", "reason")
-    autocomplete_fields = ("school", "branch", "student", "guardian", "created_by")
-    readonly_fields = ("id", "created_at", "updated_at")
+    list_display = ("summon_type", "target_user", "student", "appointment_date", "is_attended", "issued_by", "school")
+    list_filter = ("summon_type", "is_attended", "school")
+    search_fields = ("student__first_name", "student__last_name", "target_user__phone", "target_user__first_name", "reason")
+    raw_id_fields = ("school", "branch", "student", "target_user", "issued_by")
+    readonly_fields = ("id", "created_at", "updated_at", "attended_at")
 
 
 @admin.register(SchoolComplaint)
 class SchoolComplaintAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("ticket_number", "subject", "category", "priority", "status", "complainant_user", "student", "school")
-    list_filter = ("category", "priority", "status", "school")
-    search_fields = ("ticket_number", "subject", "description", "complainant_user__phone", "student__first_name")
-    autocomplete_fields = ("school", "branch", "complainant_user", "student", "assigned_to")
+    list_display = ("subject", "category", "status", "submitter", "resolved_by", "resolved_at", "school")
+    list_filter = ("category", "status", "school")
+    search_fields = ("subject", "details", "submitter__phone")
+    raw_id_fields = ("school", "branch", "submitter", "resolved_by")
     readonly_fields = ("id", "created_at", "updated_at", "resolved_at")
