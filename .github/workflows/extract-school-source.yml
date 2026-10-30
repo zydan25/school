@@ -48,25 +48,31 @@ jobs:
                       raise SystemExit(f"ERROR: unsafe ZIP path: {item.filename}")
               zf.extractall(root)
 
-          required = ["manage.py", "pyproject.toml", "apps/core", "apps/tenants",
-                      "apps/accounts", "apps/academics", "apps/platform"]
-          missing = [p for p in required if not (root / p).exists()]
+          required = ["manage.py", "pyproject.toml", "apps/core/models.py", "apps/tenants/models.py",
+                      "apps/accounts/models.py", "apps/academics/models.py", "apps/platform/models.py"]
+          missing = [p for p in required if not (root / p).is_file()]
           if missing:
-              raise SystemExit("ERROR: archive does not match expected stage-one layout; missing: " + ", ".join(missing))
-          print("SUCCESS: ZIP integrity, safe paths, and expected Django project structure verified.")
+              raise SystemExit("ERROR: missing required stage-one files: " + ", ".join(missing))
+          print("SUCCESS: ZIP integrity and expected Django project structure verified.")
           PY
 
-      - name: Remove ZIP and commit extracted files
+      - name: Remove archive and commit extracted source
         shell: bash
         run: |
           set -euo pipefail
           rm -f School-Stage1-Source.zip
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The connected GitHub App currently lacks the 'workflows' permission.
+          # Keep CI workflow definitions out of this bot push; add them after granting that permission.
           git add -A
+          git reset -q -- .github/workflows/ci.yml 2>/dev/null || true
+
           if git diff --cached --quiet; then
-            echo "ERROR: extraction produced no repository changes."
+            echo "ERROR: extraction produced no committable source changes."
             exit 1
           fi
+
           git commit -m "Extract School stage one source archive"
           git push origin HEAD:main
