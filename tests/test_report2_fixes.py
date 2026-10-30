@@ -209,7 +209,7 @@ class Report2AuditFixesTests(TestCase):
         inv2.refresh_from_db()
         self.assertEqual(inv2.paid_amount, Decimal("300.00"))
         self.assertEqual(inv2.remaining_amount, Decimal("200.00"))
-        self.assertEqual(inv2.status, StudentInvoice.Status.PARTIALLY_PAID)
+        self.assertEqual(inv2.status, StudentInvoice.Status.PARTIAL)
 
         usage_tx = StudentCreditTransaction.objects.filter(
             student=self.student,
@@ -297,7 +297,7 @@ class Report2AuditFixesTests(TestCase):
             amount=Decimal("30000.00"),
             monthly_installment=Decimal("15000.00"),
             repaid_amount=Decimal("0.00"),
-            date_granted=date(2026, 1, 1),
+            start_date=date(2026, 1, 1),
             status=EmployeeLoanAdvance.Status.ACTIVE,
         )
 

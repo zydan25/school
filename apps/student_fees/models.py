@@ -444,11 +444,13 @@ class StudentCreditTransaction(TenantOwnedModel):
         return f"{self.student} - {self.get_transaction_type_display()}: {self.amount} (الرصيد: {self.balance_after})"
 
 
-def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: Decimal, user=None):
+def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: Optional[Decimal] = None, user=None) -> Decimal:
     """استخدام الرصيد الدائن للطالب لسداد فاتورة مستحقة وتوثيق العملية في دفتر الأرصدة الدائنة."""
     from django.db import transaction
+    if amount is None:
+        amount = min(student.credit_balance, invoice.remaining_amount)
     if amount <= Decimal("0.00"):
-        raise ValidationError("المبلغ المراد استخدامه يجب أن يكون أكبر من الصفر.")
+        return Decimal("0.00")
     if student.credit_balance < amount:
         raise ValidationError(f"رصيد الطالب الدائن ({student.credit_balance}) غير كافٍ لسداد المبلغ المطلوب ({amount}).")
     if invoice.remaining_amount < amount:

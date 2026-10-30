@@ -215,9 +215,12 @@ class JournalEntry(TenantOwnedModel):
                         orig.date != self.date or
                         orig.entry_number != self.entry_number or
                         orig.school_id != self.school_id or
-                        orig.fiscal_period_id != self.fiscal_period_id
+                        orig.fiscal_period_id != self.fiscal_period_id or
+                        orig.description != self.description or
+                        orig.source_module != self.source_module or
+                        orig.source_reference != self.source_reference
                     ):
-                        raise ValidationError("القيد المحاسبي مرحّل ولا يمكن تعديل بياناته الأساسية مباشرة؛ التصحيح يتم عبر قيد عكسي.")
+                        raise ValidationError("القيد المحاسبي مرحّل ولا يمكن تعديل بياناته المالية أو بيانه مباشرة؛ التصحيح يتم عبر قيد عكسي.")
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
