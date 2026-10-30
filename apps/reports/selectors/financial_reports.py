@@ -244,3 +244,72 @@ def get_daily_cash_register_report(school, target_date=None) -> Dict[str, Any]:
         "inflows": inflow_items,
         "outflows": outflow_items,
     }
+
+
+def get_billing_ledger_reconciliation_report(school) -> Dict[str, Any]:
+    """
+    تقرير المطابقة الدورية الشامل بين سجلات الفواتير والتحصيل التشغيلية ودفتر الأستاذ العام (حساب 1104).
+    """
+    from apps.accounting.models import Account, JournalEntryLine
+
+    active_invoices = StudentInvoice.objects.filter(
+        school=school,
+        is_archived=False,
+    ).exclude(status=StudentInvoice.Status.CANCELLED)
+
+    total_billed = Decimal("0.00")
+    total_discounts = Decimal("0.00")
+    total_collected = Decimal("0.00")
+
+    for inv in active_invoices:
+        total_billed += inv.total_amount
+        total_discounts += inv.discount_amount
+        total_collected += inv.paid_amount
+
+    net_billed = max(Decimal("0.00"), total_billed - total_discounts)
+    operational_receivable = max(Decimal("0.00"), net_billed - total_collected)
+
+    acc_1104 = Account.objects.filter(school=school, code="1104", is_leaf=True).first()
+    gl_debit = Decimal("0.00")
+    gl_credit = Decimal("0.00")
+    if acc_1104:
+        lines = JournalEntryLine.objects.filter(
+            school=school,
+            account=acc_1104,
+            journal_entry__status="posted",
+            is_archived=False,
+        )
+        agg = lines.aggregate(total_debit=Sum("debit"), total_credit=Sum("credit"))
+        gl_debit = agg["total_debit"] or Decimal("0.00")
+        gl_credit = agg["total_credit"] or Decimal("0.00")
+
+    gl_receivable_balance = gl_debit - gl_credit
+    variance = operational_receivable - gl_receivable_balance
+    is_reconciled = (abs(variance) < Decimal("0.01"))
+
+    return {
+        "school": {
+            "id": str(school.id),
+            "name": school.name,
+            "code": school.code,
+        },
+        "operational": {
+            "total_billed": float(total_billed),
+            "total_discounts": float(total_discounts),
+            "net_billed": float(net_billed),
+            "total_collected": float(total_collected),
+            "operational_receivable": float(operational_receivable),
+        },
+        "ledger": {
+            "account_code": "1104",
+            "account_name": acc_1104.name if acc_1104 else "غير مهيأ",
+            "gl_debit": float(gl_debit),
+            "gl_credit": float(gl_credit),
+            "gl_receivable_balance": float(gl_receivable_balance),
+        },
+        "reconciliation": {
+            "variance": float(variance),
+            "is_reconciled": is_reconciled,
+            "status": "متطابق تماماً" if is_reconciled else "يوجد فروق تسوية",
+        },
+    }

@@ -44,6 +44,7 @@ from apps.student_fees.models import (
 from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRun, Payslip
 from apps.payroll.services import (
     generate_monthly_payroll,
+    approve_payroll_run,
     post_payroll_to_accounting,
     disburse_payroll_run,
 )
@@ -315,7 +316,8 @@ class Report2AuditFixesTests(TestCase):
         # Gross = 130000; Deductions = 5000 (insurance) + 15000 (loan) = 20000; Net = 110000
         self.assertEqual(payslip.net_salary, Decimal("110000.00"))
 
-        # 2. Post Payroll to Accounting (Accrual)
+        # 2. Approve and Post Payroll to Accounting (Accrual)
+        approve_payroll_run(run, approved_by=self.user)
         post_payroll_to_accounting(run)
         run.refresh_from_db()
         self.assertEqual(run.status, PayrollRun.Status.POSTED)

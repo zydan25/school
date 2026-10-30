@@ -1,12 +1,16 @@
 """Payroll generation and accounting posting services."""
 from __future__ import annotations
 
+import calendar
+import datetime
 from decimal import Decimal
+from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.accounting.models import Account, JournalEntry, JournalEntryLine
-from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRun, Payslip
+from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, EmployeeLoanRepayment, PayrollRun, Payslip
 from apps.tenants.models import School
 
 
@@ -18,10 +22,14 @@ def generate_monthly_payroll(
     created_by=None,
 ) -> PayrollRun:
     """
-    توليد مسير الرواتب الشهري المجمع للمدرسة استناداً لعقود العمل النشطة والسلف القائمة.
+    توليد مسير الرواتب الشهري المجمع للمدرسة استناداً لعقود العمل النشطة والسلف القائمة وسجلات الحضور والغياب.
     """
     if not name:
         name = f"مسير رواتب شهر {month:02d} / {year}"
+
+    month_start = datetime.date(year, month, 1)
+    last_day_num = calendar.monthrange(year, month)[1]
+    month_end = datetime.date(year, month, last_day_num)
 
     with transaction.atomic():
         run, created = PayrollRun.objects.get_or_create(
@@ -39,17 +47,22 @@ def generate_monthly_payroll(
                 raise ValueError("لا يمكن إعادة توليد مسير رواتب معتمد أو مدفوع.")
             run.payslips.all().delete()
 
-        # Fetch all active contracts for this school
+        # Fetch contracts active during this payroll month
         contracts = EmployeeContract.objects.filter(
             school=school,
             is_active=True,
             is_archived=False,
+            start_date__lte=month_end,
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=month_start)
         ).select_related("teacher", "staff_member")
 
         t_basic = Decimal("0.00")
         t_allowances = Decimal("0.00")
         t_deductions = Decimal("0.00")
         t_net = Decimal("0.00")
+
+        from apps.staff.models import StaffAttendance
 
         for c in contracts:
             teacher = c.teacher
@@ -77,8 +90,26 @@ def generate_monthly_payroll(
             for loan in loans_qs:
                 loan_ded += min(loan.monthly_installment, loan.remaining_amount)
 
+            # Calculate absence deduction from StaffAttendance
+            att_qs = StaffAttendance.objects.filter(
+                school=school,
+                date__range=(month_start, month_end),
+                status=StaffAttendance.Status.UNEXCUSED,
+                is_archived=False,
+            )
+            if teacher:
+                att_qs = att_qs.filter(teacher=teacher)
+            elif staff_member:
+                att_qs = att_qs.filter(staff_member=staff_member)
+            else:
+                att_qs = att_qs.none()
+
+            absent_count = att_qs.count()
+            daily_rate = (basic / Decimal("30")).quantize(Decimal("0.01"))
+            absence_ded = (Decimal(absent_count) * daily_rate).quantize(Decimal("0.01"))
+
             earnings = basic + housing + transport + other_all
-            deductions = insurance + loan_ded
+            deductions = insurance + loan_ded + absence_ded
             net = max(Decimal("0.00"), earnings - deductions)
 
             Payslip.objects.create(
@@ -92,6 +123,7 @@ def generate_monthly_payroll(
                 other_allowances=other_all,
                 insurance_deduction=insurance,
                 loan_deduction=loan_ded,
+                absence_deduction=absence_ded,
                 net_salary=net,
             )
 
@@ -109,6 +141,21 @@ def generate_monthly_payroll(
         return run
 
 
+def approve_payroll_run(payroll_run: PayrollRun, approved_by=None) -> PayrollRun:
+    """
+    اعتماد مسير الرواتب رسمياً بعد مراجعة قسائم الموظفين وقبل ترحيله محاسبياً.
+    """
+    if payroll_run.status != PayrollRun.Status.DRAFT:
+        raise ValidationError("يمكن اعتماد مسير الرواتب فقط عندما يكون في حالة مسودة.")
+    if not payroll_run.payslips.exists():
+        raise ValidationError("لا يمكن اعتماد مسير رواتب فارغ لا يحتوي على قسائم رواتب.")
+
+    payroll_run.status = PayrollRun.Status.APPROVED
+    payroll_run.approved_by = approved_by
+    payroll_run.save(update_fields=["status", "approved_by", "updated_at"])
+    return payroll_run
+
+
 def post_payroll_to_accounting(
     payroll_run: PayrollRun,
     expense_account: Account = None,
@@ -122,6 +169,9 @@ def post_payroll_to_accounting(
     """
     if payroll_run.journal_entry:
         return payroll_run.journal_entry
+
+    if payroll_run.status != PayrollRun.Status.APPROVED:
+        raise ValidationError("لا يمكن ترحيل مسير رواتب محاسبياً قبل اعتماده رسمياً من الإدارة.")
 
     from apps.accounting.services.auto_posting import _get_active_fiscal_period, validate_and_balance_journal_entry
     school = payroll_run.school
@@ -137,7 +187,8 @@ def post_payroll_to_accounting(
     if not expense_account or not payable_account:
         raise ValueError("شجرة الحسابات للمدرسة غير مهيأة لحسابات الرواتب (5101 أو 2101).")
 
-    post_date = timezone.localdate()
+    last_day_num = calendar.monthrange(payroll_run.year, payroll_run.month)[1]
+    post_date = datetime.date(payroll_run.year, payroll_run.month, last_day_num)
     period = _get_active_fiscal_period(school, post_date)
 
     with transaction.atomic():
@@ -204,7 +255,7 @@ def post_payroll_to_accounting(
 
         validate_and_balance_journal_entry(entry)
 
-        # Update specific active loans for each employee correctly
+        # Update specific active loans for each employee and record EmployeeLoanRepayment
         for p in payroll_run.payslips.filter(loan_deduction__gt=0):
             needed_ded = p.loan_deduction
             loans_qs = EmployeeLoanAdvance.objects.filter(
@@ -223,11 +274,24 @@ def post_payroll_to_accounting(
                 if needed_ded <= Decimal("0.00"):
                     break
                 pay_installment = min(needed_ded, min(loan.monthly_installment, loan.remaining_amount))
+                bal_before = loan.remaining_amount
                 loan.repaid_amount += pay_installment
+                bal_after = loan.remaining_amount
                 needed_ded -= pay_installment
                 if loan.repaid_amount >= loan.amount:
                     loan.status = EmployeeLoanAdvance.Status.FULLY_REPAID
                 loan.save(update_fields=["repaid_amount", "status", "updated_at"])
+
+                EmployeeLoanRepayment.objects.create(
+                    school=school,
+                    loan=loan,
+                    payslip=p,
+                    payroll_run=payroll_run,
+                    amount=pay_installment,
+                    balance_before=bal_before,
+                    balance_after=bal_after,
+                    repaid_at=post_date,
+                )
 
         payroll_run.journal_entry = entry
         payroll_run.status = PayrollRun.Status.POSTED

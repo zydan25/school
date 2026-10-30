@@ -277,6 +277,20 @@ class JournalEntryLine(TenantOwnedModel):
         if self.debit == 0 and self.credit == 0:
             raise ValidationError("يجب إدخال مبلغ مدين أو دائن أكبر من الصفر في سطر القيد.")
 
+    def save(self, *args, **kwargs):
+        if self.pk:
+            orig = JournalEntryLine.objects.filter(pk=self.pk).select_related("journal_entry").first()
+            if orig and orig.journal_entry and orig.journal_entry.status == JournalEntry.Status.POSTED:
+                if (
+                    orig.account_id != self.account_id or
+                    orig.debit != self.debit or
+                    orig.credit != self.credit or
+                    orig.cost_center_id != self.cost_center_id or
+                    orig.journal_entry_id != self.journal_entry_id
+                ):
+                    raise ValidationError("لا يمكن تعديل المبالغ أو الحسابات في سطر تابع لقيد محاسبي مرحّل.")
+        super().save(*args, **kwargs)
+
     def delete(self, *args, **kwargs):
         if self.journal_entry and self.journal_entry.status == JournalEntry.Status.POSTED:
             raise ValidationError("لا يمكن حذف سطر من قيد محاسبي مرحّل.")

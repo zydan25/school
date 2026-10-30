@@ -267,3 +267,42 @@ class Payslip(TenantOwnedModel):
     @property
     def total_deductions(self) -> Decimal:
         return self.loan_deduction + self.absence_deduction + self.insurance_deduction
+
+
+class EmployeeLoanRepayment(TenantOwnedModel):
+    """سجل أقساط واقتطاعات السلف الشهرية من الرواتب."""
+    loan = models.ForeignKey(
+        EmployeeLoanAdvance,
+        verbose_name="السلفة",
+        on_delete=models.CASCADE,
+        related_name="repayments",
+    )
+    payslip = models.ForeignKey(
+        Payslip,
+        verbose_name="قسيمة الراتب",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="loan_repayments",
+    )
+    payroll_run = models.ForeignKey(
+        PayrollRun,
+        verbose_name="مسير الرواتب",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="loan_repayments",
+    )
+    amount = models.DecimalField("مبلغ الخصم المسدد", max_digits=12, decimal_places=2)
+    balance_before = models.DecimalField("رصيد السلفة قبل السداد", max_digits=12, decimal_places=2)
+    balance_after = models.DecimalField("رصيد السلفة بعد السداد", max_digits=12, decimal_places=2)
+    repaid_at = models.DateField("تاريخ الاستقطاع", default=timezone.localdate)
+    is_reversed = models.BooleanField("تم عكس القسط", default=False)
+
+    class Meta:
+        verbose_name = "سجل سداد سلفة"
+        verbose_name_plural = "سجلات سداد سلف الموظفين"
+        ordering = ["-repaid_at"]
+
+    def __str__(self) -> str:
+        return f"{self.loan.loan_number}: {self.amount} (المتبقي: {self.balance_after})"

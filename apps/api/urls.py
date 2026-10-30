@@ -1,4 +1,6 @@
 from django.urls import include, path
+from rest_framework.schemas import get_schema_view
+from rest_framework import permissions
 
 from apps.api.views import (
     APILoginView,
@@ -9,9 +11,17 @@ from apps.api.views import (
     SwitchSchoolContextView,
 )
 
+schema_view = get_schema_view(
+    title="School ERP Platform API",
+    description="توثيق واجهات برمجة التطبيقات لمنصة سكول لإدارة المدارس والمؤسسات التعليمية",
+    version="1.0.0",
+    permission_classes=[permissions.AllowAny],
+)
+
 app_name = "api"
 urlpatterns = [
     path("<str:version>/health/", HealthView.as_view(), name="health"),
+    path("<str:version>/openapi/", schema_view, name="openapi-schema"),
     path("<str:version>/auth/login/", APILoginView.as_view(), name="auth-login"),
     path("<str:version>/auth/logout/", APILogoutView.as_view(), name="auth-logout"),
     path("<str:version>/me/", CurrentUserView.as_view(), name="current-user"),

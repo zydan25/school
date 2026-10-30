@@ -8,6 +8,7 @@ from apps.reports.views import (
     TrialBalanceAPIView,
     IncomeStatementAPIView,
     BalanceSheetAPIView,
+    BillingLedgerReconciliationAPIView,
     StudentReportCardAPIView,
     ClassRankingAPIView,
     SubjectGradeDistributionAPIView,
@@ -27,6 +28,7 @@ urlpatterns = [
     path("financial/trial-balance/", TrialBalanceAPIView.as_view(), name="trial-balance"),
     path("financial/income-statement/", IncomeStatementAPIView.as_view(), name="income-statement"),
     path("financial/balance-sheet/", BalanceSheetAPIView.as_view(), name="balance-sheet"),
+    path("financial/reconciliation/", BillingLedgerReconciliationAPIView.as_view(), name="billing-reconciliation"),
 
     # Academic Reports
     path("academic/report-card/<uuid:student_id>/", StudentReportCardAPIView.as_view(), name="report-card"),

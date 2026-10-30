@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import datetime
+from django.db import models
+from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,6 +15,7 @@ from apps.reports.selectors.financial_reports import (
     get_student_statement_of_account,
     get_aging_receivables_report,
     get_daily_cash_register_report,
+    get_billing_ledger_reconciliation_report,
 )
 from apps.reports.selectors.academic_reports import (
     get_student_report_card,
@@ -40,8 +43,13 @@ class BaseSchoolReportView(APIView):
 
     def get_school(self, request):
         school = getattr(request, "school", None)
+        now = timezone.now()
         if not school:
-            membership = request.user.school_memberships.filter(status="active").select_related("school").first()
+            membership = request.user.school_memberships.filter(
+                status="active"
+            ).filter(
+                models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
+            ).select_related("school").first()
             if membership:
                 school = membership.school
         if not school and (request.user.is_superuser or request.user.is_platform_admin):
@@ -55,10 +63,15 @@ class BaseSchoolReportView(APIView):
         return school
 
     def check_financial_access(self, request, school) -> bool:
-        """التحقق من أن المستخدم يمتلك صلاحية مالية أو إدارية في المدرسة."""
+        """التحقق من أن المستخدم يمتلك صلاحية مالية أو إدارية أو تحصيل في المدرسة (تشمل الكاشير)."""
         if request.user.is_superuser or request.user.is_platform_admin or request.user.is_staff:
             return True
-        membership = request.user.school_memberships.filter(school=school, status="active").first()
+        now = timezone.now()
+        membership = request.user.school_memberships.filter(
+            school=school, status="active"
+        ).filter(
+            models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
+        ).first()
         if not membership:
             return False
         role_codes = membership.get_role_codes()
@@ -68,11 +81,35 @@ class BaseSchoolReportView(APIView):
         }
         return bool(role_codes & allowed_roles)
 
+    def check_general_ledger_access(self, request, school) -> bool:
+        """التحقق من صلاحية الاطلاع على القوائم المالية العامة ودفتر الأستاذ (تستثني الكاشير)."""
+        if request.user.is_superuser or request.user.is_platform_admin or request.user.is_staff:
+            return True
+        now = timezone.now()
+        membership = request.user.school_memberships.filter(
+            school=school, status="active"
+        ).filter(
+            models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
+        ).first()
+        if not membership:
+            return False
+        role_codes = membership.get_role_codes()
+        allowed_roles = {
+            "school-director", "school_director", "accountant",
+            "principal", "school_admin", "financial_manager", "general_manager"
+        }
+        return bool(role_codes & allowed_roles)
+
     def check_hr_access(self, request, school) -> bool:
         """التحقق من صلاحية الموارد البشرية والرواتب."""
         if request.user.is_superuser or request.user.is_platform_admin or request.user.is_staff:
             return True
-        membership = request.user.school_memberships.filter(school=school, status="active").first()
+        now = timezone.now()
+        membership = request.user.school_memberships.filter(
+            school=school, status="active"
+        ).filter(
+            models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
+        ).first()
         if not membership:
             return False
         role_codes = membership.get_role_codes()
@@ -86,7 +123,12 @@ class BaseSchoolReportView(APIView):
         """التحقق من صلاحية الوصول للتقارير الأكاديمية والدرجات."""
         if request.user.is_superuser or request.user.is_platform_admin or request.user.is_staff:
             return True
-        membership = request.user.school_memberships.filter(school=school, status="active").first()
+        now = timezone.now()
+        membership = request.user.school_memberships.filter(
+            school=school, status="active"
+        ).filter(
+            models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)
+        ).first()
         if not membership:
             return False
         role_codes = membership.get_role_codes()
@@ -106,7 +148,7 @@ class BaseSchoolReportView(APIView):
                 if subject and assignments.filter(subject=subject).exists():
                     return True
                 if not section and not subject:
-                    return True
+                    return False
         return False
 
 
@@ -139,7 +181,7 @@ class AgingReceivablesAPIView(BaseSchoolReportView):
         if not school:
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.check_financial_access(request, school):
+        if not self.check_general_ledger_access(request, school):
             return Response({"error": "غير مصرح لك بالاطلاع على تقرير أعمار الديون والذمم المالية."}, status=status.HTTP_403_FORBIDDEN)
 
         data = get_aging_receivables_report(school)
@@ -173,7 +215,7 @@ class TrialBalanceAPIView(BaseSchoolReportView):
         if not school:
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.check_financial_access(request, school):
+        if not self.check_general_ledger_access(request, school):
             return Response({"error": "غير مصرح لك بالاطلاع على ميزان المراجعة المحاسبي."}, status=status.HTTP_403_FORBIDDEN)
 
         data = get_trial_balance(school)
@@ -186,7 +228,7 @@ class IncomeStatementAPIView(BaseSchoolReportView):
         if not school:
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.check_financial_access(request, school):
+        if not self.check_general_ledger_access(request, school):
             return Response({"error": "غير مصرح لك بالاطلاع على قائمة الدخل والأرباح والخسائر."}, status=status.HTTP_403_FORBIDDEN)
 
         data = get_income_statement(school)
@@ -199,10 +241,23 @@ class BalanceSheetAPIView(BaseSchoolReportView):
         if not school:
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
-        if not self.check_financial_access(request, school):
+        if not self.check_general_ledger_access(request, school):
             return Response({"error": "غير مصرح لك بالاطلاع على قائمة المركز المالي والميزانية العمومية."}, status=status.HTTP_403_FORBIDDEN)
 
         data = get_balance_sheet(school)
+        return Response(data)
+
+
+class BillingLedgerReconciliationAPIView(BaseSchoolReportView):
+    def get(self, request, *args, **kwargs):
+        school = self.get_school(request)
+        if not school:
+            return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not self.check_general_ledger_access(request, school):
+            return Response({"error": "غير مصرح لك بالاطلاع على تقرير مطابقة الفواتير ودفتر الأستاذ."}, status=status.HTTP_403_FORBIDDEN)
+
+        data = get_billing_ledger_reconciliation_report(school)
         return Response(data)
 
 

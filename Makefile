@@ -9,7 +9,7 @@ check:
 	$(MANAGE) check
 
 migrations:
-	$(MANAGE) makemigrations accounts tenants academics platform notifications auditlog
+	$(MANAGE) makemigrations
 
 migrate:
 	$(MANAGE) migrate

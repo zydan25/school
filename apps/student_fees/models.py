@@ -214,6 +214,7 @@ class PaymentReceipt(TenantOwnedModel):
         related_name="student_receipts",
     )
     notes = models.TextField("ملاحظات إضافية على السند", blank=True)
+    is_cancelled = models.BooleanField("ملغى / مسترد", default=False)
 
     class Meta:
         verbose_name = "سند قبض"
@@ -252,7 +253,7 @@ class PaymentReceipt(TenantOwnedModel):
         from django.db import transaction
         with transaction.atomic():
             super().save(*args, **kwargs)
-            if is_new:
+            if is_new and not self.is_cancelled:
                 if self.invoice:
                     inv = StudentInvoice.objects.select_for_update().get(pk=self.invoice_id)
                     net = max(Decimal("0.00"), inv.total_amount - inv.discount_amount)
@@ -266,30 +267,54 @@ class PaymentReceipt(TenantOwnedModel):
                             inv.status = StudentInvoice.Status.PARTIAL
                         inv.save(update_fields=["paid_amount", "status", "updated_at"])
 
-                        # Also allocate to installment if linked plan exists
-                        installment = inv.installment_plans.filter(
-                            is_archived=False
-                        ).first()
-                        inst_obj = None
-                        if installment:
-                            inst_obj = installment.installments.filter(
-                                status__in=[FeeInstallment.Status.PENDING, FeeInstallment.Status.OVERDUE]
-                            ).order_by("due_date").first()
-                            if inst_obj:
-                                inst_obj.status = FeeInstallment.Status.PAID
+                        # Allocate sequentially to installments if plan exists
+                        plan = inv.installment_plans.filter(is_archived=False).first()
+                        allocated_any_inst = False
+                        if plan:
+                            rem_for_inst = pay_part
+                            open_insts = plan.installments.filter(
+                                status__in=[FeeInstallment.Status.PENDING, FeeInstallment.Status.PARTIAL, FeeInstallment.Status.OVERDUE],
+                                is_archived=False,
+                            ).order_by("due_date", "installment_number").select_for_update()
+
+                            for inst_obj in open_insts:
+                                if rem_for_inst <= Decimal("0.00"):
+                                    break
+                                needed_inst = inst_obj.remaining_amount
+                                if needed_inst <= Decimal("0.00"):
+                                    continue
+                                pay_inst = min(rem_for_inst, needed_inst)
+                                inst_obj.paid_amount += pay_inst
+                                rem_for_inst -= pay_inst
+                                if inst_obj.paid_amount >= inst_obj.amount:
+                                    inst_obj.status = FeeInstallment.Status.PAID
+                                else:
+                                    inst_obj.status = FeeInstallment.Status.PARTIAL
                                 inst_obj.paid_date = self.paid_at.date()
                                 inst_obj.receipt = self
-                                inst_obj.save(update_fields=["status", "paid_date", "receipt", "updated_at"])
+                                inst_obj.save(update_fields=["paid_amount", "status", "paid_date", "receipt", "updated_at"])
 
-                        PaymentAllocation.objects.create(
-                            school=self.school,
-                            receipt=self,
-                            invoice=inv,
-                            installment=inst_obj,
-                            allocated_amount=pay_part,
-                            allocated_by=self.received_by,
-                            notes="تخصيص مباشر للفاتورة المحددة بالسند",
-                        )
+                                PaymentAllocation.objects.create(
+                                    school=self.school,
+                                    receipt=self,
+                                    invoice=inv,
+                                    installment=inst_obj,
+                                    allocated_amount=pay_inst,
+                                    allocated_by=self.received_by,
+                                    notes="تخصيص قسط محدد بالسند",
+                                )
+                                allocated_any_inst = True
+
+                        if not allocated_any_inst:
+                            PaymentAllocation.objects.create(
+                                school=self.school,
+                                receipt=self,
+                                invoice=inv,
+                                installment=None,
+                                allocated_amount=pay_part,
+                                allocated_by=self.received_by,
+                                notes="تخصيص مباشر للفاتورة المحددة بالسند",
+                            )
 
                     excess = self.amount - pay_part
                     if excess > Decimal("0.00"):
@@ -337,27 +362,53 @@ class PaymentReceipt(TenantOwnedModel):
                             inv.status = StudentInvoice.Status.PARTIAL
                         inv.save(update_fields=["paid_amount", "status", "updated_at"])
 
-                        inst_obj = None
                         plan = inv.installment_plans.filter(is_archived=False).first()
+                        allocated_any_inst = False
                         if plan:
-                            inst_obj = plan.installments.filter(
-                                status__in=[FeeInstallment.Status.PENDING, FeeInstallment.Status.OVERDUE]
-                            ).order_by("due_date").first()
-                            if inst_obj:
-                                inst_obj.status = FeeInstallment.Status.PAID
+                            rem_for_inst = pay_part
+                            open_insts = plan.installments.filter(
+                                status__in=[FeeInstallment.Status.PENDING, FeeInstallment.Status.PARTIAL, FeeInstallment.Status.OVERDUE],
+                                is_archived=False,
+                            ).order_by("due_date", "installment_number").select_for_update()
+
+                            for inst_obj in open_insts:
+                                if rem_for_inst <= Decimal("0.00"):
+                                    break
+                                needed_inst = inst_obj.remaining_amount
+                                if needed_inst <= Decimal("0.00"):
+                                    continue
+                                pay_inst = min(rem_for_inst, needed_inst)
+                                inst_obj.paid_amount += pay_inst
+                                rem_for_inst -= pay_inst
+                                if inst_obj.paid_amount >= inst_obj.amount:
+                                    inst_obj.status = FeeInstallment.Status.PAID
+                                else:
+                                    inst_obj.status = FeeInstallment.Status.PARTIAL
                                 inst_obj.paid_date = self.paid_at.date()
                                 inst_obj.receipt = self
-                                inst_obj.save(update_fields=["status", "paid_date", "receipt", "updated_at"])
+                                inst_obj.save(update_fields=["paid_amount", "status", "paid_date", "receipt", "updated_at"])
 
-                        PaymentAllocation.objects.create(
-                            school=self.school,
-                            receipt=self,
-                            invoice=inv,
-                            installment=inst_obj,
-                            allocated_amount=pay_part,
-                            allocated_by=self.received_by,
-                            notes="تخصيص آلي حسب تاريخ الاستحقاق",
-                        )
+                                PaymentAllocation.objects.create(
+                                    school=self.school,
+                                    receipt=self,
+                                    invoice=inv,
+                                    installment=inst_obj,
+                                    allocated_amount=pay_inst,
+                                    allocated_by=self.received_by,
+                                    notes="تخصيص آلي للأقساط المجدولة",
+                                )
+                                allocated_any_inst = True
+
+                        if not allocated_any_inst:
+                            PaymentAllocation.objects.create(
+                                school=self.school,
+                                receipt=self,
+                                invoice=inv,
+                                installment=None,
+                                allocated_amount=pay_part,
+                                allocated_by=self.received_by,
+                                notes="تخصيص آلي حسب تاريخ الاستحقاق",
+                            )
 
                     # If student paid more than all open invoices, credit the excess to their credit_balance
                     if remaining > Decimal("0.00"):
@@ -379,15 +430,12 @@ class PaymentReceipt(TenantOwnedModel):
                             notes=f"إيداع فائض سداد سند قبض #{self.receipt_number}",
                         )
 
-                # Automatic posting to journal if chart of accounts exists
-                try:
-                    from apps.accounting.services.auto_posting import post_student_receipt_to_journal
-                    entry = post_student_receipt_to_journal(self)
-                    if entry and not self.journal_entry_id:
-                        self.journal_entry = entry
-                        super().save(update_fields=["journal_entry", "updated_at"])
-                except Exception:
-                    pass
+                # Automatic posting to journal: fail transaction if chart of accounts exists but fails
+                from apps.accounting.services.auto_posting import post_student_receipt_to_journal
+                entry = post_student_receipt_to_journal(self)
+                if entry and not self.journal_entry_id:
+                    self.journal_entry = entry
+                    super().save(update_fields=["journal_entry", "updated_at"])
 
 
 class StudentCreditTransaction(TenantOwnedModel):
@@ -444,43 +492,137 @@ class StudentCreditTransaction(TenantOwnedModel):
         return f"{self.student} - {self.get_transaction_type_display()}: {self.amount} (الرصيد: {self.balance_after})"
 
 
-def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: Optional[Decimal] = None, user=None) -> Decimal:
-    """استخدام الرصيد الدائن للطالب لسداد فاتورة مستحقة وتوثيق العملية في دفتر الأرصدة الدائنة."""
+def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: Optional[Decimal] = None, user=None) -> StudentCreditTransaction:
+    """استخدام الرصيد الدائن للطالب لسداد فاتورة مستحقة وتوثيق العملية في دفتر الأرصدة الدائنة وإثبات قيد التسوية."""
     from django.db import transaction
-    if amount is None:
-        amount = min(student.credit_balance, invoice.remaining_amount)
-    if amount <= Decimal("0.00"):
-        return Decimal("0.00")
-    if student.credit_balance < amount:
-        raise ValidationError(f"رصيد الطالب الدائن ({student.credit_balance}) غير كافٍ لسداد المبلغ المطلوب ({amount}).")
-    if invoice.remaining_amount < amount:
-        raise ValidationError(f"المبلغ المطلوب سداده ({amount}) يتجاوز المتبقي على الفاتورة ({invoice.remaining_amount}).")
+    if invoice.school_id != student.school_id:
+        raise ValidationError("الفاتورة والطالب لا يتبعان لنفس المدرسة.")
+    if invoice.student_id != student.pk:
+        raise ValidationError("الفاتورة المحددة لا تخص هذا الطالب.")
 
     with transaction.atomic():
-        bal_before = student.credit_balance
-        bal_after = bal_before - amount
-        student.credit_balance = bal_after
-        student.save(update_fields=["credit_balance"])
+        locked_student = type(student).objects.select_for_update().get(pk=student.pk)
+        locked_invoice = StudentInvoice.objects.select_for_update().get(pk=invoice.pk)
 
-        invoice.paid_amount += amount
-        if invoice.remaining_amount <= Decimal("0.00"):
-            invoice.status = StudentInvoice.Status.PAID
+        if amount is None:
+            amount = min(locked_student.credit_balance, locked_invoice.remaining_amount)
+        if amount <= Decimal("0.00"):
+            raise ValidationError("المبلغ المطلوب استخدامه من الرصيد الدائن يجب أن يكون أكبر من الصفر.")
+        if locked_student.credit_balance < amount:
+            raise ValidationError(f"رصيد الطالب الدائن ({locked_student.credit_balance}) غير كافٍ لسداد المبلغ المطلوب ({amount}).")
+        if locked_invoice.remaining_amount < amount:
+            raise ValidationError(f"المبلغ المطلوب سداده ({amount}) يتجاوز المتبقي على الفاتورة ({locked_invoice.remaining_amount}).")
+
+        bal_before = locked_student.credit_balance
+        bal_after = bal_before - amount
+        locked_student.credit_balance = bal_after
+        locked_student.save(update_fields=["credit_balance"])
+
+        locked_invoice.paid_amount += amount
+        if locked_invoice.remaining_amount <= Decimal("0.00"):
+            locked_invoice.status = StudentInvoice.Status.PAID
         else:
-            invoice.status = StudentInvoice.Status.PARTIAL
-        invoice.save(update_fields=["paid_amount", "status", "updated_at"])
+            locked_invoice.status = StudentInvoice.Status.PARTIAL
+        locked_invoice.save(update_fields=["paid_amount", "status", "updated_at"])
 
         tx = StudentCreditTransaction.objects.create(
-            school=student.school,
-            student=student,
+            school=locked_student.school,
+            student=locked_student,
             transaction_type=StudentCreditTransaction.TransactionType.USAGE,
             amount=amount,
             balance_before=bal_before,
             balance_after=bal_after,
-            invoice=invoice,
+            invoice=locked_invoice,
             created_by=user,
-            notes=f"سداد الفاتورة #{invoice.invoice_number} من الرصيد الدائن للطالب",
+            notes=f"سداد الفاتورة #{locked_invoice.invoice_number} من الرصيد الدائن للطالب",
         )
+
+        from apps.accounting.services.auto_posting import post_credit_settlement_to_journal
+        post_credit_settlement_to_journal(tx)
         return tx
+
+
+def reverse_payment_receipt(receipt: PaymentReceipt, reason: str, reversed_by=None) -> PaymentReceipt:
+    """
+    العكس المحاسبي والتشغيلي الموحد لسند القبض المالي.
+    يعكس التخصيصات، ويعيد الرصيد للفواتير والأقساط، ويخصم الفائض من رصيد الطالب،
+    وينشئ قيداً عكسياً مرتبطاً بالقيد الأصلي.
+    """
+    if receipt.is_cancelled:
+        raise ValidationError("سند القبض ملغى أو معكوس مسبقاً.")
+
+    from django.db import transaction
+    with transaction.atomic():
+        locked_receipt = PaymentReceipt.objects.select_for_update().get(pk=receipt.pk)
+        if locked_receipt.is_cancelled:
+            raise ValidationError("سند القبض ملغى أو معكوس مسبقاً.")
+
+        allocations = list(locked_receipt.allocations.filter(
+            status=PaymentAllocation.Status.ACTIVE
+        ))
+
+        for alloc in allocations:
+            inv = alloc.invoice
+            if inv:
+                inv = StudentInvoice.objects.select_for_update().get(pk=inv.pk)
+                inv.paid_amount = max(Decimal("0.00"), inv.paid_amount - alloc.allocated_amount)
+                if inv.paid_amount == Decimal("0.00"):
+                    inv.status = StudentInvoice.Status.UNPAID
+                else:
+                    inv.status = StudentInvoice.Status.PARTIAL
+                inv.save(update_fields=["paid_amount", "status", "updated_at"])
+
+            inst = alloc.installment
+            if inst:
+                inst = FeeInstallment.objects.select_for_update().get(pk=inst.pk)
+                inst.paid_amount = max(Decimal("0.00"), inst.paid_amount - alloc.allocated_amount)
+                if inst.paid_amount == Decimal("0.00"):
+                    inst.status = FeeInstallment.Status.PENDING
+                else:
+                    inst.status = FeeInstallment.Status.PARTIAL
+                inst.save(update_fields=["paid_amount", "status", "updated_at"])
+
+            alloc.status = PaymentAllocation.Status.REVERSED
+            alloc.notes = f"{alloc.notes} | تم العكس لسبب: {reason}".strip(" |")
+            alloc.save(update_fields=["status", "notes", "updated_at"])
+
+        # Reverse excess student credit if any
+        deposit_txs = locked_receipt.credit_transactions.filter(
+            transaction_type=StudentCreditTransaction.TransactionType.DEPOSIT
+        )
+        total_excess = sum(t.amount for t in deposit_txs)
+        if total_excess > Decimal("0.00"):
+            student = type(locked_receipt.student).objects.select_for_update().get(pk=locked_receipt.student_id)
+            bal_before = student.credit_balance
+            bal_after = max(Decimal("0.00"), bal_before - total_excess)
+            student.credit_balance = bal_after
+            student.save(update_fields=["credit_balance"])
+
+            StudentCreditTransaction.objects.create(
+                school=locked_receipt.school,
+                student=student,
+                transaction_type=StudentCreditTransaction.TransactionType.REFUND,
+                amount=total_excess,
+                balance_before=bal_before,
+                balance_after=bal_after,
+                receipt=locked_receipt,
+                created_by=reversed_by,
+                notes=f"عكس فائض الرصيد الدائن بسبب إلغاء سند القبض #{locked_receipt.receipt_number}: {reason}",
+            )
+
+        locked_receipt.is_cancelled = True
+        locked_receipt.notes = f"{locked_receipt.notes} | ملغى/معكوس لسبب: {reason}".strip(" |")
+        locked_receipt.save(update_fields=["is_cancelled", "notes", "updated_at"])
+
+        if locked_receipt.journal_entry:
+            from apps.accounting.services.auto_posting import reverse_journal_entry
+            reverse_journal_entry(
+                locked_receipt.journal_entry,
+                reason=f"عكس سند القبض #{locked_receipt.receipt_number}: {reason}",
+                reversed_by=reversed_by,
+            )
+
+        return locked_receipt
 
 
 class PaymentAllocation(TenantOwnedModel):
@@ -561,6 +703,7 @@ class FeeInstallment(TenantOwnedModel):
     """القسط الفردي ضمن خطة تقسيط رسوم الطالب."""
     class Status(models.TextChoices):
         PENDING = "pending", "مستحق (قيد السداد)"
+        PARTIAL = "partially_paid", "مسدد جزئياً"
         PAID = "paid", "مسدد بالكامل"
         OVERDUE = "overdue", "متأخر عن موعد الاستحقاق"
 
@@ -573,6 +716,7 @@ class FeeInstallment(TenantOwnedModel):
     installment_number = models.PositiveSmallIntegerField("رقم القسط (1, 2, 3...)")
     title = models.CharField("بيان القسط (مثل: قسط شهر نوفمبر)", max_length=150)
     amount = models.DecimalField("مبلغ القسط", max_digits=12, decimal_places=2)
+    paid_amount = models.DecimalField("المبلغ المسدد", max_digits=12, decimal_places=2, default=Decimal("0.00"))
     due_date = models.DateField("تاريخ الاستحقاق")
     paid_date = models.DateField("تاريخ السداد الفعلي", null=True, blank=True)
     status = models.CharField("حالة القسط", max_length=20, choices=Status.choices, default=Status.PENDING)
@@ -592,3 +736,7 @@ class FeeInstallment(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"قسط #{self.installment_number} ({self.title}) - {self.amount} [{self.get_status_display()}]"
+
+    @property
+    def remaining_amount(self) -> Decimal:
+        return max(Decimal("0.00"), self.amount - self.paid_amount)

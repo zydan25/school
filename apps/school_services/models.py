@@ -239,13 +239,16 @@ class BookLoan(TenantOwnedModel):
         with transaction.atomic():
             super().save(*args, **kwargs)
             if is_new and self.status == self.Status.BORROWED:
-                if self.book.available_copies > 0:
-                    self.book.available_copies -= 1
-                    self.book.save(update_fields=["available_copies"])
+                book = LibraryBook.objects.select_for_update().get(pk=self.book_id)
+                if book.available_copies <= 0:
+                    raise ValidationError({"book": "لا توجد نسخ متاحة حالياً من هذا الكتاب للإعارة."})
+                book.available_copies -= 1
+                book.save(update_fields=["available_copies"])
             elif previous_status != self.Status.RETURNED and self.status == self.Status.RETURNED:
-                if self.book.available_copies < self.book.total_copies:
-                    self.book.available_copies += 1
-                    self.book.save(update_fields=["available_copies"])
+                book = LibraryBook.objects.select_for_update().get(pk=self.book_id)
+                if book.available_copies < book.total_copies:
+                    book.available_copies += 1
+                    book.save(update_fields=["available_copies"])
 
 
 # -----------------------------------------------------------------------------
@@ -348,7 +351,7 @@ class BusFinancialSettlement(TenantOwnedModel):
                 self.approved_by = approved_by_user
 
             if self.net_payable > Decimal("0.00") and not self.payment_voucher:
-                expense_acc = Account.objects.filter(school=self.school, code__in=["5205", "5204"], is_leaf=True).first()
+                expense_acc = Account.objects.filter(school=self.school, code="5205", is_leaf=True).first()
                 cash_acc = Account.objects.filter(school=self.school, code="1101", is_leaf=True).first()
 
                 if expense_acc and cash_acc:
@@ -367,12 +370,9 @@ class BusFinancialSettlement(TenantOwnedModel):
                         },
                     )
                     self.payment_voucher = pv
-                    try:
-                        from apps.accounting.services.auto_posting import post_payment_voucher_to_journal
-                        if not pv.journal_entry_id:
-                            post_payment_voucher_to_journal(pv)
-                    except Exception:
-                        pass
+                    from apps.accounting.services.auto_posting import post_payment_voucher_to_journal
+                    if not pv.journal_entry_id:
+                        post_payment_voucher_to_journal(pv)
 
             self.save()
             return self.payment_voucher
@@ -413,6 +413,7 @@ class StudentBookDistribution(TenantOwnedModel):
         related_name="book_distributions",
     )
     book_title = models.CharField("اسم الكتاب / الحزمة المدرسية", max_length=200)
+    quantity = models.DecimalField("الكمية المسلمة", max_digits=6, decimal_places=2, default=Decimal("1.00"))
     fee_amount = models.DecimalField("قيمة رسم الكتاب المقيد على الطالب", max_digits=10, decimal_places=2, default=Decimal("0.00"))
     delivery_status = models.CharField("حالة التسليم", max_length=20, choices=DeliveryStatus.choices, default=DeliveryStatus.PENDING)
     delivered_at = models.DateTimeField("تاريخ ووقت التسليم الفعلي", null=True, blank=True)
@@ -439,7 +440,7 @@ class StudentBookDistribution(TenantOwnedModel):
         verbose_name_plural = "توزيع الكتب المدرسية ورسومها"
 
     def __str__(self) -> str:
-        return f"{self.student.first_name}: {self.book_title} [{self.get_delivery_status_display()}]"
+        return f"{self.student.first_name}: {self.book_title} (كمية: {self.quantity}) [{self.get_delivery_status_display()}]"
 
     def deliver_book(self, user=None):
         """تسليم الكتاب للطالب وخصم الكمية من المخزون وتوثيق العملية."""
@@ -448,15 +449,16 @@ class StudentBookDistribution(TenantOwnedModel):
         from django.db import transaction
         with transaction.atomic():
             if self.inventory_item:
-                from apps.inventory.models import StockMovement
-                if self.inventory_item.current_stock < 1:
-                    raise ValidationError(f"رصيد الكتاب المخزني ({self.inventory_item.current_stock}) غير كافٍ للصرف.")
+                from apps.inventory.models import StockMovement, InventoryItem
+                item = InventoryItem.objects.select_for_update().get(pk=self.inventory_item_id)
+                if item.current_stock < self.quantity:
+                    raise ValidationError(f"رصيد الكتاب المخزني ({item.current_stock}) غير كافٍ لصرف كمية ({self.quantity}).")
                 StockMovement.objects.create(
                     school=self.school,
-                    item=self.inventory_item,
+                    item=item,
                     movement_type=StockMovement.MovementType.ISSUE,
-                    quantity=Decimal("1.00"),
-                    unit_cost=self.inventory_item.unit_cost,
+                    quantity=self.quantity,
+                    unit_cost=item.unit_cost,
                     recipient_name=f"الطالب: {self.student}",
                     reference=f"تسليم كتاب للطالب {self.student.student_id_number}",
                 )
@@ -473,13 +475,14 @@ class StudentBookDistribution(TenantOwnedModel):
         from django.db import transaction
         with transaction.atomic():
             if self.inventory_item:
-                from apps.inventory.models import StockMovement
+                from apps.inventory.models import StockMovement, InventoryItem
+                item = InventoryItem.objects.select_for_update().get(pk=self.inventory_item_id)
                 StockMovement.objects.create(
                     school=self.school,
-                    item=self.inventory_item,
+                    item=item,
                     movement_type=StockMovement.MovementType.RECEIPT,
-                    quantity=Decimal("1.00"),
-                    unit_cost=self.inventory_item.unit_cost,
+                    quantity=self.quantity,
+                    unit_cost=item.unit_cost,
                     recipient_name=f"استرجاع من الطالب: {self.student}",
                     reference=f"استرجاع كتاب من الطالب {self.student.student_id_number}",
                 )

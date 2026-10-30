@@ -200,6 +200,22 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     auditor.permissions.set(auditor_permissions.distinct())
 
+    # 10. مدير الموارد البشرية وشؤون الموظفين (HR Manager)
+    hr_permissions = Permission.objects.filter(
+        content_type__app_label__in=["staff", "payroll"]
+    ).filter(
+        Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+    )
+    hr_mgr, _ = SchoolRole.objects.get_or_create(
+        school=school, code="hr-manager",
+        defaults={
+            "name": "مدير الموارد البشرية وشؤون الموظفين",
+            "description": "إدارة شؤون الموظفين، الحضور والانصراف، الإجازات، الورديات، وتجهيز مسيرات الرواتب.",
+            "is_system": True,
+        },
+    )
+    hr_mgr.permissions.set(hr_permissions.distinct())
+
 
 def provision_school(school: School, *, actor=None):
     """Create branch, settings, owner membership and default roles in one transaction."""

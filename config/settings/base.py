@@ -135,7 +135,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.TokenAuthentication",
+        "apps.accounts.authentication.BearerOrTokenAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
