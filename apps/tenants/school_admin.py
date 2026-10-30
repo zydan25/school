@@ -424,3 +424,100 @@ class SchoolAIChatSessionAdmin(SchoolScopedAdmin):
     search_fields = ("title", "user__phone", "user__first_name")
     raw_id_fields = ("user",)
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# Attendance, Student Fees & Accounting in School Admin
+# -----------------------------------------------------------------------------
+from apps.attendance.models import DailyAttendance, PeriodAttendance
+from apps.student_fees.models import FeeCategory, FeeStructure, StudentInvoice, PaymentReceipt
+from apps.accounting.models import FiscalYear, Account, CostCenter, JournalEntry
+
+
+@admin.register(DailyAttendance, site=school_admin_site)
+class SchoolDailyAttendanceAdmin(SchoolScopedAdmin):
+    list_display = ("student", "date", "status", "late_minutes")
+    list_filter = ("status", "date")
+    search_fields = ("student__first_name", "student__last_name", "student__student_id_number")
+    autocomplete_fields = ("student",)
+    raw_id_fields = ("recorded_by",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(PeriodAttendance, site=school_admin_site)
+class SchoolPeriodAttendanceAdmin(SchoolScopedAdmin):
+    list_display = ("student", "schedule", "date", "status")
+    list_filter = ("status", "date")
+    search_fields = ("student__first_name", "student__last_name", "schedule__subject__name")
+    autocomplete_fields = ("schedule", "student")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(FeeCategory, site=school_admin_site)
+class SchoolFeeCategoryAdmin(SchoolScopedAdmin):
+    list_display = ("name", "code", "is_mandatory")
+    list_filter = ("is_mandatory",)
+    search_fields = ("name", "code")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(FeeStructure, site=school_admin_site)
+class SchoolFeeStructureAdmin(SchoolScopedAdmin):
+    list_display = ("grade_level", "fee_category", "academic_year", "amount", "due_date")
+    list_filter = ("academic_year", "grade_level")
+    search_fields = ("grade_level__name", "fee_category__name")
+    autocomplete_fields = ("academic_year", "grade_level", "fee_category")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentInvoice, site=school_admin_site)
+class SchoolStudentInvoiceAdmin(SchoolScopedAdmin):
+    list_display = ("invoice_number", "student", "total_amount", "discount_amount", "paid_amount", "status", "due_date")
+    list_filter = ("status", "academic_year")
+    search_fields = ("invoice_number", "student__first_name", "student__last_name")
+    autocomplete_fields = ("student", "academic_year")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(PaymentReceipt, site=school_admin_site)
+class SchoolPaymentReceiptAdmin(SchoolScopedAdmin):
+    list_display = ("receipt_number", "student", "amount", "payment_method", "paid_at")
+    list_filter = ("payment_method", "paid_at")
+    search_fields = ("receipt_number", "reference_number", "student__first_name", "student__last_name")
+    autocomplete_fields = ("student", "invoice")
+    raw_id_fields = ("received_by",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(FiscalYear, site=school_admin_site)
+class SchoolFiscalYearAdmin(SchoolScopedAdmin):
+    list_display = ("name", "start_date", "end_date", "is_closed")
+    list_filter = ("is_closed",)
+    search_fields = ("name",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(Account, site=school_admin_site)
+class SchoolAccountAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name", "account_type", "parent", "is_leaf")
+    list_filter = ("account_type", "is_leaf")
+    search_fields = ("code", "name")
+    autocomplete_fields = ("parent",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(CostCenter, site=school_admin_site)
+class SchoolCostCenterAdmin(SchoolScopedAdmin):
+    list_display = ("code", "name")
+    search_fields = ("code", "name")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(JournalEntry, site=school_admin_site)
+class SchoolJournalEntryAdmin(SchoolScopedAdmin):
+    list_display = ("entry_number", "date", "status", "source_module", "posted_at")
+    list_filter = ("status", "source_module", "date")
+    search_fields = ("entry_number", "description", "source_reference")
+    autocomplete_fields = ("fiscal_period",)
+    raw_id_fields = ("posted_by",)
+    readonly_fields = ("id", "created_at", "updated_at")

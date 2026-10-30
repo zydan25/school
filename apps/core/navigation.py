@@ -76,8 +76,17 @@ def central_navigation():
                 {"title": _("جلسات المساعد الذكي"), "icon": "smart_toy", "link": reverse_lazy("admin:copilot_aichatsession_changelist"), "permission": _central_check("copilot.view_aichatsession")},
             ],
         },
+        {
+            "title": _("المالية والمحاسبة والحضور"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("الحضور اليومي"), "icon": "how_to_reg", "link": reverse_lazy("admin:attendance_dailyattendance_changelist"), "permission": _central_check("attendance.view_dailyattendance")},
+                {"title": _("فواتير الطلاب"), "icon": "receipt", "link": reverse_lazy("admin:student_fees_studentinvoice_changelist"), "permission": _central_check("student_fees.view_studentinvoice")},
+                {"title": _("سندات القبض"), "icon": "payments", "link": reverse_lazy("admin:student_fees_paymentreceipt_changelist"), "permission": _central_check("student_fees.view_paymentreceipt")},
+                {"title": _("دليل الحسابات"), "icon": "account_balance", "link": reverse_lazy("admin:accounting_account_changelist"), "permission": _central_check("accounting.view_account")},
+                {"title": _("قيود اليومية"), "icon": "menu_book", "link": reverse_lazy("admin:accounting_journalentry_changelist"), "permission": _central_check("accounting.view_journalentry")},
+            ],
+        },
     ]
-
 
 def school_navigation():
     from django.urls import reverse_lazy
@@ -151,6 +160,31 @@ def school_navigation():
             "items": [
                 {"title": _("وثائق المناهج (RAG)"), "icon": "menu_book", "link": reverse_lazy("school_admin:copilot_curriculumdocument_changelist"), "permission": _school_check("copilot.view_curriculumdocument")},
                 {"title": _("جلسات المحادثة الذكية"), "icon": "smart_toy", "link": reverse_lazy("school_admin:copilot_aichatsession_changelist"), "permission": _school_check("copilot.view_aichatsession")},
+            ],
+        },
+        {
+            "title": _("الحضور والغياب"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("الحضور اليومي"), "icon": "how_to_reg", "link": reverse_lazy("school_admin:attendance_dailyattendance_changelist"), "permission": _school_check("attendance.view_dailyattendance")},
+                {"title": _("حضور الحصص"), "icon": "event_available", "link": reverse_lazy("school_admin:attendance_periodattendance_changelist"), "permission": _school_check("attendance.view_periodattendance")},
+            ],
+        },
+        {
+            "title": _("الرسوم المدرسية والتحصيل"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("فواتير الطلاب"), "icon": "receipt", "link": reverse_lazy("school_admin:student_fees_studentinvoice_changelist"), "permission": _school_check("student_fees.view_studentinvoice")},
+                {"title": _("سندات القبض"), "icon": "payments", "link": reverse_lazy("school_admin:student_fees_paymentreceipt_changelist"), "permission": _school_check("student_fees.view_paymentreceipt")},
+                {"title": _("هياكل الرسوم"), "icon": "price_change", "link": reverse_lazy("school_admin:student_fees_feestructure_changelist"), "permission": _school_check("student_fees.view_feestructure")},
+                {"title": _("بنود الرسوم"), "icon": "category", "link": reverse_lazy("school_admin:student_fees_feecategory_changelist"), "permission": _school_check("student_fees.view_feecategory")},
+            ],
+        },
+        {
+            "title": _("المحاسبة المدرسية المستقلة"), "separator": True, "collapsible": True,
+            "items": [
+                {"title": _("دليل الحسابات"), "icon": "account_balance", "link": reverse_lazy("school_admin:accounting_account_changelist"), "permission": _school_check("accounting.view_account")},
+                {"title": _("قيود اليومية"), "icon": "menu_book", "link": reverse_lazy("school_admin:accounting_journalentry_changelist"), "permission": _school_check("accounting.view_journalentry")},
+                {"title": _("السنوات المالية"), "icon": "date_range", "link": reverse_lazy("school_admin:accounting_fiscalyear_changelist"), "permission": _school_check("accounting.view_fiscalyear")},
+                {"title": _("مراكز التكلفة"), "icon": "pie_chart", "link": reverse_lazy("school_admin:accounting_costcenter_changelist"), "permission": _school_check("accounting.view_costcenter")},
             ],
         },
     ]

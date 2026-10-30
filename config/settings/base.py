@@ -40,6 +40,9 @@ INSTALLED_APPS = [
     "apps.assignments.apps.AssignmentsConfig",
     "apps.assessments.apps.AssessmentsConfig",
     "apps.copilot.apps.CopilotConfig",
+    "apps.attendance.apps.AttendanceConfig",
+    "apps.student_fees.apps.StudentFeesConfig",
+    "apps.accounting.apps.AccountingConfig",
 ]
 
 MIDDLEWARE = [
