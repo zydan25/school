@@ -156,7 +156,6 @@ class Report2AuditFixesTests(TestCase):
             issue_date=date(2026, 9, 1),
             due_date=date(2026, 9, 15),
             total_amount=Decimal("1000.00"),
-            remaining_amount=Decimal("1000.00"),
             paid_amount=Decimal("0.00"),
         )
         StudentInvoiceItem.objects.create(
@@ -200,7 +199,6 @@ class Report2AuditFixesTests(TestCase):
             issue_date=date(2026, 10, 1),
             due_date=date(2026, 10, 15),
             total_amount=Decimal("500.00"),
-            remaining_amount=Decimal("500.00"),
             paid_amount=Decimal("0.00"),
         )
         applied = apply_credit_balance_to_invoice(self.student, inv2)
@@ -231,13 +229,13 @@ class Report2AuditFixesTests(TestCase):
             description="قيد اختبار الحماية",
         )
         line1 = JournalEntryLine.objects.create(
-            entry=entry,
+            journal_entry=entry,
             account=ar_acc,
             debit=Decimal("500.00"),
             credit=Decimal("0.00"),
         )
         line2 = JournalEntryLine.objects.create(
-            entry=entry,
+            journal_entry=entry,
             account=rev_acc,
             debit=Decimal("0.00"),
             credit=Decimal("500.00"),
@@ -279,7 +277,7 @@ class Report2AuditFixesTests(TestCase):
             school=self.school,
             staff_member=staff,
             contract_number="CNT-REP2-01",
-            contract_type=EmployeeContract.ContractType.PERMANENT,
+            contract_type=EmployeeContract.ContractType.FULL_TIME,
             basic_salary=Decimal("100000.00"),
             housing_allowance=Decimal("20000.00"),
             transport_allowance=Decimal("10000.00"),
@@ -349,7 +347,7 @@ class Report2AuditFixesTests(TestCase):
             section=self.section,
         ).first()
         self.assertIsNotNone(enrollment)
-        self.assertEqual(enrollment.status, StudentEnrollment.Status.ACTIVE)
+        self.assertEqual(enrollment.status, StudentEnrollment.Status.ENROLLED)
 
         # Create another year and section
         other_year = AcademicYear.objects.create(
@@ -448,6 +446,6 @@ class Report2AuditFixesTests(TestCase):
         client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
 
         # Request report without school_code or X-School-ID header
-        res = client.get("/api/v1/reports/financial/daily-cash-register/")
+        res = client.get("/api/v1/reports/financial/daily-cash/")
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("المدرسة غير محددة", res.data.get("error", ""))
