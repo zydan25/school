@@ -141,11 +141,17 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     transport_mgr.permissions.set(transport_permissions.distinct())
 
-    # 7. أمين المستودع والمخزون
-    store_permissions = Permission.objects.filter(
-        content_type__app_label__in=["inventory", "school_services"]
-    ).filter(
-        Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+    # 7. أمين المستودع والمخزون (محدد بالأصناف والكتب دون الملفات الصحية والعيادة)
+    store_permissions = (
+        Permission.objects.filter(content_type__app_label="inventory").filter(
+            Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+        ) |
+        Permission.objects.filter(
+            content_type__app_label="school_services",
+            content_type__model__in=["studentbookdistribution", "bookrequisitionorder", "bookrequisitionitem", "librarybook", "bookloan"],
+        ).filter(
+            Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+        )
     )
     store_keeper, _ = SchoolRole.objects.get_or_create(
         school=school, code="store-keeper",
@@ -157,6 +163,23 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     store_keeper.permissions.set(store_permissions.distinct())
 
+    # مسؤول العيادة والصحة المدرسية (دور طبي مستقل معزول الخصوصية)
+    clinic_permissions = Permission.objects.filter(
+        content_type__app_label="school_services",
+        content_type__model__in=["studenthealthprofile", "clinicvisit"],
+    ).filter(
+        Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
+    )
+    clinic_officer, _ = SchoolRole.objects.get_or_create(
+        school=school, code="clinic-officer",
+        defaults={
+            "name": "مسؤول العيادة والصحة المدرسية",
+            "description": "إدارة الملفات الصحية الوقائية للطلاب والزيارات الطبية مع أعلى درجات الخصوصية.",
+            "is_system": True,
+        },
+    )
+    clinic_officer.permissions.set(clinic_permissions.distinct())
+
     # 8. منسق أكاديمي
     academic_permissions = Permission.objects.filter(content_type__app_label="academics").filter(
         Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
@@ -167,10 +190,10 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     academic.permissions.set(academic_permissions.distinct())
 
-    # 9. مراجع مدرسي (اطلاع فقط)
+    # 9. مراجع مدرسي (اطلاع فقط باستثناء السجلات الصحية الخاصة)
     auditor_permissions = Permission.objects.filter(
         content_type__app_label__in=all_school_apps
-    ).filter(codename__startswith="view_")
+    ).filter(codename__startswith="view_").exclude(content_type__model__in=["studenthealthprofile"])
     auditor, _ = SchoolRole.objects.get_or_create(
         school=school, code="school-auditor",
         defaults={"name": "مراجع مدرسي", "description": "اطلاع وتدقيق لكافة السجلات والتقارير دون تعديل.", "is_system": True},

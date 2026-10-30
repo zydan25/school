@@ -219,6 +219,30 @@ class PurchaseOrder(TenantOwnedModel):
     def __str__(self) -> str:
         return f"أمر شراء #{self.order_number} - {self.supplier.name} ({self.total_amount})"
 
+    def receive_into_warehouse(self, user=None):
+        """تحويل أمر الشراء إلى حركات توريد مخزنية فعلية وتحديث رصيد المستودع."""
+        if self.status == self.Status.RECEIVED:
+            return []
+        from django.db import transaction
+        created_movements = []
+        with transaction.atomic():
+            for po_item in self.items.all():
+                movement = StockMovement.objects.create(
+                    school=self.school,
+                    item=po_item.item,
+                    movement_type=StockMovement.MovementType.RECEIPT,
+                    quantity=po_item.quantity,
+                    unit_cost=po_item.unit_price,
+                    reference=f"استلام أمر شراء #{self.order_number}",
+                    recipient_name=self.supplier.name,
+                )
+                created_movements.append(movement)
+            self.status = self.Status.RECEIVED
+            if user and not self.approved_by:
+                self.approved_by = user
+            self.save(update_fields=["status", "approved_by", "updated_at"])
+        return created_movements
+
 
 class PurchaseOrderItem(TenantOwnedModel):
     """بنود وتفاصيل أمر الشراء."""

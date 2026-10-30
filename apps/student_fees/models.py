@@ -217,13 +217,28 @@ class PaymentReceipt(TenantOwnedModel):
             with transaction.atomic():
                 if self.invoice:
                     inv = StudentInvoice.objects.select_for_update().get(pk=self.invoice_id)
-                    inv.paid_amount += self.amount
                     net = max(Decimal("0.00"), inv.total_amount - inv.discount_amount)
+                    needed = max(Decimal("0.00"), net - inv.paid_amount)
+                    pay_part = min(self.amount, needed) if needed > 0 else self.amount
+                    inv.paid_amount += pay_part
                     if inv.paid_amount >= net:
                         inv.status = StudentInvoice.Status.PAID
                     elif inv.paid_amount > Decimal("0.00"):
                         inv.status = StudentInvoice.Status.PARTIAL
                     inv.save(update_fields=["paid_amount", "status", "updated_at"])
+
+                    PaymentAllocation.objects.create(
+                        school=self.school,
+                        receipt=self,
+                        invoice=inv,
+                        allocated_amount=pay_part,
+                        allocated_by=self.received_by,
+                        notes="تخصيص مباشر للفاتورة المحددة بالسند",
+                    )
+                    excess = self.amount - pay_part
+                    if excess > Decimal("0.00"):
+                        self.student.credit_balance += excess
+                        self.student.save(update_fields=["credit_balance"])
                 else:
                     # Allocate chronologically across open unpaid invoices
                     remaining = self.amount
@@ -247,6 +262,67 @@ class PaymentReceipt(TenantOwnedModel):
                         else:
                             inv.status = StudentInvoice.Status.PARTIAL
                         inv.save(update_fields=["paid_amount", "status", "updated_at"])
+
+                        PaymentAllocation.objects.create(
+                            school=self.school,
+                            receipt=self,
+                            invoice=inv,
+                            allocated_amount=pay_part,
+                            allocated_by=self.received_by,
+                            notes="تخصيص آلي حسب تاريخ الاستحقاق",
+                        )
+
+                    # If student paid more than all open invoices, credit the excess to their credit_balance
+                    if remaining > Decimal("0.00"):
+                        self.student.credit_balance += remaining
+                        self.student.save(update_fields=["credit_balance"])
+
+
+class PaymentAllocation(TenantOwnedModel):
+    """دفتر تخصيص سندات القبض والدفعات على الفواتير والأقساط الفردية."""
+    class Status(models.TextChoices):
+        ACTIVE = "active", "نشط ومعتمد"
+        REVERSED = "reversed", "معكوس / مسترد"
+
+    receipt = models.ForeignKey(
+        PaymentReceipt,
+        verbose_name="سند القبض",
+        on_delete=models.CASCADE,
+        related_name="allocations",
+    )
+    invoice = models.ForeignKey(
+        StudentInvoice,
+        verbose_name="الفاتورة المخصصة",
+        on_delete=models.CASCADE,
+        related_name="allocations",
+    )
+    installment = models.ForeignKey(
+        "FeeInstallment",
+        verbose_name="القسط المالي (إن وجد)",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="allocations",
+    )
+    allocated_amount = models.DecimalField("المبلغ المخصص", max_digits=12, decimal_places=2)
+    allocated_at = models.DateTimeField("تاريخ التخصيص", default=timezone.now)
+    allocated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المستخدم المخصص",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fee_allocations",
+    )
+    status = models.CharField("حالة التخصيص", max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    notes = models.CharField("ملاحظات التخصيص", max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "تخصيص دفعة مالية"
+        verbose_name_plural = "سجل تخصيص الدفعات على الفواتير والأقساط"
+
+    def __str__(self) -> str:
+        return f"{self.receipt.receipt_number} -> {self.invoice.invoice_number}: {self.allocated_amount}"
 
 
 class FeeInstallmentPlan(TenantOwnedModel):

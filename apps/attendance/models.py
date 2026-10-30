@@ -106,3 +106,5 @@ class PeriodAttendance(TenantOwnedModel):
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
         if self.schedule_id and self.schedule.school_id != self.school_id:
             raise ValidationError({"schedule": "الحصة المجدولة لا تتبع نفس المدرسة."})
+        if self.student_id and self.schedule_id and self.student.section_id != self.schedule.section_id:
+            raise ValidationError({"student": "الطالب غير مسجل في نفس الشعبة الدراسية لهذه الحصة المجدولة."})

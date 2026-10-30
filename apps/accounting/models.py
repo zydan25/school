@@ -152,6 +152,16 @@ class JournalEntry(TenantOwnedModel):
     )
     source_module = models.CharField("المصدر الآلي للقيد (رسوم، رواتب...)", max_length=50, blank=True)
     source_reference = models.CharField("رقم المعاملة المصدرية المرجعي", max_length=100, blank=True)
+    is_reversed = models.BooleanField("تم عكس القيد", default=False)
+    reversed_by_entry = models.ForeignKey(
+        "self",
+        verbose_name="القيد العكسي المرتبط",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reverses_entry",
+    )
+    reversal_reason = models.CharField("سبب العكس", max_length=255, blank=True)
 
     class Meta:
         verbose_name = "قيد يومية"

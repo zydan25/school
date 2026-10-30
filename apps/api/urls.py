@@ -1,10 +1,19 @@
 from django.urls import include, path
 
-from apps.api.views import AvailableSchoolsView, CurrentUserView, HealthView, SwitchSchoolContextView
+from apps.api.views import (
+    APILoginView,
+    APILogoutView,
+    AvailableSchoolsView,
+    CurrentUserView,
+    HealthView,
+    SwitchSchoolContextView,
+)
 
 app_name = "api"
 urlpatterns = [
     path("<str:version>/health/", HealthView.as_view(), name="health"),
+    path("<str:version>/auth/login/", APILoginView.as_view(), name="auth-login"),
+    path("<str:version>/auth/logout/", APILogoutView.as_view(), name="auth-logout"),
     path("<str:version>/me/", CurrentUserView.as_view(), name="current-user"),
     path("<str:version>/schools/", AvailableSchoolsView.as_view(), name="available-schools"),
     path("<str:version>/school-context/", SwitchSchoolContextView.as_view(), name="switch-school-context"),

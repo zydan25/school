@@ -125,6 +125,7 @@ def central_navigation():
             "items": [
                 {"title": _("فواتير الطلاب"), "icon": "receipt", "link": reverse_lazy("admin:student_fees_studentinvoice_changelist"), "permission": _central_check("student_fees.view_studentinvoice")},
                 {"title": _("سندات القبض والتحصيل"), "icon": "payments", "link": reverse_lazy("admin:student_fees_paymentreceipt_changelist"), "permission": _central_check("student_fees.view_paymentreceipt")},
+                {"title": _("دفتر تخصيص الدفعات"), "icon": "account_balance_wallet", "link": reverse_lazy("admin:student_fees_paymentallocation_changelist"), "permission": _central_check("student_fees.view_paymentallocation")},
                 {"title": _("خطط تقسيط الرسوم"), "icon": "credit_card", "link": reverse_lazy("admin:student_fees_feeinstallmentplan_changelist"), "permission": _central_check("student_fees.view_feeinstallmentplan")},
                 {"title": _("الأقساط المالية المجدولة"), "icon": "pending_actions", "link": reverse_lazy("admin:student_fees_feeinstallment_changelist"), "permission": _central_check("student_fees.view_feeinstallment")},
                 {"title": _("هياكل الرسوم السنوية"), "icon": "price_change", "link": reverse_lazy("admin:student_fees_feestructure_changelist"), "permission": _central_check("student_fees.view_feestructure")},
@@ -277,6 +278,7 @@ def school_navigation():
             "items": [
                 {"title": _("فواتير الطلاب"), "icon": "receipt", "link": reverse_lazy("school_admin:student_fees_studentinvoice_changelist"), "permission": _school_check("student_fees.view_studentinvoice")},
                 {"title": _("سندات القبض"), "icon": "payments", "link": reverse_lazy("school_admin:student_fees_paymentreceipt_changelist"), "permission": _school_check("student_fees.view_paymentreceipt")},
+                {"title": _("دفتر تخصيص الدفعات"), "icon": "account_balance_wallet", "link": reverse_lazy("school_admin:student_fees_paymentallocation_changelist"), "permission": _school_check("student_fees.view_paymentallocation")},
                 {"title": _("خطط تقسيط الرسوم"), "icon": "credit_card", "link": reverse_lazy("school_admin:student_fees_feeinstallmentplan_changelist"), "permission": _school_check("student_fees.view_feeinstallmentplan")},
                 {"title": _("الأقساط المالية المجدولة"), "icon": "pending_actions", "link": reverse_lazy("school_admin:student_fees_feeinstallment_changelist"), "permission": _school_check("student_fees.view_feeinstallment")},
                 {"title": _("هياكل الرسوم"), "icon": "price_change", "link": reverse_lazy("school_admin:student_fees_feestructure_changelist"), "permission": _school_check("student_fees.view_feestructure")},

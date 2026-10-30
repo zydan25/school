@@ -7,6 +7,7 @@ from apps.student_fees.models import (
     FeeInstallment,
     FeeInstallmentPlan,
     FeeStructure,
+    PaymentAllocation,
     PaymentReceipt,
     StudentInvoice,
     StudentInvoiceItem,
@@ -76,3 +77,12 @@ class FeeInstallmentAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("status", "due_date", "school")
     search_fields = ("title", "plan__student__first_name", "plan__student__last_name")
     raw_id_fields = ("plan", "receipt", "school", "branch")
+
+
+@admin.register(PaymentAllocation)
+class PaymentAllocationAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("receipt", "invoice", "installment", "allocated_amount", "status", "allocated_at", "school")
+    list_filter = ("status", "allocated_at", "school")
+    search_fields = ("receipt__receipt_number", "invoice__invoice_number", "notes")
+    raw_id_fields = ("receipt", "invoice", "installment", "allocated_by", "school", "branch")
+    readonly_fields = ("id", "created_at", "updated_at")

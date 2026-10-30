@@ -333,6 +333,44 @@ class BusFinancialSettlement(TenantOwnedModel):
 
         self.net_payable = max(Decimal("0.00"), self.gross_due - self.advances_withdrawn)
 
+    def approve_and_create_payment_voucher(self, approved_by_user=None):
+        """اعتماد التسوية المالية وتوليد سند صرف مالي وربطه محاسبياً."""
+        if self.status == self.Status.APPROVED and self.payment_voucher:
+            return self.payment_voucher
+
+        from django.db import transaction
+        from apps.accounting.models import Account, PaymentVoucher
+
+        with transaction.atomic():
+            self.calculate_due()
+            self.status = self.Status.APPROVED
+            if approved_by_user:
+                self.approved_by = approved_by_user
+
+            if self.net_payable > Decimal("0.00") and not self.payment_voucher:
+                expense_acc = Account.objects.filter(school=self.school, code="5204", is_leaf=True).first()
+                cash_acc = Account.objects.filter(school=self.school, code="1101", is_leaf=True).first()
+
+                if expense_acc and cash_acc:
+                    v_num = f"PV-BUS-{self.bus_route.bus_number}-{self.year}-{self.month:02d}"
+                    pv, _ = PaymentVoucher.objects.get_or_create(
+                        school=self.school,
+                        voucher_number=v_num,
+                        defaults={
+                            "date": self.settlement_date,
+                            "paid_to": f"السائق: {self.bus_route.driver_name} (حافلة {self.bus_route.bus_number})",
+                            "amount": self.net_payable,
+                            "debit_account": expense_acc,
+                            "credit_account": cash_acc,
+                            "description": f"مستحقات نقل مدرسي شهر {self.month}/{self.year} - {self.student_count} طالب",
+                            "status": PaymentVoucher.Status.APPROVED,
+                        },
+                    )
+                    self.payment_voucher = pv
+
+            self.save()
+            return self.payment_voucher
+
 
 # -----------------------------------------------------------------------------
 # 4. Student Textbooks & Fee Delivery (توزيع الكتب والرسوم الخاصة)

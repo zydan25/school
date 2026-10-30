@@ -20,7 +20,17 @@ class EmployeeContract(TenantOwnedModel):
 
     teacher = models.ForeignKey(
         "staff.Teacher",
-        verbose_name="المعلم / الموظف",
+        verbose_name="المعلم التدريسي",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="contracts",
+    )
+    staff_member = models.ForeignKey(
+        "staff.StaffMember",
+        verbose_name="الموظف الإداري / المشرف",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="contracts",
     )
@@ -52,7 +62,17 @@ class EmployeeContract(TenantOwnedModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.contract_number} - {self.teacher}: {self.gross_salary}"
+        emp = self.staff_member or self.teacher or "موظف"
+        return f"{self.contract_number} - {emp}: {self.gross_salary}"
+
+    def clean(self):
+        super().clean()
+        if not self.teacher_id and not self.staff_member_id:
+            raise ValidationError("يجب ربط العقد بمعلم أو موظف إداري.")
+        if self.teacher_id and self.teacher.school_id != self.school_id:
+            raise ValidationError({"teacher": "المعلم لا ينتمي إلى نفس المدرسة."})
+        if self.staff_member_id and self.staff_member.school_id != self.school_id:
+            raise ValidationError({"staff_member": "الموظف الإداري لا ينتمي إلى نفس المدرسة."})
 
     @property
     def total_allowances(self) -> Decimal:
@@ -82,6 +102,16 @@ class EmployeeLoanAdvance(TenantOwnedModel):
     teacher = models.ForeignKey(
         "staff.Teacher",
         verbose_name="المعلم المستفيد من السلفة",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="loans",
+    )
+    staff_member = models.ForeignKey(
+        "staff.StaffMember",
+        verbose_name="الموظف الإداري المستفيد",
+        null=True,
+        blank=True,
         on_delete=models.CASCADE,
         related_name="loans",
     )
@@ -171,7 +201,17 @@ class Payslip(TenantOwnedModel):
     )
     teacher = models.ForeignKey(
         "staff.Teacher",
-        verbose_name="المعلم / الموظف",
+        verbose_name="المعلم التدريسي",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="payslips",
+    )
+    staff_member = models.ForeignKey(
+        "staff.StaffMember",
+        verbose_name="الموظف الإداري",
+        null=True,
+        blank=True,
         on_delete=models.PROTECT,
         related_name="payslips",
     )
@@ -196,13 +236,19 @@ class Payslip(TenantOwnedModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "payroll_run", "teacher"],
-                condition=models.Q(is_archived=False),
-                name="payroll_payslip_uniq",
-            )
+                condition=models.Q(is_archived=False, teacher__isnull=False),
+                name="payroll_payslip_teacher_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "payroll_run", "staff_member"],
+                condition=models.Q(is_archived=False, staff_member__isnull=False),
+                name="payroll_payslip_staff_uniq",
+            ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.teacher}: {self.net_salary} ({self.payroll_run.name})"
+        emp = self.staff_member or self.teacher or "موظف"
+        return f"{emp}: {self.net_salary} ({self.payroll_run.name})"
 
     @property
     def total_earnings(self) -> Decimal:

@@ -43,7 +43,7 @@ def generate_monthly_payroll(
             school=school,
             is_active=True,
             is_archived=False,
-        ).select_related("teacher")
+        ).select_related("teacher", "staff_member")
 
         t_basic = Decimal("0.00")
         t_allowances = Decimal("0.00")
@@ -52,23 +52,29 @@ def generate_monthly_payroll(
 
         for c in contracts:
             teacher = c.teacher
+            staff_member = c.staff_member
             basic = c.basic_salary
             housing = c.housing_allowance
             transport = c.transport_allowance
             other_all = c.other_allowances
             insurance = c.insurance_deduction
 
-            # Check for active loan advance to deduct
-            loan = EmployeeLoanAdvance.objects.filter(
+            # Calculate total loan deductions across all active loans for this employee
+            loans_qs = EmployeeLoanAdvance.objects.filter(
                 school=school,
-                teacher=teacher,
                 status=EmployeeLoanAdvance.Status.ACTIVE,
                 is_archived=False,
-            ).first()
+            )
+            if teacher:
+                loans_qs = loans_qs.filter(teacher=teacher)
+            elif staff_member:
+                loans_qs = loans_qs.filter(staff_member=staff_member)
+            else:
+                loans_qs = loans_qs.none()
 
             loan_ded = Decimal("0.00")
-            if loan:
-                loan_ded = min(loan.monthly_installment, loan.remaining_amount)
+            for loan in loans_qs:
+                loan_ded += min(loan.monthly_installment, loan.remaining_amount)
 
             earnings = basic + housing + transport + other_all
             deductions = insurance + loan_ded
@@ -78,6 +84,7 @@ def generate_monthly_payroll(
                 school=school,
                 payroll_run=run,
                 teacher=teacher,
+                staff_member=staff_member,
                 basic_salary=basic,
                 housing_allowance=housing,
                 transport_allowance=transport,

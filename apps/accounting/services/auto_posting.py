@@ -278,6 +278,71 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
         return journal_entry
 
 
+def post_student_invoice_to_journal(invoice) -> Optional[JournalEntry]:
+    """
+    الترحيل الآلي لإصدار فاتورة رسوم الطالب إلى قيد استحقاق محاسبي.
+    الجانب المدين: ذمم الطلاب وأولياء الأمور (1104).
+    الجانب الدائن: إيرادات الرسوم الدراسية (4101).
+    """
+    school = invoice.school
+    invoice_date = getattr(invoice, "issue_date", None) or timezone.localdate()
+    period = _get_active_fiscal_period(school, invoice_date)
+
+    with transaction.atomic():
+        existing = JournalEntry.objects.filter(
+            school=school,
+            source_module="student_invoice",
+            source_reference=invoice.invoice_number,
+            is_archived=False,
+        ).first()
+        if existing:
+            return existing
+
+        net_amount = max(Decimal("0.00"), invoice.total_amount - invoice.discount_amount)
+        if net_amount <= Decimal("0.00"):
+            return None
+
+        debit_acc = Account.objects.filter(school=school, code="1104", is_leaf=True).first()
+        credit_acc = Account.objects.filter(school=school, code="4101", is_leaf=True).first()
+
+        if not debit_acc or not credit_acc:
+            return None
+
+        entry_number = f"JV-INV-{invoice.invoice_number}"
+        entry = JournalEntry.objects.create(
+            school=school,
+            fiscal_period=period,
+            entry_number=entry_number,
+            date=invoice.due_date or timezone.localdate(),
+            status=JournalEntry.Status.POSTED,
+            source_module="student_invoice",
+            source_reference=invoice.invoice_number,
+            description=f"إثبات استحقاق فاتورة رسوم #{invoice.invoice_number} للطالب {invoice.student}",
+            posted_at=timezone.now(),
+        )
+
+        JournalEntryLine.objects.create(
+            school=school,
+            journal_entry=entry,
+            account=debit_acc,
+            description=f"ذمة الطالب: {invoice.student} - فاتورة #{invoice.invoice_number}",
+            debit=net_amount,
+            credit=Decimal("0.00"),
+        )
+
+        JournalEntryLine.objects.create(
+            school=school,
+            journal_entry=entry,
+            account=credit_acc,
+            description=f"إيراد رسوم دراسية - فاتورة #{invoice.invoice_number}",
+            debit=Decimal("0.00"),
+            credit=net_amount,
+        )
+
+        validate_and_balance_journal_entry(entry)
+        return entry
+
+
 def validate_and_balance_journal_entry(entry: JournalEntry) -> bool:
     """التحقق الصارم من توازن القيد اليومي (تطابق إجمالي المدين والدائن)."""
     lines = entry.lines.all()
@@ -294,7 +359,14 @@ def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by
     """
     إنشاء قيد عكسي محاسبي متكامل لقيد سابق لإلغاء أثره المالي دون حذف السجل التاريخي.
     الأطراف المدينة تصبح دائنة، والأطراف الدائنة تصبح مدينة.
+    كلا القيدين يظلان في دفتر الأستاذ كـ POSTED ليتلاشى أثرهما الرياضي معاً إلى الصفر،
+    ويتم توثيق الارتباط التبادلي وسبب العكس.
     """
+    if original_entry.is_reversed:
+        raise ValueError("لا يمكن عكس قيد محاسبي تم عكسه مسبقاً.")
+    if original_entry.status != JournalEntry.Status.POSTED:
+        raise ValueError("لا يمكن عكس قيد غير مرحل.")
+
     school = original_entry.school
     period = _get_active_fiscal_period(school, timezone.localdate())
 
@@ -325,7 +397,9 @@ def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by
             )
 
         validate_and_balance_journal_entry(rev_entry)
-        original_entry.status = JournalEntry.Status.CANCELLED
-        original_entry.save(update_fields=["status", "updated_at"])
+        original_entry.is_reversed = True
+        original_entry.reversed_by_entry = rev_entry
+        original_entry.reversal_reason = reason
+        original_entry.save(update_fields=["is_reversed", "reversed_by_entry", "reversal_reason", "updated_at"])
 
         return rev_entry

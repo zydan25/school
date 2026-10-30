@@ -610,19 +610,19 @@ from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRu
 
 @admin.register(EmployeeContract, site=school_admin_site)
 class SchoolEmployeeContractAdmin(SchoolScopedAdmin):
-    list_display = ("contract_number", "teacher", "contract_type", "basic_salary", "gross_salary", "net_salary", "is_active")
+    list_display = ("contract_number", "teacher", "staff_member", "contract_type", "basic_salary", "gross_salary", "net_salary", "is_active")
     list_filter = ("contract_type", "is_active")
-    search_fields = ("contract_number", "teacher__user__first_name", "teacher__user__last_name")
-    raw_id_fields = ("teacher",)
+    search_fields = ("contract_number", "teacher__user__first_name", "staff_member__user__first_name")
+    raw_id_fields = ("teacher", "staff_member")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
 @admin.register(EmployeeLoanAdvance, site=school_admin_site)
 class SchoolEmployeeLoanAdvanceAdmin(SchoolScopedAdmin):
-    list_display = ("loan_number", "teacher", "amount", "monthly_installment", "repaid_amount", "remaining_amount", "status")
+    list_display = ("loan_number", "teacher", "staff_member", "amount", "monthly_installment", "repaid_amount", "remaining_amount", "status")
     list_filter = ("status",)
-    search_fields = ("loan_number", "teacher__user__first_name", "teacher__user__last_name")
-    raw_id_fields = ("teacher",)
+    search_fields = ("loan_number", "teacher__user__first_name", "staff_member__user__first_name")
+    raw_id_fields = ("teacher", "staff_member")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
@@ -637,10 +637,10 @@ class SchoolPayrollRunAdmin(SchoolScopedAdmin):
 
 @admin.register(Payslip, site=school_admin_site)
 class SchoolPayslipAdmin(SchoolScopedAdmin):
-    list_display = ("teacher", "payroll_run", "basic_salary", "total_earnings", "total_deductions", "net_salary", "is_paid")
+    list_display = ("teacher", "staff_member", "payroll_run", "basic_salary", "total_earnings", "total_deductions", "net_salary", "is_paid")
     list_filter = ("is_paid", "payroll_run__year")
-    search_fields = ("teacher__user__first_name", "teacher__user__last_name", "payroll_run__name")
-    raw_id_fields = ("payroll_run", "teacher")
+    search_fields = ("teacher__user__first_name", "staff_member__user__first_name", "payroll_run__name")
+    raw_id_fields = ("payroll_run", "teacher", "staff_member")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
@@ -840,7 +840,7 @@ class SchoolBookRequisitionItemAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # Fee Installment Plans in School Admin
 # -----------------------------------------------------------------------------
-from apps.student_fees.models import FeeInstallmentPlan, FeeInstallment
+from apps.student_fees.models import FeeInstallmentPlan, FeeInstallment, PaymentAllocation
 
 
 @admin.register(FeeInstallmentPlan, site=school_admin_site)
@@ -857,6 +857,15 @@ class SchoolFeeInstallmentAdmin(SchoolScopedAdmin):
     list_filter = ("status", "due_date")
     search_fields = ("title", "plan__student__first_name", "plan__student__last_name")
     raw_id_fields = ("plan", "receipt")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(PaymentAllocation, site=school_admin_site)
+class SchoolPaymentAllocationAdmin(SchoolScopedAdmin):
+    list_display = ("receipt", "invoice", "installment", "allocated_amount", "status", "allocated_at")
+    list_filter = ("status", "allocated_at")
+    search_fields = ("receipt__receipt_number", "invoice__invoice_number", "notes")
+    raw_id_fields = ("receipt", "invoice", "installment", "allocated_by")
     readonly_fields = ("id", "created_at", "updated_at")
 
 

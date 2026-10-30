@@ -14,19 +14,19 @@ class PayslipInline(TabularInline):
 
 @admin.register(EmployeeContract)
 class EmployeeContractAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("contract_number", "teacher", "contract_type", "basic_salary", "gross_salary", "net_salary", "start_date", "is_active", "school")
+    list_display = ("contract_number", "teacher", "staff_member", "contract_type", "basic_salary", "gross_salary", "net_salary", "start_date", "is_active", "school")
     list_filter = ("contract_type", "is_active", "school")
-    search_fields = ("contract_number", "teacher__user__first_name", "teacher__user__last_name", "teacher__employee_number", "school__name")
-    autocomplete_fields = ("school", "branch", "teacher")
+    search_fields = ("contract_number", "teacher__user__first_name", "staff_member__user__first_name", "school__name")
+    raw_id_fields = ("school", "branch", "teacher", "staff_member")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
 @admin.register(EmployeeLoanAdvance)
 class EmployeeLoanAdvanceAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("loan_number", "teacher", "amount", "monthly_installment", "repaid_amount", "remaining_amount", "status", "school")
+    list_display = ("loan_number", "teacher", "staff_member", "amount", "monthly_installment", "repaid_amount", "remaining_amount", "status", "school")
     list_filter = ("status", "school")
-    search_fields = ("loan_number", "teacher__user__first_name", "teacher__user__last_name", "school__name")
-    autocomplete_fields = ("school", "branch", "teacher")
+    search_fields = ("loan_number", "teacher__user__first_name", "staff_member__user__first_name", "school__name")
+    raw_id_fields = ("school", "branch", "teacher", "staff_member")
     readonly_fields = ("id", "created_at", "updated_at")
 
 
@@ -42,8 +42,8 @@ class PayrollRunAdmin(AuditedAdminMixin, ModelAdmin):
 
 @admin.register(Payslip)
 class PayslipAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("teacher", "payroll_run", "basic_salary", "total_earnings", "total_deductions", "net_salary", "is_paid", "school")
+    list_display = ("teacher", "staff_member", "payroll_run", "basic_salary", "total_earnings", "total_deductions", "net_salary", "is_paid", "school")
     list_filter = ("is_paid", "payroll_run__year", "school")
-    search_fields = ("teacher__user__first_name", "teacher__user__last_name", "payroll_run__name", "school__name")
-    autocomplete_fields = ("school", "branch", "payroll_run", "teacher")
+    search_fields = ("teacher__user__first_name", "staff_member__user__first_name", "payroll_run__name", "school__name")
+    raw_id_fields = ("school", "branch", "payroll_run", "teacher", "staff_member")
     readonly_fields = ("id", "created_at", "updated_at")
