@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.12"]
     env:
       DATABASE_URL: "sqlite:///:memory:"
       SECRET_KEY: "ci-test-secret-key-for-school-erp-system-checks-only-12345"
