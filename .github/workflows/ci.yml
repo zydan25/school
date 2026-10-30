@@ -13,6 +13,11 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.11", "3.12"]
+    env:
+      DATABASE_URL: "sqlite:///:memory:"
+      SECRET_KEY: "ci-test-secret-key-for-school-erp-system-checks-only-12345"
+      DEBUG: "False"
+      ALLOWED_HOSTS: "localhost,127.0.0.1"
 
     steps:
     - uses: actions/checkout@v4
@@ -29,28 +34,13 @@ jobs:
         pip install -r requirements/dev.txt
 
     - name: Django System Checks
-      env:
-        DATABASE_URL: sqlite:///:memory:
-        SECRET_KEY: ci-test-secret-key-for-school-erp-system-checks-only-12345
-        DEBUG: "False"
-        ALLOWED_HOSTS: "localhost,127.0.0.1"
       run: |
         python manage.py check
 
     - name: Verify Migrations Consistency (No Drift)
-      env:
-        DATABASE_URL: sqlite:///:memory:
-        SECRET_KEY: ci-test-secret-key-for-school-erp-system-checks-only-12345
-        DEBUG: "False"
-        ALLOWED_HOSTS: "localhost,127.0.0.1"
       run: |
         python manage.py makemigrations --check --dry-run
 
     - name: Run Test Suite
-      env:
-        DATABASE_URL: sqlite:///:memory:
-        SECRET_KEY: ci-test-secret-key-for-school-erp-system-checks-only-12345
-        DEBUG: "False"
-        ALLOWED_HOSTS: "localhost,127.0.0.1"
       run: |
         python manage.py test tests --verbosity=2
