@@ -13,7 +13,7 @@ from apps.attendance.models import DailyAttendance
 def get_section_attendance_summary(section: Section, start_date=None, end_date=None) -> Dict[str, Any]:
     """ملخص نسب الحضور والغياب والتأخير لشعبة دراسية خلال فترة زمنية."""
     query = DailyAttendance.objects.filter(
-        student__current_section=section,
+        student__section=section,
         is_archived=False,
     )
     if start_date:
@@ -31,21 +31,21 @@ def get_section_attendance_summary(section: Section, start_date=None, end_date=N
 
     counts = query.aggregate(
         present=Count("id", filter=Q(status=DailyAttendance.Status.PRESENT)),
-        absent=Count("id", filter=Q(status=DailyAttendance.Status.ABSENT)),
+        absent_unexcused=Count("id", filter=Q(status=DailyAttendance.Status.ABSENT_UNEXCUSED)),
+        absent_excused=Count("id", filter=Q(status=DailyAttendance.Status.ABSENT_EXCUSED)),
         late=Count("id", filter=Q(status=DailyAttendance.Status.LATE)),
-        excused=Count("id", filter=Q(status=DailyAttendance.Status.EXCUSED)),
     )
 
     present_pct = round((counts["present"] / total_records) * 100, 2)
-    absent_pct = round((counts["absent"] / total_records) * 100, 2)
+    absent_pct = round((counts["absent_unexcused"] / total_records) * 100, 2)
     late_pct = round((counts["late"] / total_records) * 100, 2)
-    excused_pct = round((counts["excused"] / total_records) * 100, 2)
+    excused_pct = round((counts["absent_excused"] / total_records) * 100, 2)
 
     return {
         "section": {
             "id": str(section.id),
             "name": section.name,
-            "grade_level": section.grade_level.name if section.grade_level else None,
+            "grade_level": section.grade.name if section.grade else None,
         },
         "period": {
             "start_date": start_date.isoformat() if start_date else None,
@@ -66,11 +66,11 @@ def get_chronic_absenteeism_report(school, threshold: int = 5) -> Dict[str, Any]
     """تقرير الطلاب المتغيبين غياباً متكرراً يعرضهم للإنذار أو الحرمان الأكاديمي."""
     students = Student.objects.filter(
         school=school,
-        enrollment_status=Student.EnrollmentStatus.ACTIVE,
+        status=Student.Status.ACTIVE,
         is_archived=False,
     ).annotate(
-        unexcused_absences=Count("attendance_records", filter=Q(attendance_records__status=DailyAttendance.Status.ABSENT, attendance_records__is_archived=False)),
-        total_lates=Count("attendance_records", filter=Q(attendance_records__status=DailyAttendance.Status.LATE, attendance_records__is_archived=False)),
+        unexcused_absences=Count("daily_attendances", filter=Q(daily_attendances__status=DailyAttendance.Status.ABSENT_UNEXCUSED, daily_attendances__is_archived=False)),
+        total_lates=Count("daily_attendances", filter=Q(daily_attendances__status=DailyAttendance.Status.LATE, daily_attendances__is_archived=False)),
     ).filter(unexcused_absences__gte=threshold).order_by("-unexcused_absences")
 
     alerted_students = []
@@ -78,8 +78,8 @@ def get_chronic_absenteeism_report(school, threshold: int = 5) -> Dict[str, Any]
         alerted_students.append({
             "student_id": str(st.id),
             "student_name": f"{st.first_name} {st.last_name}",
-            "student_number": st.student_number,
-            "section": st.current_section.name if st.current_section else None,
+            "student_id_number": st.student_id_number,
+            "section": st.section.name if st.section else None,
             "unexcused_absences": st.unexcused_absences,
             "total_lates": st.total_lates,
             "risk_level": "مرتفع جداً (حرمان)" if st.unexcused_absences >= 15 else ("مرتفع (إنذار نهائي)" if st.unexcused_absences >= 10 else "متوسط (إنذار أول)"),

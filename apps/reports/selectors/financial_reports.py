@@ -71,8 +71,8 @@ def get_student_statement_of_account(student: Student) -> Dict[str, Any]:
         "student": {
             "id": str(student.id),
             "name": f"{student.first_name} {student.last_name}",
-            "student_number": student.student_number,
-            "section": str(student.current_section) if student.current_section else None,
+            "student_id_number": student.student_id_number,
+            "section": str(student.section) if student.section else None,
             "school_id": str(student.school_id),
         },
         "summary": {
@@ -118,7 +118,7 @@ def get_aging_receivables_report(school) -> Dict[str, Any]:
             student_aging[student_key] = {
                 "student_id": student_key,
                 "student_name": f"{inv.student.first_name} {inv.student.last_name}",
-                "student_number": inv.student.student_number,
+                "student_id_number": inv.student.student_id_number,
                 "total_balance": Decimal("0.00"),
                 "current": Decimal("0.00"),
                 "days_1_30": Decimal("0.00"),
@@ -147,13 +147,12 @@ def get_aging_receivables_report(school) -> Dict[str, Any]:
 
     total_outstanding = sum(buckets.values(), Decimal("0.00"))
 
-    # Convert Decimals to float for JSON
     aging_details = []
     for s_data in student_aging.values():
         aging_details.append({
             "student_id": s_data["student_id"],
             "student_name": s_data["student_name"],
-            "student_number": s_data["student_number"],
+            "student_id_number": s_data["student_id_number"],
             "total_balance": float(s_data["total_balance"]),
             "current": float(s_data["current"]),
             "days_1_30": float(s_data["days_1_30"]),
@@ -176,21 +175,18 @@ def get_daily_cash_register_report(school, target_date=None) -> Dict[str, Any]:
     if target_date is None:
         target_date = timezone.localdate()
 
-    # Receipts from students
     student_receipts = PaymentReceipt.objects.filter(
         school=school,
         is_archived=False,
         paid_at__date=target_date,
     ).select_related("student")
 
-    # General receipt vouchers
     receipt_vouchers = ReceiptVoucher.objects.filter(
         school=school,
         is_archived=False,
         date=target_date,
     )
 
-    # General payment vouchers
     payment_vouchers = PaymentVoucher.objects.filter(
         school=school,
         is_archived=False,

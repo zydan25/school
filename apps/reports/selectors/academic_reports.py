@@ -83,9 +83,9 @@ def get_student_report_card(student: Student, term: AcademicTerm = None) -> Dict
         "student": {
             "id": str(student.id),
             "name": f"{student.first_name} {student.last_name}",
-            "student_number": student.student_number,
-            "section": student.current_section.name if student.current_section else None,
-            "grade_level": student.current_section.grade_level.name if (student.current_section and student.current_section.grade_level) else None,
+            "student_id_number": student.student_id_number,
+            "section": student.section.name if student.section else None,
+            "grade_level": student.section.grade.name if (student.section and student.section.grade) else None,
         },
         "term": term.name if term else "كافة الفترات المسجلة",
         "overall_summary": {
@@ -103,8 +103,8 @@ def get_student_report_card(student: Student, term: AcademicTerm = None) -> Dict
 def get_class_ranking_report(section: Section, term: AcademicTerm = None) -> Dict[str, Any]:
     """لوحة الشرف وترتيب الطلاب داخل الشعبة الدراسية حسب المعدل التراكمي."""
     students = Student.objects.filter(
-        current_section=section,
-        enrollment_status=Student.EnrollmentStatus.ACTIVE,
+        section=section,
+        status=Student.Status.ACTIVE,
         is_archived=False,
     )
 
@@ -129,7 +129,7 @@ def get_class_ranking_report(section: Section, term: AcademicTerm = None) -> Dic
         rankings.append({
             "student_id": str(st.id),
             "student_name": f"{st.first_name} {st.last_name}",
-            "student_number": st.student_number,
+            "student_id_number": st.student_id_number,
             "total_score": float(earned),
             "max_score": float(maximum),
             "percentage": round(pct, 2),
@@ -147,7 +147,7 @@ def get_class_ranking_report(section: Section, term: AcademicTerm = None) -> Dic
         "section": {
             "id": str(section.id),
             "name": section.name,
-            "grade_level": section.grade_level.name if section.grade_level else None,
+            "grade_level": section.grade.name if section.grade else None,
         },
         "term": term.name if term else "العام الحالي",
         "students_count": len(rankings),

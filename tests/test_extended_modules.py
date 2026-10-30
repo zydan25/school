@@ -59,7 +59,7 @@ class ExtendedModulesTests(TestCase):
         cls.stage = EducationalStage.objects.create(school=cls.school, code="SEC", name="المرحلة الثانوية", sequence=1)
         cls.grade = GradeLevel.objects.create(school=cls.school, stage=cls.stage, code="G10", name="الصف العاشر", sequence=1)
         cls.section = Section.objects.create(school=cls.school, academic_year=cls.academic_year, grade=cls.grade, code="10-A", name="عاشر / أ")
-        cls.subject = Subject.objects.create(school=cls.school, grade=cls.grade, code="MATH10", name="الرياضيات المتقدمة")
+        cls.subject = Subject.objects.create(school=cls.school, code="MATH10", name="الرياضيات المتقدمة")
 
         cls.teacher_user = User.objects.create_user(
             phone="+967777333002", password="StrongPassword123!",

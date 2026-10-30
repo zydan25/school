@@ -41,7 +41,6 @@ class BaseSchoolReportView(APIView):
     def get_school(self, request):
         school = getattr(request, "school", None)
         if not school:
-            # Fallback to user's first school membership if not in domain middleware
             membership = request.user.memberships.filter(is_active=True).first()
             if membership:
                 school = membership.school
@@ -147,7 +146,7 @@ class ClassRankingAPIView(BaseSchoolReportView):
         if not school:
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
-        section = get_object_or_404(Section, id=section_id, grade_level__stage__school=school)
+        section = get_object_or_404(Section, id=section_id, school=school)
         term_id = request.query_params.get("term_id")
         term = None
         if term_id:
@@ -163,7 +162,7 @@ class SubjectGradeDistributionAPIView(BaseSchoolReportView):
         if not school:
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
-        subject = get_object_or_404(Subject, id=subject_id, grade_level__stage__school=school)
+        subject = get_object_or_404(Subject, id=subject_id, school=school)
         term_id = request.query_params.get("term_id")
         term = None
         if term_id:
@@ -183,7 +182,7 @@ class SectionAttendanceSummaryAPIView(BaseSchoolReportView):
         if not school:
             return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
 
-        section = get_object_or_404(Section, id=section_id, grade_level__stage__school=school)
+        section = get_object_or_404(Section, id=section_id, school=school)
         data = get_section_attendance_summary(section)
         return Response(data)
 
