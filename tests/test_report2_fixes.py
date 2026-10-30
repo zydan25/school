@@ -327,12 +327,15 @@ class Report2AuditFixesTests(TestCase):
 
         # 3. Disburse Payroll (Payment Voucher & Cash Outflow)
         cash_acc = Account.objects.get(school=self.school, code="1101")
-        pv = disburse_payroll_run(
+        disb_entry = disburse_payroll_run(
             payroll_run=run,
             payment_method="cash",
             credit_account=cash_acc,
             disbursed_by=self.user,
         )
+        self.assertIsNotNone(disb_entry)
+        self.assertEqual(disb_entry.status, JournalEntry.Status.POSTED)
+        pv = PaymentVoucher.objects.filter(school=self.school, journal_entry=disb_entry).first()
         self.assertIsNotNone(pv)
         self.assertEqual(pv.status, PaymentVoucher.Status.POSTED)
 

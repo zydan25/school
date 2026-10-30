@@ -238,7 +238,8 @@ def post_payroll_to_accounting(
 
 def disburse_payroll_run(
     payroll_run: PayrollRun,
-    payment_account: Account,
+    payment_account: Optional[Account] = None,
+    credit_account: Optional[Account] = None,
     payment_method: str = "bank_transfer",
     reference_number: str = "",
     disbursed_by=None,
@@ -247,6 +248,12 @@ def disburse_payroll_run(
     تنفيذ الصرف الفعلي لمسير الرواتب من حساب الصندوق أو البنك،
     وإنشاء قيد صرف مالي وسند صرف وتحديث قسائم الموظفين كـ مدفوعة.
     """
+    if payment_account is None and credit_account is not None:
+        payment_account = credit_account
+
+    if payment_account is None:
+        raise ValueError("يجب تحديد حساب الصرف المالي (الصندوق أو البنك).")
+
     from apps.accounting.models import PaymentVoucher
     from apps.accounting.services.auto_posting import _get_active_fiscal_period, validate_and_balance_journal_entry
 
