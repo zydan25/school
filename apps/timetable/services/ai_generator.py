@@ -164,9 +164,11 @@ def generate_school_timetable(
 
     return {
         "status": "success",
+        "mode": "preview" if dry_run else "committed",
         "dry_run": dry_run,
         "school": school.name,
         "sections_processed": sections_qs.count(),
+        "total_generated": len(generated_lessons),
         "generated_lessons_count": len(generated_lessons),
         "committed_to_db": saved_count,
         "unplaced_count": len(unplaced_assignments),
