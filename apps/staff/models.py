@@ -295,6 +295,14 @@ class StaffAttendance(TenantOwnedModel):
         related_name="attendance_records",
     )
     date = models.DateField("تاريخ يوم الدوام", default=timezone.localdate)
+    shift = models.ForeignKey(
+        WorkShift,
+        verbose_name="الوردية المحددة",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="attendance_records",
+    )
     time_in = models.TimeField("وقت الحضور الفعلي", null=True, blank=True)
     time_out = models.TimeField("وقت الانصراف الفعلي", null=True, blank=True)
     status = models.CharField("حالة الدوام", max_length=20, choices=Status.choices, default=Status.PRESENT)

@@ -382,7 +382,7 @@ class SchoolLeaveRequestAdmin(SchoolScopedAdmin):
     list_filter = ("status", "leave_type")
     search_fields = ("teacher__user__first_name", "staff_member__user__first_name", "reason")
     raw_id_fields = ("teacher", "staff_member", "leave_type", "approved_by")
-    readonly_fields = ("id", "created_at", "updated_at", "action_at")
+    readonly_fields = ("id", "created_at", "updated_at", "approved_at")
 
     def get_applicant(self, obj):
         return str(obj)
