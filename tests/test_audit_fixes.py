@@ -19,12 +19,12 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from rest_framework import status
 
-from apps.accounts.models import User
+from apps.accounts.models import User, SchoolRole
 from apps.academics.models import AcademicYear, AcademicTerm, EducationalStage, GradeLevel, Section, Subject
 from apps.staff.models import Teacher, StaffMember
 from apps.students.models import Student
-from apps.tenants.models import School, SchoolRole
-from apps.tenants.services import ensure_default_roles
+from apps.tenants.models import School
+from apps.tenants.services import provision_school
 
 from apps.accounting.models import Account, FiscalYear, FiscalPeriod, JournalEntry, JournalEntryLine, PaymentVoucher, ReceiptVoucher
 from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
@@ -59,6 +59,7 @@ class AuditFixesVerificationTests(TestCase):
             name="مدرسة الرواد النموذجية",
             status=School.Status.ACTIVE,
         )
+        provision_school(cls.school)
         seed_default_chart_of_accounts(cls.school)
 
         # 2. Fiscal Year & Period
@@ -467,8 +468,6 @@ class AuditFixesVerificationTests(TestCase):
 
     def test_clinic_role_isolation_and_permissions(self):
         """9. التحقق من عزل صلاحيات السجلات الصحية والعيادة عن أمين المخزن والمراجع وتخصيص دور مسؤول العيادة."""
-        ensure_default_roles(self.school)
-
         clinic_role = SchoolRole.objects.get(school=self.school, code="clinic-officer")
         store_role = SchoolRole.objects.get(school=self.school, code="store-keeper")
         auditor_role = SchoolRole.objects.get(school=self.school, code="school-auditor")
