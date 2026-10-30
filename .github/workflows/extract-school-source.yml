@@ -1,0 +1,59 @@
+name: Extract uploaded School source archive
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "School-Stage1-Source.zip"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: extract-school-source
+  cancel-in-progress: false
+
+jobs:
+  extract-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate and extract archive
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          archive = Path("School-Stage1-Source.zip")
+          if not archive.is_file():
+              raise SystemExit("School-Stage1-Source.zip was not found in repository root")
+          root = Path(".").resolve()
+          with ZipFile(archive) as zf:
+              bad = zf.testzip()
+              if bad:
+                  raise SystemExit(f"Corrupt ZIP member: {bad}")
+              for item in zf.infolist():
+                  target = (root / item.filename).resolve()
+                  if target != root and root not in target.parents:
+                      raise SystemExit(f"Unsafe ZIP path: {item.filename}")
+              zf.extractall(root)
+          print("Archive extracted and ZIP integrity verified.")
+          PY
+
+      - name: Remove archive and commit extracted source
+        shell: bash
+        run: |
+          rm -f School-Stage1-Source.zip
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No extracted changes to commit."
+          else
+            git commit -m "Extract School stage one source archive"
+            git push origin HEAD:main
+          fi
