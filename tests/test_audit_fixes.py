@@ -504,7 +504,7 @@ class AuditFixesVerificationTests(TestCase):
         )
 
         rep = get_daily_cash_register_report(school=self.school, target_date=today)
-        self.assertEqual(rep["summary"]["total_outflow"], 100.0)
+        self.assertEqual(rep["total_outflow"], 100.0)
 
     def test_clinic_role_isolation_and_permissions(self):
         """9. التحقق من عزل صلاحيات السجلات الصحية والعيادة عن أمين المخزن والمراجع وتخصيص دور مسؤول العيادة."""
