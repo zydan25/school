@@ -72,18 +72,22 @@ def central_navigation():
             ],
         },
         {
-            "title": _("الكادر والمعلمون"), "separator": True, "collapsible": True,
+            "title": _("الكادر والمعلمون والمشرفون"), "separator": True, "collapsible": True,
             "items": [
                 {"title": _("المعلمون"), "icon": "badge", "link": reverse_lazy("admin:staff_teacher_changelist"), "permission": _central_check("staff.view_teacher")},
+                {"title": _("الكادر الإداري ومشرفو الأدوار"), "icon": "manage_accounts", "link": reverse_lazy("admin:staff_staffmember_changelist"), "permission": _central_check("staff.view_staffmember")},
                 {"title": _("إسناد المواد والشعب"), "icon": "assignment_ind", "link": reverse_lazy("admin:staff_teacherassignment_changelist"), "permission": _central_check("staff.view_teacherassignment")},
             ],
         },
         {
-            "title": _("الطلاب وأولياء الأمور"), "separator": True, "collapsible": True,
+            "title": _("الطلاب وأولياء الأمور والمتابعة السلوكية"), "separator": True, "collapsible": True,
             "items": [
                 {"title": _("سجل الطلاب"), "icon": "person", "link": reverse_lazy("admin:students_student_changelist"), "permission": _central_check("students.view_student")},
                 {"title": _("أولياء الأمور"), "icon": "family_restroom", "link": reverse_lazy("admin:students_guardian_changelist"), "permission": _central_check("students.view_guardian")},
                 {"title": _("روابط الطلاب بالأسر"), "icon": "people", "link": reverse_lazy("admin:students_studentguardianrelation_changelist"), "permission": _central_check("students.view_studentguardianrelation")},
+                {"title": _("تقارير الوقائع السلوكية"), "icon": "report_problem", "link": reverse_lazy("admin:students_studentincidentreport_changelist"), "permission": _central_check("students.view_studentincidentreport")},
+                {"title": _("الاستدعاءات الإدارية"), "icon": "gavel", "link": reverse_lazy("admin:students_administrativesummon_changelist"), "permission": _central_check("students.view_administrativesummon")},
+                {"title": _("صندوق الشكاوى والمقترحات"), "icon": "feedback", "link": reverse_lazy("admin:students_schoolcomplaint_changelist"), "permission": _central_check("students.view_schoolcomplaint")},
             ],
         },
         {
@@ -96,10 +100,13 @@ def central_navigation():
             ],
         },
         {
-            "title": _("الواجبات والاختبارات وكنترول الامتحانات"), "separator": True, "collapsible": True,
+            "title": _("الواجبات والاختبارات وبنك الأسئلة والكنترول"), "separator": True, "collapsible": True,
             "items": [
                 {"title": _("الواجبات المدرسية"), "icon": "assignment", "link": reverse_lazy("admin:assignments_homework_changelist"), "permission": _central_check("assignments.view_homework")},
                 {"title": _("تسليمات الطلاب للواجبات"), "icon": "task_alt", "link": reverse_lazy("admin:assignments_homeworksubmission_changelist"), "permission": _central_check("assignments.view_homeworksubmission")},
+                {"title": _("بنك الأسئلة المركزي"), "icon": "quiz", "link": reverse_lazy("admin:assessments_questionbank_changelist"), "permission": _central_check("assessments.view_questionbank")},
+                {"title": _("الاختبارات الإلكترونية"), "icon": "devices", "link": reverse_lazy("admin:assessments_onlineexam_changelist"), "permission": _central_check("assessments.view_onlineexam")},
+                {"title": _("تسليمات الاختبارات الإلكترونية"), "icon": "fact_check", "link": reverse_lazy("admin:assessments_studentonlineexamsubmission_changelist"), "permission": _central_check("assessments.view_studentonlineexamsubmission")},
                 {"title": _("أنواع التقييمات والاختبارات"), "icon": "category", "link": reverse_lazy("admin:assessments_assessmenttype_changelist"), "permission": _central_check("assessments.view_assessmenttype")},
                 {"title": _("دفتر الدرجات والنتائج"), "icon": "grade", "link": reverse_lazy("admin:assessments_gradebook_changelist"), "permission": _central_check("assessments.view_gradebook")},
                 {"title": _("لجان الامتحانات والكنترول"), "icon": "co_present", "link": reverse_lazy("admin:assessments_examcommittee_changelist"), "permission": _central_check("assessments.view_examcommittee")},
@@ -169,6 +176,7 @@ def central_navigation():
                 {"title": _("خطوط النقل المدرسي والحافلات"), "icon": "directions_bus", "link": reverse_lazy("admin:school_services_busroute_changelist"), "permission": _central_check("school_services.view_busroute")},
                 {"title": _("اشتراكات حافلات الطلاب"), "icon": "commute", "link": reverse_lazy("admin:school_services_studentbussubscription_changelist"), "permission": _central_check("school_services.view_studentbussubscription")},
                 {"title": _("المحاسبة المالية للباصات والسائقين"), "icon": "account_balance_wallet", "link": reverse_lazy("admin:school_services_busfinancialsettlement_changelist"), "permission": _central_check("school_services.view_busfinancialsettlement")},
+                {"title": _("أوامر صرف الكتب لمسؤول المخزن"), "icon": "local_shipping", "link": reverse_lazy("admin:school_services_bookrequisitionorder_changelist"), "permission": _central_check("school_services.view_bookrequisitionorder")},
                 {"title": _("توزيع وتسليم الكتب المدرسية"), "icon": "auto_stories", "link": reverse_lazy("admin:school_services_studentbookdistribution_changelist"), "permission": _central_check("school_services.view_studentbookdistribution")},
                 {"title": _("المكتبة المدرسية والكتب"), "icon": "local_library", "link": reverse_lazy("admin:school_services_librarybook_changelist"), "permission": _central_check("school_services.view_librarybook")},
                 {"title": _("سجل إعارات واسترجاع الكتب"), "icon": "menu_book", "link": reverse_lazy("admin:school_services_bookloan_changelist"), "permission": _central_check("school_services.view_bookloan")},
@@ -217,17 +225,21 @@ def school_navigation():
             ],
         },
         {
-            "title": _("الكادر والمعلمون"), "separator": True, "collapsible": True,
+            "title": _("الكادر والمعلمون والمشرفون"), "separator": True, "collapsible": True,
             "items": [
                 {"title": _("المعلمون"), "icon": "badge", "link": reverse_lazy("school_admin:staff_teacher_changelist"), "permission": _school_check("staff.view_teacher")},
+                {"title": _("الكادر الإداري ومشرفو الأدوار"), "icon": "manage_accounts", "link": reverse_lazy("school_admin:staff_staffmember_changelist"), "permission": _school_check("staff.view_staffmember")},
                 {"title": _("إسناد المواد والشعب"), "icon": "assignment_ind", "link": reverse_lazy("school_admin:staff_teacherassignment_changelist"), "permission": _school_check("staff.view_teacherassignment")},
             ],
         },
         {
-            "title": _("الطلاب وأولياء الأمور"), "separator": True, "collapsible": True,
+            "title": _("الطلاب وأولياء الأمور والمتابعة السلوكية"), "separator": True, "collapsible": True,
             "items": [
                 {"title": _("سجل الطلاب"), "icon": "person", "link": reverse_lazy("school_admin:students_student_changelist"), "permission": _school_check("students.view_student")},
                 {"title": _("أولياء الأمور"), "icon": "family_restroom", "link": reverse_lazy("school_admin:students_guardian_changelist"), "permission": _school_check("students.view_guardian")},
+                {"title": _("تقارير الوقائع السلوكية"), "icon": "report_problem", "link": reverse_lazy("school_admin:students_studentincidentreport_changelist"), "permission": _school_check("students.view_studentincidentreport")},
+                {"title": _("الاستدعاءات الإدارية"), "icon": "gavel", "link": reverse_lazy("school_admin:students_administrativesummon_changelist"), "permission": _school_check("students.view_administrativesummon")},
+                {"title": _("صندوق الشكاوى والمقترحات"), "icon": "feedback", "link": reverse_lazy("school_admin:students_schoolcomplaint_changelist"), "permission": _school_check("students.view_schoolcomplaint")},
             ],
         },
         {
@@ -240,10 +252,13 @@ def school_navigation():
             ],
         },
         {
-            "title": _("الواجبات والتقييمات والكنترول"), "separator": True, "collapsible": True,
+            "title": _("الواجبات والتقييمات وبنك الأسئلة والكنترول"), "separator": True, "collapsible": True,
             "items": [
                 {"title": _("الواجبات المدرسية"), "icon": "assignment", "link": reverse_lazy("school_admin:assignments_homework_changelist"), "permission": _school_check("assignments.view_homework")},
                 {"title": _("تسليمات الطلاب"), "icon": "task_alt", "link": reverse_lazy("school_admin:assignments_homeworksubmission_changelist"), "permission": _school_check("assignments.view_homeworksubmission")},
+                {"title": _("بنك الأسئلة المركزي"), "icon": "quiz", "link": reverse_lazy("school_admin:assessments_questionbank_changelist"), "permission": _school_check("assessments.view_questionbank")},
+                {"title": _("الاختبارات الإلكترونية"), "icon": "devices", "link": reverse_lazy("school_admin:assessments_onlineexam_changelist"), "permission": _school_check("assessments.view_onlineexam")},
+                {"title": _("تسليمات الاختبارات الإلكترونية"), "icon": "fact_check", "link": reverse_lazy("school_admin:assessments_studentonlineexamsubmission_changelist"), "permission": _school_check("assessments.view_studentonlineexamsubmission")},
                 {"title": _("أنواع التقييم"), "icon": "category", "link": reverse_lazy("school_admin:assessments_assessmenttype_changelist"), "permission": _school_check("assessments.view_assessmenttype")},
                 {"title": _("دفتر الدرجات والنتائج"), "icon": "grade", "link": reverse_lazy("school_admin:assessments_gradebook_changelist"), "permission": _school_check("assessments.view_gradebook")},
                 {"title": _("لجان الامتحانات والكنترول"), "icon": "co_present", "link": reverse_lazy("school_admin:assessments_examcommittee_changelist"), "permission": _school_check("assessments.view_examcommittee")},
@@ -313,6 +328,7 @@ def school_navigation():
                 {"title": _("خطوط النقل المدرسي"), "icon": "directions_bus", "link": reverse_lazy("school_admin:school_services_busroute_changelist"), "permission": _school_check("school_services.view_busroute")},
                 {"title": _("اشتراكات حافلات الطلاب"), "icon": "commute", "link": reverse_lazy("school_admin:school_services_studentbussubscription_changelist"), "permission": _school_check("school_services.view_studentbussubscription")},
                 {"title": _("المحاسبة المالية للباصات والسائقين"), "icon": "account_balance_wallet", "link": reverse_lazy("school_admin:school_services_busfinancialsettlement_changelist"), "permission": _school_check("school_services.view_busfinancialsettlement")},
+                {"title": _("أوامر صرف الكتب لمسؤول المخزن"), "icon": "local_shipping", "link": reverse_lazy("school_admin:school_services_bookrequisitionorder_changelist"), "permission": _school_check("school_services.view_bookrequisitionorder")},
                 {"title": _("توزيع وتسليم الكتب المدرسية"), "icon": "auto_stories", "link": reverse_lazy("school_admin:school_services_studentbookdistribution_changelist"), "permission": _school_check("school_services.view_studentbookdistribution")},
                 {"title": _("المكتبة والكتب"), "icon": "local_library", "link": reverse_lazy("school_admin:school_services_librarybook_changelist"), "permission": _school_check("school_services.view_librarybook")},
                 {"title": _("إعارات الكتب"), "icon": "menu_book", "link": reverse_lazy("school_admin:school_services_bookloan_changelist"), "permission": _school_check("school_services.view_bookloan")},

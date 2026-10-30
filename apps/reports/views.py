@@ -61,10 +61,12 @@ class BaseSchoolReportView(APIView):
         membership = request.user.school_memberships.filter(school=school, status="active").first()
         if not membership:
             return False
-        # Check user roles
-        role_codes = list(membership.roles.values_list("code", flat=True)) if hasattr(membership, "roles") else []
-        allowed_roles = {"principal", "school_admin", "accountant", "cashier", "financial_manager", "general_manager"}
-        return bool(set(role_codes) & allowed_roles)
+        role_codes = membership.get_role_codes()
+        allowed_roles = {
+            "school-director", "school_director", "accountant", "cashier",
+            "principal", "school_admin", "financial_manager", "general_manager"
+        }
+        return bool(role_codes & allowed_roles)
 
     def check_hr_access(self, request, school) -> bool:
         """التحقق من صلاحية الموارد البشرية والرواتب."""
@@ -73,9 +75,12 @@ class BaseSchoolReportView(APIView):
         membership = request.user.school_memberships.filter(school=school, status="active").first()
         if not membership:
             return False
-        role_codes = list(membership.roles.values_list("code", flat=True)) if hasattr(membership, "roles") else []
-        allowed_roles = {"principal", "school_admin", "hr_manager", "accountant", "general_manager"}
-        return bool(set(role_codes) & allowed_roles)
+        role_codes = membership.get_role_codes()
+        allowed_roles = {
+            "school-director", "school_director", "principal", "hr_manager",
+            "hr-manager", "accountant", "general_manager"
+        }
+        return bool(role_codes & allowed_roles)
 
 
 # -----------------------------------------------------------------------------
@@ -93,7 +98,7 @@ class StudentStatementOfAccountAPIView(BaseSchoolReportView):
         # التحقق من صلاحية الوصول لملف الطالب المالي
         if not self.check_financial_access(request, school):
             is_own_student = (student.user_id == request.user.id)
-            is_own_guardian = request.user.guardian_profiles.filter(school=school, students=student).exists() if hasattr(request.user, "guardian_profiles") else False
+            is_own_guardian = request.user.guardian_profiles.filter(school=school, children=student).exists() if hasattr(request.user, "guardian_profiles") else False
             if not (is_own_student or is_own_guardian):
                 return Response({"error": "غير مصرح لك بالاطلاع على كشف حساب هذا الطالب."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -189,9 +194,19 @@ class StudentReportCardAPIView(BaseSchoolReportView):
         # التحقق من صلاحية الوصول لشهادة الطالب
         if not (request.user.is_staff or request.user.is_superuser):
             is_own_student = (student.user_id == request.user.id)
-            is_own_guardian = request.user.guardian_profiles.filter(school=school, students=student).exists() if hasattr(request.user, "guardian_profiles") else False
-            is_teacher = request.user.school_memberships.filter(school=school, status="active").exists()
-            if not (is_own_student or is_own_guardian or is_teacher):
+            is_own_guardian = request.user.guardian_profiles.filter(school=school, children=student).exists() if hasattr(request.user, "guardian_profiles") else False
+            
+            # المعلم أو المشرف الأكاديمي المصرح له
+            membership = request.user.school_memberships.filter(school=school, status="active").first()
+            user_roles = membership.get_role_codes() if membership else set()
+            is_academic = bool(user_roles & {"school-director", "school_director", "academic-coordinator", "academic_coordinator", "student-affairs", "control-officer"})
+            is_section_teacher = False
+            if hasattr(request.user, "teacher_profiles"):
+                teacher = request.user.teacher_profiles.filter(school=school).first()
+                if teacher:
+                    is_section_teacher = teacher.assignments.filter(section=student.section).exists()
+
+            if not (is_own_student or is_own_guardian or is_academic or is_section_teacher):
                 return Response({"error": "غير مصرح لك بالاطلاع على درجات هذا الطالب."}, status=status.HTTP_403_FORBIDDEN)
 
         term_id = request.query_params.get("term_id")

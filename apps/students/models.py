@@ -113,6 +113,13 @@ class Guardian(TenantOwnedModel):
     relationship_type = models.CharField("صلة القرابة", max_length=20, choices=RelationshipType.choices, default=RelationshipType.FATHER)
     occupation = models.CharField("المهنة / جهة العمل", max_length=150, blank=True)
     emergency_phone = models.CharField("هاتف الطوارئ البديل", max_length=25, blank=True)
+    children = models.ManyToManyField(
+        Student,
+        through="StudentGuardianRelation",
+        related_name="linked_guardians",
+        verbose_name="الأبناء والطلاب المكفولون",
+        blank=True,
+    )
 
     class Meta:
         verbose_name = "ولي أمر"
@@ -127,6 +134,10 @@ class Guardian(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.user.get_full_name() or self.user.phone} ({self.get_relationship_type_display()})"
+
+    def get_students(self):
+        """إرجاع كشف الأبناء الفعليين والطلاب المرتبطين بولي الأمر بأمان تام."""
+        return Student.objects.filter(guardians__guardian=self, is_archived=False)
 
 
 class StudentGuardianRelation(TenantOwnedModel):
@@ -167,3 +178,141 @@ class StudentGuardianRelation(TenantOwnedModel):
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
         if self.guardian_id and self.guardian.school_id != self.school_id:
             raise ValidationError({"guardian": "ولي الأمر لا يتبع نفس المدرسة."})
+
+
+# -----------------------------------------------------------------------------
+# Disciplinary Incidents, Administrative Summons, and Complaints Workflow
+# -----------------------------------------------------------------------------
+
+class StudentIncidentReport(TenantOwnedModel):
+    """بلاغات المعلمين السلوكية وإخطارات أولياء الأمور."""
+    class IncidentType(models.TextChoices):
+        ACADEMIC_NEGLECT = "academic_neglect", "إهمال دراسي / عدم حل واجبات"
+        BEHAVIORAL = "behavioral", "مخالفة سلوكية أو انضباطية"
+        TARDINESS = "tardiness", "تأخر صباحي متكرر"
+        ABSENCE = "absence", "غياب بدون عذر"
+        COMMENDATION = "commendation", "خطاب شكر وتقدير وتميز"
+
+    class Severity(models.TextChoices):
+        LOW = "low", "بسيط (تنبيه شفوي)"
+        MEDIUM = "medium", "متوسط (إشعار رسمي لولي الأمر)"
+        HIGH = "high", "جسيم (إحالة لإدارة المدرسة والإرشاد)"
+
+    student = models.ForeignKey(
+        Student,
+        verbose_name="الطالب المعني",
+        on_delete=models.CASCADE,
+        related_name="incident_reports",
+    )
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="محرر البلاغ (المعلم / المشرف)",
+        on_delete=models.PROTECT,
+        related_name="filed_incidents",
+    )
+    date = models.DateField("تاريخ الواقعة", default=timezone.localdate)
+    incident_type = models.CharField("نوع البلاغ", max_length=30, choices=IncidentType.choices, default=IncidentType.BEHAVIORAL)
+    severity = models.CharField("درجة الأهمية", max_length=20, choices=Severity.choices, default=Severity.MEDIUM)
+    title = models.CharField("عنوان البلاغ / الواقعة", max_length=200)
+    details = models.TextField("تفاصيل الواقعة وملاحظات المعلم")
+    action_taken = models.TextField("الإجراء المتخذ والتوصيات", blank=True)
+    parent_notified = models.BooleanField("تم إشعار ولي الأمر (رسالة / اتصال)", default=False)
+    parent_seen_at = models.DateTimeField("تاريخ اطلاع ولي الأمر عبر البوابة", null=True, blank=True)
+    is_resolved = models.BooleanField("تم تسوية البلاغ ومعالجته", default=False)
+
+    class Meta:
+        verbose_name = "بلاغ سلوكي / تقرير معلم"
+        verbose_name_plural = "سجل البلاغات والتقارير السلوكية"
+
+    def __str__(self) -> str:
+        return f"{self.student}: {self.title} ({self.get_incident_type_display()})"
+
+
+class AdministrativeSummon(TenantOwnedModel):
+    """استدعاءات رسمية من إدارة المدرسة (لولي الأمر، الطالب، أو المعلم)."""
+    class TargetType(models.TextChoices):
+        GUARDIAN = "guardian", "استدعاء ولي أمر طالب"
+        STUDENT = "student", "استدعاء طالب"
+        TEACHER = "teacher", "استدعاء معلم / موظف"
+
+    summon_type = models.CharField("فئة المستدعى", max_length=20, choices=TargetType.choices, default=TargetType.GUARDIAN)
+    student = models.ForeignKey(
+        Student,
+        verbose_name="الطالب المرتبط (إن وجد)",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="summons",
+    )
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="الشخص المستدعى",
+        on_delete=models.PROTECT,
+        related_name="received_summons",
+    )
+    issued_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المسؤول المصدِر للاستدعاء",
+        on_delete=models.PROTECT,
+        related_name="issued_summons",
+    )
+    reason = models.TextField("سبب وموضوع الاستدعاء الرسمي")
+    appointment_date = models.DateTimeField("موعد وتوقيت الحضور للمدرسة")
+    location = models.CharField("الموقع المكتبي (مكتب المدير، الإرشاد، الكنترول)", max_length=150, default="مكتب إدارة المدرسة")
+    is_attended = models.BooleanField("تم الحضور والمقابلة", default=False)
+    attended_at = models.DateTimeField("وقت الحضور الفعلي", null=True, blank=True)
+    session_minutes = models.TextField("محضر وقائع الجلسة والتعهدات والنتائج", blank=True)
+
+    class Meta:
+        verbose_name = "استدعاء إداري رسمي"
+        verbose_name_plural = "سجل الاستدعاءات الإدارية"
+
+    def __str__(self) -> str:
+        return f"استدعاء {self.get_summon_type_display()}: {self.target_user} ({self.appointment_date.strftime('%Y-%m-%d %H:%M')})"
+
+
+class SchoolComplaint(TenantOwnedModel):
+    """صندوق الشكاوى والمقترحات للطلاب وأولياء الأمور."""
+    class Category(models.TextChoices):
+        ACADEMIC = "academic", "شكوى أكاديمية أو تعليمية"
+        TRANSPORTATION = "transportation", "خدمات النقل والحافلات"
+        FINANCIAL = "financial", "الرسوم والمطالبات المالية"
+        ADMINISTRATIVE = "administrative", "تعامل إداري أو تنظيمي"
+        FACILITIES = "facilities", "المرافق والنظافة والتجهيزات"
+        OTHER = "other", "أخرى"
+
+    class Status(models.TextChoices):
+        NEW = "new", "جديدة"
+        IN_REVIEW = "in_review", "قيد المراجعة والبحث"
+        RESOLVED = "resolved", "تمت المعالجة والحل"
+        CLOSED = "closed", "مغلقة"
+
+    submitter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="مقدم الشكوى",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="submitted_complaints",
+    )
+    category = models.CharField("تصنيف الشكوى", max_length=30, choices=Category.choices, default=Category.ACADEMIC)
+    subject = models.CharField("موضوع الشكوى", max_length=200)
+    details = models.TextField("تفاصيل الشكوى أو المقترح")
+    status = models.CharField("حالة الشكوى", max_length=20, choices=Status.choices, default=Status.NEW)
+    resolution_notes = models.TextField("رد الإدارة وإجراءات المعالجة", blank=True)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المسؤول المعالج",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="resolved_complaints",
+    )
+    resolved_at = models.DateTimeField("تاريخ وتوقيت الحل", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "شكوى / مقترح"
+        verbose_name_plural = "صندوق الشكاوى والمقترحات"
+
+    def __str__(self) -> str:
+        return f"[{self.get_category_display()}] {self.subject} - {self.get_status_display()}"

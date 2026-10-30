@@ -4,14 +4,16 @@ from unfold.admin import ModelAdmin
 
 from apps.core.admin import AuditedAdminMixin
 from apps.school_services.models import (
-    BusRoute,
-    StudentBusSubscription,
-    BusFinancialSettlement,
-    StudentBookDistribution,
-    LibraryBook,
     BookLoan,
-    StudentHealthProfile,
+    BookRequisitionItem,
+    BookRequisitionOrder,
+    BusFinancialSettlement,
+    BusRoute,
     ClinicVisit,
+    LibraryBook,
+    StudentBookDistribution,
+    StudentBusSubscription,
+    StudentHealthProfile,
 )
 
 
@@ -75,3 +77,30 @@ class ClinicVisitAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("school", "sent_home", "parent_notified", "visit_date")
     search_fields = ("student__user__first_name", "student__user__last_name", "diagnosis", "symptoms")
     raw_id_fields = ("student", "school", "branch")
+
+
+from unfold.admin import TabularInline
+
+
+class BookRequisitionItemInline(TabularInline):
+    model = BookRequisitionItem
+    extra = 1
+    raw_id_fields = ("book_item",)
+
+
+@admin.register(BookRequisitionOrder)
+class BookRequisitionOrderAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("order_number", "requested_by", "academic_year", "status", "approved_by", "fulfilled_by", "created_at", "school")
+    list_filter = ("school", "status", "academic_year")
+    search_fields = ("order_number", "requested_by__phone", "requested_by__first_name", "requested_by__last_name", "notes")
+    raw_id_fields = ("requested_by", "approved_by", "fulfilled_by", "academic_year", "school", "branch")
+    readonly_fields = ("id", "created_at", "updated_at", "approved_at", "fulfilled_at")
+    inlines = (BookRequisitionItemInline,)
+
+
+@admin.register(BookRequisitionItem)
+class BookRequisitionItemAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("order", "custom_book_name", "book_item", "requested_quantity", "approved_quantity", "dispensed_quantity", "school")
+    list_filter = ("school",)
+    search_fields = ("custom_book_name", "order__order_number", "book_item__name")
+    raw_id_fields = ("order", "book_item", "school", "branch")

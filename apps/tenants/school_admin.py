@@ -201,10 +201,15 @@ class SchoolClassroomAdmin(SchoolScopedAdmin):
 
 @admin.register(Section, site=school_admin_site)
 class SchoolSectionAdmin(SchoolScopedAdmin):
-    list_display = ("name", "code", "grade", "academic_year", "homeroom_classroom", "capacity", "is_active")
-    list_filter = ("academic_year", "grade", "is_active")
-    search_fields = ("name", "code", "grade__name")
+    list_display = ("name", "code", "grade", "floor_wing", "supervisor_user", "students_count_display", "capacity", "is_active")
+    list_filter = ("academic_year", "grade", "floor_wing", "is_active")
+    search_fields = ("name", "code", "floor_wing", "grade__name", "supervisor_user__phone")
+    raw_id_fields = ("academic_year", "grade", "homeroom_classroom", "supervisor_user")
     readonly_fields = ("id", "created_at", "updated_at")
+
+    def students_count_display(self, obj):
+        return f"{obj.current_student_count} / {obj.capacity}"
+    students_count_display.short_description = "الطلاب / السعة"
 
 
 @admin.register(Subject, site=school_admin_site)
@@ -302,12 +307,28 @@ class SchoolInvitationAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # New Operational Modules Registered in School Admin
 # -----------------------------------------------------------------------------
-from apps.staff.models import Teacher, TeacherAssignment
-from apps.students.models import Student, Guardian, StudentGuardianRelation
+from apps.staff.models import StaffMember, Teacher, TeacherAssignment
+from apps.students.models import (
+    AdministrativeSummon,
+    Guardian,
+    SchoolComplaint,
+    Student,
+    StudentGuardianRelation,
+    StudentIncidentReport,
+)
 from apps.timetable.models import ClassSchedule, DailyLessonLog
 from apps.assignments.models import Homework, HomeworkSubmission
 from apps.assessments.models import AssessmentType, GradeBook
 from apps.copilot.models import CurriculumDocument, AIChatSession
+
+
+@admin.register(StaffMember, site=school_admin_site)
+class SchoolStaffMemberAdmin(SchoolScopedAdmin):
+    list_display = ("user", "staff_role", "job_title", "floor_wing_assigned", "employee_number", "is_active", "hire_date")
+    list_filter = ("staff_role", "is_active")
+    search_fields = ("user__phone", "user__first_name", "user__last_name", "job_title", "employee_number", "floor_wing_assigned")
+    raw_id_fields = ("user",)
+    readonly_fields = ("id", "created_at", "updated_at")
 
 
 @admin.register(Teacher, site=school_admin_site)
@@ -354,6 +375,33 @@ class SchoolStudentGuardianRelationAdmin(SchoolScopedAdmin):
     search_fields = ("student__first_name", "student__last_name", "guardian__user__first_name")
     autocomplete_fields = ("student", "guardian")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentIncidentReport, site=school_admin_site)
+class SchoolStudentIncidentReportAdmin(SchoolScopedAdmin):
+    list_display = ("title", "student", "reported_by", "severity", "incident_date", "status", "notified_guardian")
+    list_filter = ("severity", "status", "notified_guardian")
+    search_fields = ("title", "student__first_name", "student__last_name", "reported_by__phone", "description")
+    raw_id_fields = ("student", "reported_by")
+    readonly_fields = ("id", "created_at", "updated_at", "guardian_notified_at")
+
+
+@admin.register(AdministrativeSummon, site=school_admin_site)
+class SchoolAdministrativeSummonAdmin(SchoolScopedAdmin):
+    list_display = ("student", "guardian", "summon_type", "scheduled_at", "status", "created_by")
+    list_filter = ("summon_type", "status")
+    search_fields = ("student__first_name", "student__last_name", "guardian__user__first_name", "reason")
+    raw_id_fields = ("student", "guardian", "created_by")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(SchoolComplaint, site=school_admin_site)
+class SchoolComplaintAdmin(SchoolScopedAdmin):
+    list_display = ("ticket_number", "subject", "category", "priority", "status", "complainant_user", "student")
+    list_filter = ("category", "priority", "status")
+    search_fields = ("ticket_number", "subject", "description", "complainant_user__phone", "student__first_name")
+    raw_id_fields = ("complainant_user", "student", "assigned_to")
+    readonly_fields = ("id", "created_at", "updated_at", "resolved_at")
 
 
 @admin.register(ClassSchedule, site=school_admin_site)
@@ -680,14 +728,16 @@ class SchoolPurchaseOrderAdmin(SchoolScopedAdmin):
 # School Services (Buses, Library, Clinic) in School Admin
 # -----------------------------------------------------------------------------
 from apps.school_services.models import (
-    BusRoute,
-    StudentBusSubscription,
-    BusFinancialSettlement,
-    StudentBookDistribution,
-    LibraryBook,
     BookLoan,
-    StudentHealthProfile,
+    BookRequisitionItem,
+    BookRequisitionOrder,
+    BusFinancialSettlement,
+    BusRoute,
     ClinicVisit,
+    LibraryBook,
+    StudentBookDistribution,
+    StudentBusSubscription,
+    StudentHealthProfile,
 )
 
 
@@ -761,6 +811,33 @@ class SchoolClinicVisitAdmin(SchoolScopedAdmin):
     readonly_fields = ("id", "created_at", "updated_at")
 
 
+from unfold.admin import TabularInline
+
+
+class SchoolBookRequisitionItemInline(TabularInline):
+    model = BookRequisitionItem
+    extra = 1
+    raw_id_fields = ("book_item",)
+
+
+@admin.register(BookRequisitionOrder, site=school_admin_site)
+class SchoolBookRequisitionOrderAdmin(SchoolScopedAdmin):
+    list_display = ("order_number", "requested_by", "academic_year", "status", "approved_by", "fulfilled_by", "created_at")
+    list_filter = ("status", "academic_year")
+    search_fields = ("order_number", "requested_by__phone", "notes")
+    raw_id_fields = ("requested_by", "approved_by", "fulfilled_by", "academic_year")
+    readonly_fields = ("id", "created_at", "updated_at", "approved_at", "fulfilled_at")
+    inlines = (SchoolBookRequisitionItemInline,)
+
+
+@admin.register(BookRequisitionItem, site=school_admin_site)
+class SchoolBookRequisitionItemAdmin(SchoolScopedAdmin):
+    list_display = ("order", "custom_book_name", "book_item", "requested_quantity", "approved_quantity", "dispensed_quantity")
+    search_fields = ("custom_book_name", "order__order_number", "book_item__name")
+    raw_id_fields = ("order", "book_item")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
 # -----------------------------------------------------------------------------
 # Fee Installment Plans in School Admin
 # -----------------------------------------------------------------------------
@@ -787,7 +864,13 @@ class SchoolFeeInstallmentAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # Exam Control Room & Committees in School Admin
 # -----------------------------------------------------------------------------
-from apps.assessments.models import ExamCommittee, ExamSeating
+from apps.assessments.models import (
+    ExamCommittee,
+    ExamSeating,
+    OnlineExam,
+    QuestionBank,
+    StudentOnlineExamSubmission,
+)
 
 
 @admin.register(ExamCommittee, site=school_admin_site)
@@ -805,6 +888,38 @@ class SchoolExamSeatingAdmin(SchoolScopedAdmin):
     search_fields = ("seating_number", "secret_code", "student__first_name", "student__last_name")
     raw_id_fields = ("student", "committee", "academic_year")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(QuestionBank, site=school_admin_site)
+class SchoolQuestionBankAdmin(SchoolScopedAdmin):
+    list_display = ("question_text_short", "subject", "grade_level", "unit_title", "question_type", "difficulty", "points")
+    list_filter = ("question_type", "difficulty", "subject", "grade_level")
+    search_fields = ("question_text", "unit_title", "subject__name")
+    raw_id_fields = ("subject", "grade_level", "created_by")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+    def question_text_short(self, obj):
+        return obj.question_text[:50] + ("..." if len(obj.question_text) > 50 else "")
+    question_text_short.short_description = "نص السؤال"
+
+
+@admin.register(OnlineExam, site=school_admin_site)
+class SchoolOnlineExamAdmin(SchoolScopedAdmin):
+    list_display = ("title", "subject", "academic_year", "duration_minutes", "total_score", "passing_score", "is_published")
+    list_filter = ("is_published", "subject", "academic_year")
+    search_fields = ("title", "subject__name", "instructions")
+    raw_id_fields = ("subject", "academic_year", "academic_term", "created_by")
+    filter_horizontal = ("sections", "questions")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentOnlineExamSubmission, site=school_admin_site)
+class SchoolStudentOnlineExamSubmissionAdmin(SchoolScopedAdmin):
+    list_display = ("online_exam", "student", "score_obtained", "passed", "status", "submitted_at")
+    list_filter = ("status", "passed", "online_exam")
+    search_fields = ("student__first_name", "student__last_name", "online_exam__title")
+    raw_id_fields = ("online_exam", "student", "graded_by")
+    readonly_fields = ("id", "created_at", "updated_at", "started_at", "submitted_at", "graded_at")
 
 
 # -----------------------------------------------------------------------------

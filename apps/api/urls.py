@@ -11,4 +11,5 @@ urlpatterns = [
     path("<str:version>/copilot/", include("apps.copilot.api.urls")),
     path("<str:version>/reports/", include("apps.reports.urls")),
     path("<str:version>/notifications/", include("apps.notifications.api.urls")),
+    path("<str:version>/timetable/", include("apps.timetable.urls")),
 ]

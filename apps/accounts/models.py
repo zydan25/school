@@ -173,6 +173,23 @@ class SchoolMembership(UUIDTimestampedModel):
     def __str__(self):
         return f"{self.user} @ {self.school}"
 
+    @property
+    def roles(self):
+        """إرجاع كشف الأدوار المسندة للعضوية."""
+        return SchoolRole.objects.filter(assignments__membership=self, is_active=True)
+
+    def get_role_codes(self) -> set[str]:
+        """إرجاع أكواد الأدوار الصالحة للعضوية لمطابقة الصلاحيات."""
+        today = timezone.localdate()
+        return set(
+            self.role_assignments.filter(
+                role__is_active=True,
+                valid_from__lte=today,
+            ).filter(
+                Q(valid_until__isnull=True) | Q(valid_until__gte=today)
+            ).values_list("role__code", flat=True)
+        )
+
     def activate(self):
         self.status = self.Status.ACTIVE
         self.joined_at = self.joined_at or timezone.now()

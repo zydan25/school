@@ -2,7 +2,14 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
 from apps.core.admin import AuditedAdminMixin
-from apps.students.models import Guardian, Student, StudentGuardianRelation
+from apps.students.models import (
+    AdministrativeSummon,
+    Guardian,
+    SchoolComplaint,
+    Student,
+    StudentGuardianRelation,
+    StudentIncidentReport,
+)
 
 
 class StudentGuardianInline(TabularInline):
@@ -37,3 +44,30 @@ class StudentGuardianRelationAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("student__first_name", "student__last_name", "guardian__user__first_name", "school__name")
     autocomplete_fields = ("school", "branch", "student", "guardian")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentIncidentReport)
+class StudentIncidentReportAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("title", "student", "reported_by", "severity", "incident_date", "status", "notified_guardian", "school")
+    list_filter = ("severity", "status", "notified_guardian", "school")
+    search_fields = ("title", "student__first_name", "student__last_name", "reported_by__phone", "description")
+    autocomplete_fields = ("school", "branch", "student", "reported_by")
+    readonly_fields = ("id", "created_at", "updated_at", "guardian_notified_at")
+
+
+@admin.register(AdministrativeSummon)
+class AdministrativeSummonAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("student", "guardian", "summon_type", "scheduled_at", "status", "created_by", "school")
+    list_filter = ("summon_type", "status", "school")
+    search_fields = ("student__first_name", "student__last_name", "guardian__user__first_name", "reason")
+    autocomplete_fields = ("school", "branch", "student", "guardian", "created_by")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(SchoolComplaint)
+class SchoolComplaintAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("ticket_number", "subject", "category", "priority", "status", "complainant_user", "student", "school")
+    list_filter = ("category", "priority", "status", "school")
+    search_fields = ("ticket_number", "subject", "description", "complainant_user__phone", "student__first_name")
+    autocomplete_fields = ("school", "branch", "complainant_user", "student", "assigned_to")
+    readonly_fields = ("id", "created_at", "updated_at", "resolved_at")

@@ -49,7 +49,7 @@ def _generate_school_ai_reply(school: School, sender_phone: str, message_text: s
             guardian_q_phone(clean_phone)
         ).first()
         if guardian:
-            student = guardian.students.filter(is_archived=False).first()
+            student = guardian.children.filter(is_archived=False).first()
 
     # If student or guardian is identified, provide personalized school assistant response
     if student:

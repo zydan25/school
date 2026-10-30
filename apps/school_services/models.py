@@ -390,6 +390,106 @@ class StudentBookDistribution(TenantOwnedModel):
         return f"{self.student.first_name}: {self.book_title} [{self.get_delivery_status_display()}]"
 
 
+class BookRequisitionOrder(TenantOwnedModel):
+    """
+    أمر صرف وطلب توريد كتب من المستودع المدرسي.
+    دورة عمل معتمدة: يرفع المعلم أو المشرف الطلب للشعبة، تعتمده الإدارة، ويصرفه أمين المستودع.
+    """
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة طلب"
+        SUBMITTED = "submitted", "مرفوع للاعتماد الإداري"
+        APPROVED = "approved", "معتمد - موجه لأمين المستودع"
+        FULFILLED = "fulfilled", "تم الصرف والتسليم من المخزن"
+        REJECTED = "rejected", "مرفوض"
+
+    order_number = models.CharField("رقم أمر الصرف", max_length=50, db_index=True)
+    academic_year = models.ForeignKey(
+        "academics.AcademicYear",
+        verbose_name="العام الدراسي",
+        on_delete=models.PROTECT,
+        related_name="book_orders",
+    )
+    grade_level = models.ForeignKey(
+        "academics.GradeLevel",
+        verbose_name="الصف الدراسي المستفيد",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="book_orders",
+    )
+    section = models.ForeignKey(
+        "academics.Section",
+        verbose_name="الشعبة الصفية المستفيدة",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="book_orders",
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="محرر الطلب (المشرف / المعلم)",
+        on_delete=models.PROTECT,
+        related_name="requested_book_orders",
+    )
+    status = models.CharField("حالة أمر الصرف", max_length=20, choices=Status.choices, default=Status.SUBMITTED)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المسؤول المعتمد",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_book_orders",
+    )
+    approved_at = models.DateTimeField("تاريخ الاعتماد الإداري", null=True, blank=True)
+    fulfilled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="أمين المستودع الصارف",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fulfilled_book_orders",
+    )
+    fulfilled_at = models.DateTimeField("تاريخ الصرف من المخزن", null=True, blank=True)
+    notes = models.TextField("ملاحظات أمر الصرف", blank=True)
+
+    class Meta:
+        verbose_name = "أمر صرف كتب ومستلزمات"
+        verbose_name_plural = "أوامر صرف الكتب من المستودع"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "order_number"],
+                condition=models.Q(is_archived=False),
+                name="school_services_book_order_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        beneficiary = self.section or self.grade_level or "عام"
+        return f"أمر صرف #{self.order_number} ({beneficiary}): {self.get_status_display()}"
+
+
+class BookRequisitionItem(TenantOwnedModel):
+    """البنود والكتب المطلوبة في أمر الصرف."""
+    requisition = models.ForeignKey(
+        BookRequisitionOrder,
+        verbose_name="أمر الصرف التابع له",
+        on_delete=models.CASCADE,
+        related_name="items",
+    )
+    book_title = models.CharField("اسم الكتاب / المادة المنهجية", max_length=200)
+    quantity_requested = models.PositiveIntegerField("الكمية المطلوبة (نسخ)")
+    quantity_approved = models.PositiveIntegerField("الكمية المعتمدة", default=0)
+    quantity_dispatched = models.PositiveIntegerField("الكمية المصروفة فعلياً", default=0)
+    notes = models.CharField("ملاحظات البند", max_length=255, blank=True)
+
+    class Meta:
+        verbose_name = "بند أمر صرف كتب"
+        verbose_name_plural = "بنود أوامر صرف الكتب"
+
+    def __str__(self) -> str:
+        return f"{self.book_title}: {self.quantity_dispatched}/{self.quantity_requested} نسخة"
+
+
 # -----------------------------------------------------------------------------
 # 5. School Clinic & Health (العيادة المدرسية وصحة الطلاب)
 # -----------------------------------------------------------------------------

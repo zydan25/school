@@ -587,3 +587,209 @@ class ExtendedModulesTests(TestCase):
         # 2. Trial balance without finance role must return 403 Forbidden
         fin_res = client.get("/api/v1/reports/financial/trial-balance/")
         self.assertEqual(fin_res.status_code, 403)
+
+    def test_staff_supervisors_and_section_capacity(self):
+        """التحقق من تعيين مشرفي الأدوار والأقسام وحساب سعة الشعب ديناميكياً."""
+        from apps.staff.models import StaffMember
+
+        supervisor_user = User.objects.create_user(
+            phone="+967777444101",
+            password="StrongPassword123!",
+            first_name="سليمان",
+            last_name="المشرف",
+        )
+        staff_member = StaffMember.objects.create(
+            school=self.school,
+            user=supervisor_user,
+            employee_number="STF-SUP-01",
+            staff_role=StaffMember.StaffRole.SUPERVISOR,
+            floor_wing_assigned="الدور الثاني - الجناح أ",
+            job_title="مشرف الدور الثاني",
+        )
+        self.assertEqual(staff_member.staff_role, "supervisor")
+
+        self.section.capacity = 35
+        self.section.floor_wing = "الدور الثاني"
+        self.section.supervisor_user = supervisor_user
+        self.section.save()
+
+        self.assertEqual(self.section.current_student_count, 1)
+        self.assertEqual(self.section.available_seats, 34)
+        self.assertFalse(self.section.is_full)
+
+    def test_incident_summon_complaint_workflow(self):
+        """التحقق من تقارير الوقائع السلوكية والاستدعاء الإداري وصندوق الشكاوى."""
+        from apps.students.models import AdministrativeSummon, Guardian, SchoolComplaint, StudentGuardianRelation, StudentIncidentReport
+
+        guardian_user = User.objects.create_user(
+            phone="+967777444102",
+            password="StrongPassword123!",
+            first_name="أحمد",
+            last_name="ولي الأمر",
+        )
+        guardian = Guardian.objects.create(
+            school=self.school,
+            user=guardian_user,
+            relationship_type=Guardian.RelationshipType.FATHER,
+            emergency_phone="777444102",
+        )
+        StudentGuardianRelation.objects.create(
+            school=self.school,
+            student=self.student,
+            guardian=guardian,
+            is_primary=True,
+        )
+
+        incident = StudentIncidentReport.objects.create(
+            school=self.school,
+            student=self.student,
+            reported_by=self.teacher_user,
+            severity=StudentIncidentReport.Severity.MEDIUM,
+            title="تأخر متكرر عن الحصة الأولى",
+            description="لوحظ التأخر لثلاثة أيام متتالية",
+            notified_guardian=True,
+        )
+        self.assertEqual(incident.severity, "medium")
+        self.assertTrue(incident.notified_guardian)
+
+        summon = AdministrativeSummon.objects.create(
+            school=self.school,
+            student=self.student,
+            guardian=guardian,
+            summon_type=AdministrativeSummon.SummonType.DISCIPLINARY,
+            reason="مناقشة الانضباط والالتزام بالمواعيد الرسمية",
+            scheduled_at=date(2026, 11, 15),
+            created_by=self.user,
+        )
+        self.assertEqual(summon.status, "scheduled")
+
+        complaint = SchoolComplaint.objects.create(
+            school=self.school,
+            complainant_user=guardian_user,
+            student=self.student,
+            category=SchoolComplaint.ComplaintCategory.ACADEMIC,
+            subject="استفسار عن خطة اختبارات الشهر الثاني",
+            description="يرجى تزويدنا بجدول الاختبارات الشهرية المعتمد",
+        )
+        self.assertTrue(complaint.ticket_number.startswith("TKT-"))
+        self.assertEqual(complaint.status, "submitted")
+
+    def test_book_requisition_order_workflow(self):
+        """التحقق من دورة أوامر صرف الكتب من المشرف للمخزن والاعتماد."""
+        from apps.school_services.models import BookRequisitionItem, BookRequisitionOrder
+
+        req_order = BookRequisitionOrder.objects.create(
+            school=self.school,
+            academic_year=self.academic_year,
+            requested_by=self.user,
+            notes="طلب كتب الرياضيات للصف العاشر",
+        )
+        self.assertTrue(req_order.order_number.startswith("REQ-"))
+        self.assertEqual(req_order.status, BookRequisitionOrder.Status.SUBMITTED)
+
+        item = BookRequisitionItem.objects.create(
+            school=self.school,
+            order=req_order,
+            custom_book_name="الرياضيات للصف العاشر - الجزء الأول",
+            requested_quantity=30,
+        )
+        self.assertEqual(item.requested_quantity, 30)
+
+        req_order.status = BookRequisitionOrder.Status.APPROVED
+        req_order.approved_by = self.user
+        req_order.save()
+        self.assertEqual(req_order.status, "approved")
+
+    def test_question_bank_and_online_exam_auto_grading(self):
+        """التحقق من بنك الأسئلة، وإنشاء الاختبار الإلكتروني والتصحيح التلقائي."""
+        from apps.assessments.models import OnlineExam, QuestionBank, StudentOnlineExamSubmission
+
+        q1 = QuestionBank.objects.create(
+            school=self.school,
+            subject=self.subject,
+            grade_level=self.grade,
+            unit_title="الوحدة الأولى: الجبر",
+            question_type=QuestionBank.QuestionType.MCQ,
+            question_text="ما هو ناتج 2 + 2؟",
+            options={"A": "4", "B": "5", "C": "6", "D": "8"},
+            correct_answer="A",
+            points=Decimal("5.00"),
+            created_by=self.teacher_user,
+        )
+        q2 = QuestionBank.objects.create(
+            school=self.school,
+            subject=self.subject,
+            grade_level=self.grade,
+            unit_title="الوحدة الأولى: الجبر",
+            question_type=QuestionBank.QuestionType.TRUE_FALSE,
+            question_text="مجموع زوايا المثلث 180 درجة.",
+            correct_answer="true",
+            points=Decimal("5.00"),
+            created_by=self.teacher_user,
+        )
+
+        exam = OnlineExam.objects.create(
+            school=self.school,
+            title="اختبار الجبر القصير",
+            subject=self.subject,
+            academic_year=self.academic_year,
+            created_by=self.teacher_user,
+            duration_minutes=30,
+            total_score=Decimal("10.00"),
+            passing_score=Decimal("5.00"),
+            allow_auto_grading=True,
+            is_published=True,
+        )
+        exam.questions.set([q1, q2])
+
+        submission = StudentOnlineExamSubmission.objects.create(
+            school=self.school,
+            online_exam=exam,
+            student=self.student,
+            answers={
+                str(q1.id): "A",
+                str(q2.id): "true",
+            },
+        )
+        earned = submission.auto_grade()
+        self.assertEqual(earned, Decimal("10.00"))
+        self.assertEqual(submission.score_obtained, Decimal("10.00"))
+        self.assertTrue(submission.passed)
+        self.assertEqual(submission.status, StudentOnlineExamSubmission.SubmissionStatus.GRADED)
+
+    def test_ai_timetable_generator_service(self):
+        """التحقق من خوارزمية التوليد الآلي لجدول الحصص الأسبوعي بدون تعارضات."""
+        from apps.staff.models import TeacherAssignment
+        from apps.timetable.models import ClassSchedule
+        from apps.timetable.services.ai_generator import generate_school_timetable
+
+        TeacherAssignment.objects.create(
+            school=self.school,
+            teacher=self.teacher,
+            subject=self.subject,
+            section=self.section,
+            academic_year=self.academic_year,
+            weekly_periods=4,
+        )
+
+        # 1. Preview mode (dry_run = True)
+        preview_res = generate_school_timetable(
+            school=self.school,
+            academic_year=self.academic_year,
+            dry_run=True,
+        )
+        self.assertEqual(preview_res["status"], "success")
+        self.assertEqual(preview_res["mode"], "preview")
+        self.assertGreaterEqual(preview_res["total_generated"], 1)
+
+        # 2. Commit mode (dry_run = False)
+        commit_res = generate_school_timetable(
+            school=self.school,
+            academic_year=self.academic_year,
+            dry_run=False,
+        )
+        self.assertEqual(commit_res["status"], "success")
+        self.assertEqual(commit_res["mode"], "committed")
+
+        schedules = ClassSchedule.objects.filter(school=self.school, section=self.section)
+        self.assertEqual(schedules.count(), commit_res["total_generated"])

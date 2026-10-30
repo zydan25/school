@@ -95,3 +95,50 @@ class TeacherAssignment(TenantOwnedModel):
             raise ValidationError({"subject": "المادة المحددة لا تتبع نفس المدرسة."})
         if self.section_id and self.section.school_id != self.school_id:
             raise ValidationError({"section": "الشعبة المحددة لا تتبع نفس المدرسة."})
+
+
+class StaffMember(TenantOwnedModel):
+    """
+    سجل الموظفين والكادر الإداري والإشرافي للمدرسة
+    (مشرفو الأدوار والأقسام، مسؤولو الكنترول، أمناء المستودعات، المحاسبون، أمناء الصناديق، الإرشاد).
+    """
+    class StaffRole(models.TextChoices):
+        SUPERVISOR = "supervisor", "مشرف أدوار / أقسام"
+        CONTROL_OFFICER = "control_officer", "مسؤول كنترول واختبارات"
+        STORE_KEEPER = "store_keeper", "أمين مخزن ومستودع"
+        ACCOUNTANT = "accountant", "محاسب مالي"
+        CASHIER = "cashier", "أمين صندوق"
+        LIBRARIAN = "librarian", "أمين مكتبة"
+        SOCIAL_WORKER = "social_worker", "مرشد طلابي / أخصائي اجتماعي"
+        SECRETARY = "secretary", "سكرتارية وشؤون طلاب"
+        NURSE = "nurse", "ممرض / مسؤول صحي"
+        BUS_SUPERVISOR = "bus_supervisor", "مشرف حافلة"
+        OTHER = "other", "إداري / أخرى"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="حساب تسجيل الدخول",
+        on_delete=models.PROTECT,
+        related_name="staff_profiles",
+        db_index=True,
+    )
+    employee_number = models.CharField("الرقم الوظيفي", max_length=50, blank=True)
+    job_title = models.CharField("المسمى الوظيفي الفعلي", max_length=150)
+    role = models.CharField("التصنيف الإداري", max_length=30, choices=StaffRole.choices, default=StaffRole.OTHER)
+    assigned_floor_wing = models.CharField("الدور / القسم المسؤول عنه (مثل: الدور الأول)", max_length=150, blank=True)
+    hire_date = models.DateField("تاريخ التعيين", default=timezone.now)
+    is_active = models.BooleanField("على رأس العمل", default=True)
+
+    class Meta:
+        verbose_name = "موظف / إداري"
+        verbose_name_plural = "الكادر الإداري والإشرافي"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "user", "role"],
+                condition=models.Q(is_archived=False),
+                name="staff_member_school_user_role_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user.get_full_name() or self.user.phone} ({self.get_role_display()} - {self.job_title})"

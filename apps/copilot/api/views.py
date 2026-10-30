@@ -37,8 +37,8 @@ def _resolve_authorized_student(request) -> Student | None:
     if guardian:
         req_student_id = request.query_params.get("student_id") or (request.data.get("student_id") if hasattr(request, "data") and isinstance(request.data, dict) else None)
         if req_student_id:
-            return guardian.students.filter(pk=req_student_id, is_archived=False).select_related("school", "grade_level", "section").first()
-        return guardian.students.filter(is_archived=False).select_related("school", "grade_level", "section").first()
+            return guardian.children.filter(pk=req_student_id, is_archived=False).select_related("school", "grade_level", "section").first()
+        return guardian.children.filter(is_archived=False).select_related("school", "grade_level", "section").first()
 
     # 3. إذا كان المستخدم معلماً أو إدارياً يمتلك صلاحية في المدرسة
     user_schools = list(request.user.school_memberships.filter(status="active").values_list("school_id", flat=True))

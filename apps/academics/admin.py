@@ -75,12 +75,16 @@ class ClassroomAdmin(AuditedAdminMixin, ModelAdmin):
 
 @admin.register(Section)
 class SectionAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("name", "code", "grade", "academic_year", "school", "homeroom_classroom", "capacity", "is_active")
-    list_filter = ("is_active", "school", "academic_year", "grade")
-    search_fields = ("name", "code", "grade__name", "academic_year__name", "school__name")
-    autocomplete_fields = ("school", "branch", "academic_year", "grade", "homeroom_classroom")
+    list_display = ("name", "code", "grade", "floor_wing", "supervisor_user", "students_count_display", "capacity", "school", "is_active")
+    list_filter = ("is_active", "floor_wing", "school", "academic_year", "grade")
+    search_fields = ("name", "code", "floor_wing", "grade__name", "academic_year__name", "school__name", "supervisor_user__phone")
+    autocomplete_fields = ("school", "branch", "academic_year", "grade", "homeroom_classroom", "supervisor_user")
     readonly_fields = ("id", "created_at", "updated_at")
-    list_select_related = ("school", "academic_year", "grade", "homeroom_classroom")
+    list_select_related = ("school", "academic_year", "grade", "homeroom_classroom", "supervisor_user")
+
+    def students_count_display(self, obj):
+        return f"{obj.current_student_count} / {obj.capacity}"
+    students_count_display.short_description = "الطلاب / السعة"
 
 
 @admin.register(Subject)

@@ -157,6 +157,15 @@ class Section(TenantOwnedModel):
     name = models.CharField("اسم الشعبة", max_length=100)
     homeroom_classroom = models.ForeignKey(Classroom, verbose_name="القاعة الأساسية", null=True, blank=True, on_delete=models.PROTECT, related_name="homeroom_sections")
     capacity = models.PositiveSmallIntegerField("السعة القصوى", default=35)
+    floor_wing = models.CharField("الدور / الجناح (مثل: الدور الأول، جناح أ)", max_length=100, blank=True)
+    supervisor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المشرف المسؤول عن الحضور والمتابعة",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="supervised_sections",
+    )
     is_active = models.BooleanField("نشطة", default=True)
     notes = models.CharField("ملاحظات", max_length=500, blank=True)
 
@@ -169,6 +178,21 @@ class Section(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.grade.name} - {self.name}"
+
+    @property
+    def current_student_count(self) -> int:
+        """العدد الفعلي للطلاب المقيدين في الشعبة."""
+        return self.enrolled_students.filter(is_archived=False).count()
+
+    @property
+    def is_full(self) -> bool:
+        """هل امتلأت الطاقة الاستيعابية للشعبة ويلزم فتح شعبة جديدة؟"""
+        return self.current_student_count >= self.capacity
+
+    @property
+    def available_seats(self) -> int:
+        """عدد المقاعد الشاغرة المتبقية في الشعبة."""
+        return max(0, self.capacity - self.current_student_count)
 
     def clean(self):
         super().clean()

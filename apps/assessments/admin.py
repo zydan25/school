@@ -2,7 +2,15 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 
 from apps.core.admin import AuditedAdminMixin
-from apps.assessments.models import AssessmentType, GradeBook, ExamCommittee, ExamSeating
+from apps.assessments.models import (
+    AssessmentType,
+    ExamCommittee,
+    ExamSeating,
+    GradeBook,
+    OnlineExam,
+    QuestionBank,
+    StudentOnlineExamSubmission,
+)
 
 
 @admin.register(AssessmentType)
@@ -39,3 +47,35 @@ class ExamSeatingAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("seating_number", "secret_code", "student__first_name", "student__last_name")
     raw_id_fields = ("student", "committee", "academic_year", "school", "branch")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(QuestionBank)
+class QuestionBankAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("question_text_short", "subject", "grade_level", "unit_title", "question_type", "difficulty", "points", "created_by", "school")
+    list_filter = ("question_type", "difficulty", "subject", "grade_level", "school")
+    search_fields = ("question_text", "unit_title", "subject__name")
+    raw_id_fields = ("subject", "grade_level", "created_by", "school", "branch")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+    def question_text_short(self, obj):
+        return obj.question_text[:50] + ("..." if len(obj.question_text) > 50 else "")
+    question_text_short.short_description = "نص السؤال"
+
+
+@admin.register(OnlineExam)
+class OnlineExamAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("title", "subject", "academic_year", "duration_minutes", "total_score", "passing_score", "is_published", "created_by", "school")
+    list_filter = ("is_published", "subject", "academic_year", "school")
+    search_fields = ("title", "subject__name", "instructions")
+    raw_id_fields = ("subject", "academic_year", "academic_term", "created_by", "school", "branch")
+    filter_horizontal = ("sections", "questions")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentOnlineExamSubmission)
+class StudentOnlineExamSubmissionAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("online_exam", "student", "score_obtained", "passed", "status", "submitted_at", "school")
+    list_filter = ("status", "passed", "online_exam", "school")
+    search_fields = ("student__first_name", "student__last_name", "online_exam__title")
+    raw_id_fields = ("online_exam", "student", "graded_by", "school", "branch")
+    readonly_fields = ("id", "created_at", "updated_at", "started_at", "submitted_at", "graded_at")

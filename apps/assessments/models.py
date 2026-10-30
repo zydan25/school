@@ -199,3 +199,197 @@ class ExamSeating(TenantOwnedModel):
             ).exclude(pk=self.pk).count()
             if count >= self.committee.capacity:
                 raise ValidationError({"committee": f"تجاوزت اللجنة سعتها الاستيعابية القصوى ({self.committee.capacity} طالب)."})
+
+
+# -----------------------------------------------------------------------------
+# Question Bank, Online Remote Exams, and Automated Grading
+# -----------------------------------------------------------------------------
+
+class QuestionBank(TenantOwnedModel):
+    """بنك الأسئلة للمواد والوحدات الدراسية مع نماذج الإجابات وأنواعها."""
+    class QuestionType(models.TextChoices):
+        MCQ = "mcq", "اختيار من متعدد"
+        TRUE_FALSE = "true_false", "صح أو خطأ"
+        SHORT_ANSWER = "short_answer", "إجابة قصيرة"
+        ESSAY = "essay", "سؤال مقالي تحليلي"
+
+    class Difficulty(models.TextChoices):
+        EASY = "easy", "سهل"
+        MEDIUM = "medium", "متوسط"
+        HARD = "hard", "صعب (تفكير عليا)"
+
+    subject = models.ForeignKey(
+        "academics.Subject",
+        verbose_name="المادة الدراسية",
+        on_delete=models.CASCADE,
+        related_name="questions",
+    )
+    grade_level = models.ForeignKey(
+        "academics.GradeLevel",
+        verbose_name="الصف الدراسي",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="questions",
+    )
+    unit_name = models.CharField("اسم الوحدة / الباب الدراسي (مثال: الوحدة الأولى: التفاضل)", max_length=200)
+    topic = models.CharField("عنوان الدرس / الموضوع", max_length=200, blank=True)
+    question_text = models.TextField("نص السؤال")
+    question_type = models.CharField("نوع السؤال", max_length=20, choices=QuestionType.choices, default=QuestionType.MCQ)
+    difficulty = models.CharField("مستوى الصعوبة", max_length=20, choices=Difficulty.choices, default=Difficulty.MEDIUM)
+    default_marks = models.DecimalField("الدرجة الافتراضية للسؤال", max_digits=5, decimal_places=2, default=Decimal("1.00"))
+    
+    # Options for MCQ e.g. [{"id": "A", "text": "خيار 1"}, {"id": "B", "text": "خيار 2"}]
+    options_json = models.JSONField("خيارات الإجابة (للاختيار من متعدد)", default=list, blank=True)
+    correct_answer = models.CharField("الإجابة الصحيحة أو رمز الخيار الصحيح (مثل A أو صح)", max_length=255)
+    model_answer_explanation = models.TextField("شرح الإجابة والحل النموذجي", blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المعلم واضع السؤال",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="authored_questions",
+    )
+
+    class Meta:
+        verbose_name = "سؤال في بنك الأسئلة"
+        verbose_name_plural = "بنك الأسئلة المدرسية"
+        indexes = [
+            models.Index(fields=["school", "subject", "unit_name"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"[{self.subject.name} - {self.unit_name}] {self.question_text[:50]}... ({self.get_question_type_display()})"
+
+
+class OnlineExam(TenantOwnedModel):
+    """قوالب الاختبارات الشهرية والنصفيّة وإجراء الامتحانات عن بعد."""
+    class ExamType(models.TextChoices):
+        QUIZ = "quiz", "اختبار قصير (كويز)"
+        MONTHLY = "monthly", "اختبار شهري"
+        MIDTERM = "midterm", "اختبار نصف الفصل"
+        FINAL = "final", "اختبار نهائي"
+
+    title = models.CharField("عنوان الاختبار", max_length=255)
+    subject = models.ForeignKey(
+        "academics.Subject",
+        verbose_name="المادة الدراسية",
+        on_delete=models.PROTECT,
+        related_name="online_exams",
+    )
+    academic_term = models.ForeignKey(
+        "academics.AcademicTerm",
+        verbose_name="الفصل الدراسي",
+        on_delete=models.PROTECT,
+        related_name="online_exams",
+    )
+    grade_level = models.ForeignKey(
+        "academics.GradeLevel",
+        verbose_name="الصف الدراسي المستهدف",
+        on_delete=models.PROTECT,
+        related_name="online_exams",
+    )
+    section = models.ForeignKey(
+        "academics.Section",
+        verbose_name="الشعبة الصفية (اتركه فارغاً لكل شعب الصف)",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="online_exams",
+    )
+    exam_type = models.CharField("نوع الاختبار", max_length=20, choices=ExamType.choices, default=ExamType.MONTHLY)
+    duration_minutes = models.PositiveSmallIntegerField("مدة الاختبار (بالدقائق)", default=45)
+    total_marks = models.DecimalField("الدرجة العظمى للاختبار", max_digits=6, decimal_places=2, default=Decimal("20.00"))
+    passing_marks = models.DecimalField("درجة النجاح الدنيا", max_digits=6, decimal_places=2, default=Decimal("10.00"))
+    start_time = models.DateTimeField("تاريخ ووقت بدء الاختبار")
+    end_time = models.DateTimeField("تاريخ ووقت إغلاق الاختبار")
+    is_published = models.BooleanField("منشور ومتاح للطلاب في موعده", default=True)
+    instructions = models.TextField("تعليمات وتوجيهات الاختبار", blank=True)
+    questions = models.ManyToManyField(
+        QuestionBank,
+        verbose_name="الأسئلة المدرجة في الاختبار",
+        blank=True,
+        related_name="included_in_exams",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المعلم / الكنترول المنشئ",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_online_exams",
+    )
+
+    class Meta:
+        verbose_name = "قالب اختبار / امتحان إلكتروني"
+        verbose_name_plural = "الاختبارات الإلكترونية والامتحانات عن بعد"
+        ordering = ["-start_time"]
+
+    def __str__(self) -> str:
+        return f"{self.title} - {self.subject.name} ({self.get_exam_type_display()})"
+
+
+class StudentOnlineExamSubmission(TenantOwnedModel):
+    """إجابات ونتائج الطالب في الاختبار الإلكتروني مع التصحيح الآلي."""
+    class Status(models.TextChoices):
+        IN_PROGRESS = "in_progress", "جارٍ أداء الاختبار"
+        SUBMITTED = "submitted", "تم التسليم"
+        GRADED = "graded", "تم التصحيح والاعتماد"
+
+    exam = models.ForeignKey(
+        OnlineExam,
+        verbose_name="الاختبار",
+        on_delete=models.CASCADE,
+        related_name="submissions",
+    )
+    student = models.ForeignKey(
+        "students.Student",
+        verbose_name="الطالب",
+        on_delete=models.CASCADE,
+        related_name="exam_submissions",
+    )
+    started_at = models.DateTimeField("وقت بدء الحل", default=timezone.now)
+    submitted_at = models.DateTimeField("وقت تسليم الإجابات", null=True, blank=True)
+    answers_json = models.JSONField("إجابات الطالب المسجلة", default=dict, blank=True)
+    auto_score = models.DecimalField("الدرجة المحتسبة آلياً (للموضوعي)", max_digits=6, decimal_places=2, default=Decimal("0.00"))
+    manual_score = models.DecimalField("الدرجة المقالية (المضافة من المعلم)", max_digits=6, decimal_places=2, default=Decimal("0.00"))
+    final_score = models.DecimalField("الدرجة النهائية المحرزة", max_digits=6, decimal_places=2, default=Decimal("0.00"))
+    teacher_feedback = models.TextField("ملاحظات المعلم المصحح", blank=True)
+    status = models.CharField("حالة الإجابة", max_length=20, choices=Status.choices, default=Status.IN_PROGRESS)
+    graded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المعلم المصحح والمعتمد",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="graded_exam_submissions",
+    )
+
+    class Meta:
+        verbose_name = "إجابة اختبار إلكتروني لطالب"
+        verbose_name_plural = "سجل إجابات وتصحيح الاختبارات الإلكترونية"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "exam", "student"],
+                condition=models.Q(is_archived=False),
+                name="assessments_student_exam_uniq",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.student}: {self.exam.title} - {self.final_score}/{self.exam.total_marks}"
+
+    def auto_grade(self):
+        """تصحيح الأسئلة الموضوعية (اختيار من متعدد وصح وخطأ) آلياً وفورياً."""
+        score = Decimal("0.00")
+        for q in self.exam.questions.all():
+            q_id = str(q.id)
+            student_ans = str(self.answers_json.get(q_id, "")).strip().lower()
+            correct_ans = str(q.correct_answer).strip().lower()
+            if student_ans and student_ans == correct_ans:
+                score += q.default_marks
+
+        self.auto_score = score
+        self.final_score = self.auto_score + self.manual_score
+        self.status = self.Status.GRADED
