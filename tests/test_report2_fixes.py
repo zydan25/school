@@ -173,7 +173,7 @@ class Report2AuditFixesTests(TestCase):
             student=self.student,
             invoice=inv,
             amount=Decimal("1300.00"),
-            paid_at=date(2026, 9, 2),
+            paid_at=timezone.now(),
             payment_method=PaymentReceipt.PaymentMethod.CASH,
             received_by=self.user,
         )
@@ -204,7 +204,7 @@ class Report2AuditFixesTests(TestCase):
             paid_amount=Decimal("0.00"),
         )
         applied = apply_credit_balance_to_invoice(self.student, inv2)
-        self.assertEqual(applied, Decimal("300.00"))
+        self.assertEqual(applied.amount, Decimal("300.00"))
 
         inv2.refresh_from_db()
         self.assertEqual(inv2.paid_amount, Decimal("300.00"))

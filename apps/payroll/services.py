@@ -15,6 +15,7 @@ def generate_monthly_payroll(
     year: int,
     month: int,
     name: str = "",
+    created_by=None,
 ) -> PayrollRun:
     """
     توليد مسير الرواتب الشهري المجمع للمدرسة استناداً لعقود العمل النشطة والسلف القائمة.
