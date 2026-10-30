@@ -85,12 +85,12 @@ class ExtendedModulesTests(TestCase):
 
     def test_chart_of_accounts_and_vouchers(self):
         """التحقق من إنشاء شجرة الحسابات وسندات الصرف والقبض المحاسبية."""
-        accounts = seed_default_chart_of_accounts(self.school)
-        self.assertGreater(len(accounts), 10)
+        count = seed_default_chart_of_accounts(self.school)
+        self.assertGreater(count, 10)
         
-        cash_account = Account.objects.get(school=self.school, code="111")
-        expense_account = Account.objects.get(school=self.school, code="511")
-        revenue_account = Account.objects.get(school=self.school, code="411")
+        cash_account = Account.objects.get(school=self.school, code="1101")
+        expense_account = Account.objects.get(school=self.school, code="5204")
+        revenue_account = Account.objects.get(school=self.school, code="4101")
 
         # Create Payment Voucher (سند صرف مصاريف)
         pv = PaymentVoucher.objects.create(
@@ -157,7 +157,6 @@ class ExtendedModulesTests(TestCase):
             school=self.school,
             year=2026,
             month=10,
-            generated_by=self.user,
         )
         self.assertEqual(payroll_run.payslips.count(), 1)
         payslip = payroll_run.payslips.first()
