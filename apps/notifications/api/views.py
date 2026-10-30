@@ -36,9 +36,7 @@ def _generate_school_ai_reply(school: School, sender_phone: str, message_text: s
         school=school,
         is_archived=False,
     ).filter(
-        models_q := (
-            django_q_phone(clean_phone)
-        )
+        student_q_phone(clean_phone)
     ).first()
 
     # 2. Check if sender is a guardian
@@ -48,7 +46,7 @@ def _generate_school_ai_reply(school: School, sender_phone: str, message_text: s
             school=school,
             is_archived=False,
         ).filter(
-            django_q_phone(clean_phone)
+            guardian_q_phone(clean_phone)
         ).first()
         if guardian:
             student = guardian.students.filter(is_archived=False).first()
@@ -116,11 +114,19 @@ def _generate_school_ai_reply(school: School, sender_phone: str, message_text: s
     )
 
 
-def django_q_phone(clean_phone: str):
+def student_q_phone(clean_phone: str):
     from django.db.models import Q
     return (
         Q(user__phone__icontains=clean_phone[-9:]) |
         Q(student_id_number__icontains=clean_phone[-9:])
+    )
+
+
+def guardian_q_phone(clean_phone: str):
+    from django.db.models import Q
+    return (
+        Q(user__phone__icontains=clean_phone[-9:]) |
+        Q(emergency_phone__icontains=clean_phone[-9:])
     )
 
 
