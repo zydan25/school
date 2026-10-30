@@ -137,7 +137,7 @@ class WhatsAppWebhookAPIView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
-    def get(self, request, school_code=None):
+    def get(self, request, school_code=None, *args, **kwargs):
         """التحقق من صحة رابط الويب هوك (Webhook Handshake / Verification)."""
         hub_mode = request.query_params.get("hub.mode")
         hub_challenge = request.query_params.get("hub.challenge")
@@ -155,7 +155,7 @@ class WhatsAppWebhookAPIView(APIView):
 
         return Response({"status": "active", "service": "school-whatsapp-webhook"})
 
-    def post(self, request, school_code=None):
+    def post(self, request, school_code=None, *args, **kwargs):
         """استقبال رسالة واتساب واردة ومعالجتها بالرد الذكي الفوري."""
         payload = request.data or {}
         school = None

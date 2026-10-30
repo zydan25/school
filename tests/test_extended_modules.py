@@ -455,3 +455,17 @@ class ExtendedModulesTests(TestCase):
         )
         self.assertIn(self.school.name, general_reply)
         self.assertIn("القبول والتسجيل", general_reply)
+
+        # Test Webhook GET & POST via DRF APIClient
+        from rest_framework.test import APIClient
+        client = APIClient()
+        get_res = client.get(f"/api/v1/notifications/webhook/whatsapp/{self.school.code}/")
+        self.assertEqual(get_res.status_code, 200)
+
+        post_res = client.post(
+            f"/api/v1/notifications/webhook/whatsapp/{self.school.code}/",
+            data={"from": self.student.student_id_number, "body": "???? ?????"},
+            format="json",
+        )
+        self.assertEqual(post_res.status_code, 200)
+        self.assertEqual(post_res.data["status"], "success")
