@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - "School-Stage1-Source.zip"
+      - ".github/workflows/extract-school-source.yml"
 
 permissions:
   contents: write
