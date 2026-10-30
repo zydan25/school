@@ -14,7 +14,7 @@ def get_teacher_workload_report(school) -> Dict[str, Any]:
     """تقرير أنصبة المعلمين الأسبوعية وتحليل الفائض والعجز في ساعات التدريس."""
     teachers = Teacher.objects.filter(
         school=school,
-        is_active=True,
+        is_active_teaching=True,
         is_archived=False,
     ).select_related("user")
 
@@ -29,7 +29,7 @@ def get_teacher_workload_report(school) -> Dict[str, Any]:
             is_archived=False,
         ).count()
 
-        quota = t.weekly_period_quota
+        quota = t.max_weekly_periods
         total_assigned_periods += assigned_count
         total_school_quota += quota
 

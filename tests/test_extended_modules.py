@@ -70,7 +70,7 @@ class ExtendedModulesTests(TestCase):
             user=cls.teacher_user,
             employee_number="EMP-001",
             specialization="رياضيات",
-            weekly_period_quota=20,
+            max_weekly_periods=20,
         )
 
         cls.student = Student.objects.create(
