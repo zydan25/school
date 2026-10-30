@@ -892,9 +892,9 @@ class SchoolExamSeatingAdmin(SchoolScopedAdmin):
 
 @admin.register(QuestionBank, site=school_admin_site)
 class SchoolQuestionBankAdmin(SchoolScopedAdmin):
-    list_display = ("question_text_short", "subject", "grade_level", "unit_title", "question_type", "difficulty", "points")
+    list_display = ("question_text_short", "subject", "grade_level", "unit_name", "question_type", "difficulty", "default_marks")
     list_filter = ("question_type", "difficulty", "subject", "grade_level")
-    search_fields = ("question_text", "unit_title", "subject__name")
+    search_fields = ("question_text", "unit_name", "topic", "subject__name")
     raw_id_fields = ("subject", "grade_level", "created_by")
     readonly_fields = ("id", "created_at", "updated_at")
 
@@ -905,21 +905,21 @@ class SchoolQuestionBankAdmin(SchoolScopedAdmin):
 
 @admin.register(OnlineExam, site=school_admin_site)
 class SchoolOnlineExamAdmin(SchoolScopedAdmin):
-    list_display = ("title", "subject", "academic_year", "duration_minutes", "total_score", "passing_score", "is_published")
-    list_filter = ("is_published", "subject", "academic_year")
+    list_display = ("title", "subject", "academic_term", "grade_level", "exam_type", "duration_minutes", "total_marks", "passing_marks", "is_published")
+    list_filter = ("is_published", "exam_type", "subject")
     search_fields = ("title", "subject__name", "instructions")
-    raw_id_fields = ("subject", "academic_year", "academic_term", "created_by")
-    filter_horizontal = ("sections", "questions")
+    raw_id_fields = ("subject", "academic_term", "grade_level", "section", "created_by")
+    filter_horizontal = ("questions",)
     readonly_fields = ("id", "created_at", "updated_at")
 
 
 @admin.register(StudentOnlineExamSubmission, site=school_admin_site)
 class SchoolStudentOnlineExamSubmissionAdmin(SchoolScopedAdmin):
-    list_display = ("online_exam", "student", "score_obtained", "passed", "status", "submitted_at")
-    list_filter = ("status", "passed", "online_exam")
-    search_fields = ("student__first_name", "student__last_name", "online_exam__title")
-    raw_id_fields = ("online_exam", "student", "graded_by")
-    readonly_fields = ("id", "created_at", "updated_at", "started_at", "submitted_at", "graded_at")
+    list_display = ("exam", "student", "final_score", "auto_score", "status", "submitted_at")
+    list_filter = ("status", "exam")
+    search_fields = ("student__first_name", "student__last_name", "exam__title")
+    raw_id_fields = ("exam", "student", "graded_by")
+    readonly_fields = ("id", "created_at", "updated_at", "started_at", "submitted_at")
 
 
 # -----------------------------------------------------------------------------

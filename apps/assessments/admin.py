@@ -51,9 +51,9 @@ class ExamSeatingAdmin(AuditedAdminMixin, ModelAdmin):
 
 @admin.register(QuestionBank)
 class QuestionBankAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("question_text_short", "subject", "grade_level", "unit_title", "question_type", "difficulty", "points", "created_by", "school")
+    list_display = ("question_text_short", "subject", "grade_level", "unit_name", "question_type", "difficulty", "default_marks", "created_by", "school")
     list_filter = ("question_type", "difficulty", "subject", "grade_level", "school")
-    search_fields = ("question_text", "unit_title", "subject__name")
+    search_fields = ("question_text", "unit_name", "topic", "subject__name")
     raw_id_fields = ("subject", "grade_level", "created_by", "school", "branch")
     readonly_fields = ("id", "created_at", "updated_at")
 
@@ -64,18 +64,18 @@ class QuestionBankAdmin(AuditedAdminMixin, ModelAdmin):
 
 @admin.register(OnlineExam)
 class OnlineExamAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("title", "subject", "academic_year", "duration_minutes", "total_score", "passing_score", "is_published", "created_by", "school")
-    list_filter = ("is_published", "subject", "academic_year", "school")
+    list_display = ("title", "subject", "academic_term", "grade_level", "exam_type", "duration_minutes", "total_marks", "passing_marks", "is_published", "created_by", "school")
+    list_filter = ("is_published", "exam_type", "subject", "school")
     search_fields = ("title", "subject__name", "instructions")
-    raw_id_fields = ("subject", "academic_year", "academic_term", "created_by", "school", "branch")
-    filter_horizontal = ("sections", "questions")
+    raw_id_fields = ("subject", "academic_term", "grade_level", "section", "created_by", "school", "branch")
+    filter_horizontal = ("questions",)
     readonly_fields = ("id", "created_at", "updated_at")
 
 
 @admin.register(StudentOnlineExamSubmission)
 class StudentOnlineExamSubmissionAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("online_exam", "student", "score_obtained", "passed", "status", "submitted_at", "school")
-    list_filter = ("status", "passed", "online_exam", "school")
-    search_fields = ("student__first_name", "student__last_name", "online_exam__title")
-    raw_id_fields = ("online_exam", "student", "graded_by", "school", "branch")
-    readonly_fields = ("id", "created_at", "updated_at", "started_at", "submitted_at", "graded_at")
+    list_display = ("exam", "student", "final_score", "auto_score", "status", "submitted_at", "school")
+    list_filter = ("status", "exam", "school")
+    search_fields = ("student__first_name", "student__last_name", "exam__title")
+    raw_id_fields = ("exam", "student", "graded_by", "school", "branch")
+    readonly_fields = ("id", "created_at", "updated_at", "started_at", "submitted_at")

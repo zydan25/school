@@ -1,6 +1,8 @@
 """Assessment, gradebook, and exam control domain models."""
 from __future__ import annotations
 
+from decimal import Decimal
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
@@ -393,3 +395,9 @@ class StudentOnlineExamSubmission(TenantOwnedModel):
         self.auto_score = score
         self.final_score = self.auto_score + self.manual_score
         self.status = self.Status.GRADED
+        self.save()
+        return self.final_score
+
+    @property
+    def passed(self) -> bool:
+        return self.final_score >= self.exam.passing_marks

@@ -12,7 +12,7 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.accounts.models import User
-from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section, Subject
+from apps.academics.models import AcademicTerm, AcademicYear, EducationalStage, GradeLevel, Section, Subject
 from apps.staff.models import Teacher
 from apps.students.models import Student
 from apps.tenants.models import School
@@ -55,6 +55,15 @@ class ExtendedModulesTests(TestCase):
             name="2026-2027",
             starts_on=date(2026, 9, 1),
             ends_on=date(2027, 6, 30),
+        )
+        cls.term = AcademicTerm.objects.create(
+            school=cls.school,
+            academic_year=cls.academic_year,
+            name="الفصل الأول",
+            number=1,
+            starts_on=date(2026, 9, 1),
+            ends_on=date(2027, 1, 15),
+            is_current=True,
         )
         cls.stage = EducationalStage.objects.create(school=cls.school, code="SEC", name="المرحلة الثانوية", sequence=1)
         cls.grade = GradeLevel.objects.create(school=cls.school, stage=cls.stage, code="G10", name="الصف العاشر", sequence=1)
@@ -702,29 +711,30 @@ class ExtendedModulesTests(TestCase):
 
     def test_question_bank_and_online_exam_auto_grading(self):
         """التحقق من بنك الأسئلة، وإنشاء الاختبار الإلكتروني والتصحيح التلقائي."""
+        from django.utils import timezone
         from apps.assessments.models import OnlineExam, QuestionBank, StudentOnlineExamSubmission
 
         q1 = QuestionBank.objects.create(
             school=self.school,
             subject=self.subject,
             grade_level=self.grade,
-            unit_title="الوحدة الأولى: الجبر",
+            unit_name="الوحدة الأولى: الجبر",
             question_type=QuestionBank.QuestionType.MCQ,
             question_text="ما هو ناتج 2 + 2؟",
-            options={"A": "4", "B": "5", "C": "6", "D": "8"},
+            options_json=[{"id": "A", "text": "4"}, {"id": "B", "text": "5"}],
             correct_answer="A",
-            points=Decimal("5.00"),
+            default_marks=Decimal("5.00"),
             created_by=self.teacher_user,
         )
         q2 = QuestionBank.objects.create(
             school=self.school,
             subject=self.subject,
             grade_level=self.grade,
-            unit_title="الوحدة الأولى: الجبر",
+            unit_name="الوحدة الأولى: الجبر",
             question_type=QuestionBank.QuestionType.TRUE_FALSE,
             question_text="مجموع زوايا المثلث 180 درجة.",
             correct_answer="true",
-            points=Decimal("5.00"),
+            default_marks=Decimal("5.00"),
             created_by=self.teacher_user,
         )
 
@@ -732,30 +742,32 @@ class ExtendedModulesTests(TestCase):
             school=self.school,
             title="اختبار الجبر القصير",
             subject=self.subject,
-            academic_year=self.academic_year,
+            academic_term=self.term,
+            grade_level=self.grade,
             created_by=self.teacher_user,
             duration_minutes=30,
-            total_score=Decimal("10.00"),
-            passing_score=Decimal("5.00"),
-            allow_auto_grading=True,
+            total_marks=Decimal("10.00"),
+            passing_marks=Decimal("5.00"),
+            start_time=timezone.now(),
+            end_time=timezone.now() + timezone.timedelta(hours=2),
             is_published=True,
         )
         exam.questions.set([q1, q2])
 
         submission = StudentOnlineExamSubmission.objects.create(
             school=self.school,
-            online_exam=exam,
+            exam=exam,
             student=self.student,
-            answers={
+            answers_json={
                 str(q1.id): "A",
                 str(q2.id): "true",
             },
         )
         earned = submission.auto_grade()
         self.assertEqual(earned, Decimal("10.00"))
-        self.assertEqual(submission.score_obtained, Decimal("10.00"))
+        self.assertEqual(submission.final_score, Decimal("10.00"))
         self.assertTrue(submission.passed)
-        self.assertEqual(submission.status, StudentOnlineExamSubmission.SubmissionStatus.GRADED)
+        self.assertEqual(submission.status, StudentOnlineExamSubmission.Status.GRADED)
 
     def test_ai_timetable_generator_service(self):
         """التحقق من خوارزمية التوليد الآلي لجدول الحصص الأسبوعي بدون تعارضات."""
