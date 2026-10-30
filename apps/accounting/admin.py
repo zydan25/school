@@ -26,6 +26,15 @@ class FiscalYearAdmin(AuditedAdminMixin, ModelAdmin):
     inlines = (FiscalPeriodInline,)
 
 
+@admin.register(FiscalPeriod)
+class FiscalPeriodAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("name", "fiscal_year", "period_number", "start_date", "end_date", "is_closed", "school")
+    list_filter = ("is_closed", "fiscal_year", "school")
+    search_fields = ("name", "fiscal_year__name", "school__name")
+    autocomplete_fields = ("school", "branch", "fiscal_year")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
 @admin.register(Account)
 class AccountAdmin(AuditedAdminMixin, ModelAdmin):
     list_display = ("code", "name", "account_type", "parent", "is_leaf", "school")

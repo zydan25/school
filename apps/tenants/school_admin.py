@@ -518,6 +518,5 @@ class SchoolJournalEntryAdmin(SchoolScopedAdmin):
     list_display = ("entry_number", "date", "status", "source_module", "posted_at")
     list_filter = ("status", "source_module", "date")
     search_fields = ("entry_number", "description", "source_reference")
-    autocomplete_fields = ("fiscal_period",)
-    raw_id_fields = ("posted_by",)
+    raw_id_fields = ("posted_by", "fiscal_period")
     readonly_fields = ("id", "created_at", "updated_at")
