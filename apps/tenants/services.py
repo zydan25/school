@@ -221,6 +221,26 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     hr_mgr.permissions.set(hr_permissions.distinct())
 
+    # مسؤول البوابة والأمن: صلاحيات محدودة للاطلاع على أذونات الانصراف وتأكيد الخروج.
+    gate_permissions = Permission.objects.filter(
+        content_type__app_label="attendance",
+        codename__in=[
+            "view_earlydeparturerequest",
+            "change_earlydeparturerequest",
+            "view_attendanceregister",
+        ],
+    )
+    gate_role, _ = SchoolRole.objects.get_or_create(
+        school=school,
+        code="gate-security",
+        defaults={
+            "name": "مسؤول البوابة والأمن",
+            "description": "الاطلاع على أذونات الانصراف وتأكيد الخروج من البوابة دون صلاحيات مالية أو أكاديمية.",
+            "is_system": True,
+        },
+    )
+    gate_role.permissions.set(gate_permissions.distinct())
+
 
 def provision_school(school: School, *, actor=None):
     """Create branch, settings, owner membership and default roles in one transaction."""
