@@ -257,6 +257,26 @@ class MembershipRoleViewSet(viewsets.ModelViewSet):
         assignment.save()
         serializer.instance = assignment
 
+    def perform_update(self, serializer):
+        school = self.get_school()
+        membership = get_object_or_404(
+            SchoolMembership, pk=serializer.validated_data.get(
+                "membership", serializer.instance.membership,
+            ).pk, school=school,
+        )
+        role = get_object_or_404(
+            SchoolRole,
+            pk=serializer.validated_data.get("role", serializer.instance.role).pk,
+            school=school, is_active=True, is_archived=False,
+        )
+        assignment = serializer.instance
+        assignment.membership = membership
+        assignment.role = role
+        assignment.valid_from = serializer.validated_data.get("valid_from", assignment.valid_from)
+        assignment.valid_until = serializer.validated_data.get("valid_until", assignment.valid_until)
+        assignment.save()
+        serializer.instance = assignment
+
 
 class SchoolInvitationAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -276,6 +296,10 @@ class SchoolInvitationAPIView(APIView):
         email = (request.data.get("email") or "").strip().lower()
         phone = (request.data.get("phone") or "").strip()
         role_ids = request.data.get("role_ids") or []
+        if not isinstance(role_ids, list):
+            raise ValidationError({"role_ids": "يجب إرسال الأدوار كمصفوفة من المعرفات."})
+        if len(set(map(str, role_ids))) != len(role_ids):
+            raise ValidationError({"role_ids": "لا تكرر الدور نفسه في الدعوة."})
         if not email:
             raise ValidationError({"email": "البريد الإلكتروني مطلوب لإرسال الدعوة."})
         roles = list(SchoolRole.objects.filter(
@@ -291,6 +315,10 @@ class SchoolInvitationAPIView(APIView):
                 raise ValidationError({"expires_at": "أدخل تاريخاً ووقتاً بصيغة ISO-8601."})
         else:
             expires_at = timezone.now() + timedelta(days=7)
+        if timezone.is_naive(expires_at):
+            expires_at = timezone.make_aware(expires_at, timezone.get_current_timezone())
+        if expires_at <= timezone.now():
+            raise ValidationError({"expires_at": "يجب أن يكون انتهاء الدعوة في المستقبل."})
         invitation, raw_token = issue_school_invitation(
             school=school, invited_by=request.user, email=email,
             phone=phone, expires_at=expires_at, roles=roles,
@@ -301,6 +329,21 @@ class SchoolInvitationAPIView(APIView):
         data["acceptance_token"] = raw_token
         data["delivery_required"] = True
         return Response(data, status=status.HTTP_201_CREATED)
+
+
+    def revoke(self, request, invitation_id):
+        school = school_for(request)
+        require_school_role_or_permission(request, school, ADMIN_ROLES)
+        with transaction.atomic():
+            invitation = get_object_or_404(
+                SchoolInvitation.objects.select_for_update(),
+                pk=invitation_id, school=school,
+            )
+            if invitation.status != SchoolInvitation.Status.PENDING:
+                raise ValidationError("لا يمكن إلغاء دعوة لم تعد معلقة.")
+            invitation.status = SchoolInvitation.Status.REVOKED
+            invitation.save(update_fields=["status", "updated_at"])
+        return Response({"id": str(invitation.pk), "status": invitation.status})
 
 
 class AcceptInvitationAPIView(APIView):
