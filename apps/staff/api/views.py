@@ -13,9 +13,11 @@ from rest_framework.exceptions import ValidationError
 
 from apps.accounts.api_permissions import (
     HR_ROLES,
+    has_school_roles,
     require_school_role_or_permission,
     resolve_active_school,
 )
+from apps.accounts.services import is_platform_operator
 from apps.staff.api.serializers import (
     ApproveLeaveRequestSerializer,
     CreateLeaveRequestSerializer,
@@ -118,6 +120,25 @@ class LeaveRequestListCreateAPIView(APIView):
         qs = LeaveRequest.objects.filter(school=school, is_archived=False).select_related(
             "teacher__user", "staff_member__user", "leave_type", "approved_by"
         )
+        can_manage = (
+            has_school_roles(request.user, school, HR_ROLES)
+            or is_platform_operator(request.user)
+        )
+        if not can_manage:
+            own_teacher = Teacher.objects.filter(
+                school=school, user=request.user, is_archived=False,
+            ).first()
+            own_staff = StaffMember.objects.filter(
+                school=school, user=request.user, is_archived=False,
+            ).first()
+            if not own_teacher and not own_staff:
+                raise PermissionDenied("لا تملك ملف موظف أو معلم في هذه المدرسة.")
+            own_filter = Q(pk__in=[])
+            if own_teacher:
+                own_filter |= Q(teacher=own_teacher)
+            if own_staff:
+                own_filter |= Q(staff_member=own_staff)
+            qs = qs.filter(own_filter)
         status_filter = request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
@@ -131,8 +152,23 @@ class LeaveRequestListCreateAPIView(APIView):
         serializer = CreateLeaveRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        can_manage = (
+            has_school_roles(request.user, school, HR_ROLES)
+            or is_platform_operator(request.user)
+        )
+        if not can_manage:
+            own_teacher = Teacher.objects.filter(
+                school=school, user=request.user, is_archived=False,
+            ).first()
+            own_staff = StaffMember.objects.filter(
+                school=school, user=request.user, is_archived=False,
+            ).first()
+            is_own_teacher = bool(own_teacher and str(data.get("teacher_id")) == str(own_teacher.pk))
+            is_own_staff = bool(own_staff and str(data.get("staff_member_id")) == str(own_staff.pk))
+            if not (is_own_teacher or is_own_staff):
+                raise PermissionDenied("يمكنك تقديم طلب إجازة لملفك الوظيفي فقط.")
 
-        leave_type = get_object_or_404(LeaveType, pk=data["leave_type_id"], school=school)
+        leave_type = get_object_or_404(LeaveType, pk=data["leave_type_id"], school=school, is_archived=False)
         teacher = None
         staff_member = None
         if data.get("teacher_id"):
@@ -192,6 +228,25 @@ class StaffAttendanceListCreateAPIView(APIView):
         qs = StaffAttendance.objects.filter(school=school, is_archived=False).select_related(
             "teacher__user", "staff_member__user"
         )
+        can_manage = (
+            has_school_roles(request.user, school, HR_ROLES)
+            or is_platform_operator(request.user)
+        )
+        if not can_manage:
+            own_teacher = Teacher.objects.filter(
+                school=school, user=request.user, is_archived=False,
+            ).first()
+            own_staff = StaffMember.objects.filter(
+                school=school, user=request.user, is_archived=False,
+            ).first()
+            if not own_teacher and not own_staff:
+                raise PermissionDenied("لا تملك ملف موظف أو معلم في هذه المدرسة.")
+            own_filter = Q(pk__in=[])
+            if own_teacher:
+                own_filter |= Q(teacher=own_teacher)
+            if own_staff:
+                own_filter |= Q(staff_member=own_staff)
+            qs = qs.filter(own_filter)
         date_filter = request.query_params.get("date")
         if date_filter:
             qs = qs.filter(date=date_filter)
@@ -205,6 +260,9 @@ class StaffAttendanceListCreateAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(
+            request, school, HR_ROLES, "staff.add_staffattendance",
+        )
         serializer = LogAttendanceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
