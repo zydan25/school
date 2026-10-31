@@ -3,7 +3,7 @@ from django.test import SimpleTestCase
 from django.urls import Resolver404, resolve
 from rest_framework import serializers as drf_serializers
 
-from apps.api import v1 as mobile_v1_serializers
+from apps.api.v1 import serializers as mobile_v1_serializers
 
 
 class MobileSerializerContractTests(SimpleTestCase):
