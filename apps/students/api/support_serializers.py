@@ -175,8 +175,12 @@ class SummonAttendanceSerializer(serializers.Serializer):
 
 
 class SchoolComplaintSerializer(StudentSupportTenantSerializer):
-    submitter_name = serializers.CharField(source="submitter.get_full_name", read_only=True)
-    resolved_by_name = serializers.CharField(source="resolved_by.get_full_name", read_only=True)
+    submitter_name = serializers.CharField(
+        source="submitter.get_full_name", read_only=True, allow_null=True
+    )
+    resolved_by_name = serializers.CharField(
+        source="resolved_by.get_full_name", read_only=True, allow_null=True
+    )
 
     class Meta:
         model = SchoolComplaint

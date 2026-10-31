@@ -19,6 +19,7 @@ from apps.accounts.api_permissions import (
     has_school_roles,
     resolve_active_school,
 )
+from apps.accounts.models import SchoolMembership
 from apps.accounts.services import is_platform_operator
 from apps.notifications.services import create_in_app_notification
 from apps.staff.models import Teacher
@@ -80,6 +81,32 @@ def linked_student_ids(user, school):
     return student_ids
 
 
+def incident_queryset_for(request, school):
+    qs = StudentIncidentReport.objects.filter(
+        school=school, is_archived=False
+    ).select_related("student", "reporter")
+    if is_manager(request.user, school):
+        return qs.order_by("-date", "-created_at")
+
+    visible = Q(pk__in=[])
+    role_found = False
+    if has_school_roles(request.user, school, TEACHER_ROLES):
+        role_found = True
+        visible |= Q(reporter=request.user)
+    if has_school_roles(request.user, school, {"guardian"}):
+        role_found = True
+        visible |= Q(
+            student_id__in=linked_student_ids(request.user, school),
+            parent_notified=True,
+        )
+    if has_school_roles(request.user, school, {"student"}):
+        role_found = True
+        visible |= Q(student__user=request.user, parent_notified=True)
+    if not role_found:
+        raise PermissionDenied("لا تملك صلاحية عرض بلاغات الطلاب.")
+    return qs.filter(visible).distinct().order_by("-date", "-created_at")
+
+
 def require_teacher_assigned_to_student(user, school, student):
     teacher = Teacher.objects.filter(
         school=school, user=user, is_archived=False
@@ -103,33 +130,7 @@ class StudentIncidentListCreateAPIView(generics.ListCreateAPIView):
         return context
 
     def get_queryset(self):
-        school = self.get_school()
-        qs = StudentIncidentReport.objects.filter(
-            school=school, is_archived=False
-        ).select_related("student", "reporter")
-        if is_manager(self.request.user, school):
-            return qs.order_by("-date", "-created_at")
-
-        visible = Q(pk__in=[])
-        role_found = False
-        if has_school_roles(self.request.user, school, TEACHER_ROLES):
-            role_found = True
-            visible |= Q(reporter=self.request.user)
-        if has_school_roles(self.request.user, school, {"guardian"}):
-            role_found = True
-            visible |= Q(
-                student_id__in=linked_student_ids(self.request.user, school),
-                parent_notified=True,
-            )
-        if has_school_roles(self.request.user, school, {"student"}):
-            role_found = True
-            visible |= Q(
-                student__user=self.request.user,
-                parent_notified=True,
-            )
-        if not role_found:
-            raise PermissionDenied("لا تملك صلاحية عرض بلاغات الطلاب.")
-        return qs.filter(visible).distinct().order_by("-date", "-created_at")
+        return incident_queryset_for(self.request, self.get_school())
 
     def perform_create(self, serializer):
         school = self.get_school()
@@ -157,9 +158,7 @@ class StudentIncidentDetailAPIView(generics.RetrieveAPIView):
         return context
 
     def get_queryset(self):
-        return StudentIncidentListCreateAPIView(
-            request=self.request
-        ).get_queryset()
+        return incident_queryset_for(self.request, get_school(self.request))
 
 
 class StudentIncidentNotifyParentsAPIView(APIView):
@@ -167,22 +166,17 @@ class StudentIncidentNotifyParentsAPIView(APIView):
 
     def post(self, request, pk):
         school = get_school(request)
-        incident = get_object_or_404(
-            StudentIncidentReport.objects.select_for_update(),
-            pk=pk, school=school, is_archived=False,
-        )
-        allowed = is_manager(request.user, school) or (
-            incident.reporter_id == request.user.id
-            and has_school_roles(request.user, school, TEACHER_ROLES)
-        )
-        if not allowed:
-            raise PermissionDenied("لا تملك صلاحية نشر هذا البلاغ لأولياء الأمور.")
-
         with transaction.atomic():
             incident = get_object_or_404(
                 StudentIncidentReport.objects.select_for_update(),
                 pk=pk, school=school, is_archived=False,
             )
+            allowed = is_manager(request.user, school) or (
+                incident.reporter_id == request.user.id
+                and has_school_roles(request.user, school, TEACHER_ROLES)
+            )
+            if not allowed:
+                raise PermissionDenied("لا تملك صلاحية نشر هذا البلاغ لأولياء الأمور.")
             relations = StudentGuardianRelation.objects.filter(
                 school=school,
                 student=incident.student,
@@ -193,6 +187,15 @@ class StudentIncidentNotifyParentsAPIView(APIView):
             sent_count = 0
             for relation in relations:
                 recipient = relation.guardian.user
+                valid_membership = SchoolMembership.objects.filter(
+                    user=recipient,
+                    school=school,
+                    status=SchoolMembership.Status.ACTIVE,
+                ).filter(
+                    Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
+                ).exists()
+                if not valid_membership:
+                    continue
                 notification, created = create_in_app_notification(
                     recipient=recipient,
                     school=school,
@@ -205,9 +208,12 @@ class StudentIncidentNotifyParentsAPIView(APIView):
                 )
                 if created:
                     sent_count += 1
-            if not incident.parent_notified:
-                incident.parent_notified = True
-                incident.save(update_fields=["parent_notified", "updated_at"])
+            if sent_count or incident.parent_notified:
+                if not incident.parent_notified:
+                    incident.parent_notified = True
+                    incident.save(update_fields=["parent_notified", "updated_at"])
+            else:
+                raise ValidationError("لا يوجد ولي أمر مرتبط لديه عضوية سارية ويستقبل الإشعارات.")
         return Response({
             "incident_id": str(incident.pk),
             "parent_portal_notifications_created": sent_count,
@@ -248,13 +254,14 @@ class StudentIncidentResolveAPIView(APIView):
             raise PermissionDenied("معالجة البلاغات متاحة لإدارة شؤون الطلاب فقط.")
         serializer = IncidentResolutionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        incident = get_object_or_404(
-            StudentIncidentReport.objects.select_for_update(),
-            pk=pk, school=school, is_archived=False,
-        )
-        incident.action_taken = serializer.validated_data["action_taken"]
-        incident.is_resolved = True
-        incident.save(update_fields=["action_taken", "is_resolved", "updated_at"])
+        with transaction.atomic():
+            incident = get_object_or_404(
+                StudentIncidentReport.objects.select_for_update(),
+                pk=pk, school=school, is_archived=False,
+            )
+            incident.action_taken = serializer.validated_data["action_taken"]
+            incident.is_resolved = True
+            incident.save(update_fields=["action_taken", "is_resolved", "updated_at"])
         return Response(StudentIncidentReportSerializer(
             incident, context={"school": school}
         ).data)
