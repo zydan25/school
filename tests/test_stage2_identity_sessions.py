@@ -229,7 +229,7 @@ class IdentitySessionSecurityTests(TestCase):
                 purpose=PhoneVerificationChallenge.Purpose.VERIFY_PHONE,
             )
 
-        real_code = re.search(r"(\\d{6})", messages[-1]).group(1)
+        real_code = re.search(r"(\d{6})", messages[-1]).group(1)
         wrong_code = f"{(int(real_code) + 1) % 1_000_000:06d}"
         for expected_attempts in range(1, 6):
             with self.assertRaises(ValidationError):
