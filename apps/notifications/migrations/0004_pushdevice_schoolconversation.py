@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
             options={
                 "verbose_name": "جهاز إشعارات",
                 "verbose_name_plural": "أجهزة الإشعارات",
-                "indexes": [models.Index(fields=["user", "is_active"], name="notifications_push_user_active_idx")],
+                "indexes": [models.Index(fields=["user", "is_active"], name="ntf_pd_user_active")],
                 "constraints": [
                     models.UniqueConstraint(fields=("user", "device_id"), name="notifications_push_device_user_device_uniq"),
                 ],
@@ -63,7 +63,7 @@ class Migration(migrations.Migration):
                 "verbose_name": "محادثة مدرسية",
                 "verbose_name_plural": "المحادثات المدرسية",
                 "ordering": ["-last_message_at", "-created_at"],
-                "indexes": [models.Index(fields=["school", "status", "last_message_at"], name="notifications_conv_school_status_idx")],
+                "indexes": [models.Index(fields=["school", "status", "last_message_at"], name="ntf_sc_school_status")],
             },
         ),
         migrations.CreateModel(
@@ -89,7 +89,7 @@ class Migration(migrations.Migration):
             options={
                 "verbose_name": "مشارك محادثة",
                 "verbose_name_plural": "مشاركو المحادثات",
-                "indexes": [models.Index(fields=["school", "user", "is_active"], name="notifications_conv_user_active_idx")],
+                "indexes": [models.Index(fields=["school", "user", "is_active"], name="ntf_cp_user_active")],
                 "constraints": [
                     models.UniqueConstraint(condition=models.Q(is_archived=False), fields=("school", "conversation", "user"), name="notifications_conversation_participant_uniq"),
                 ],
@@ -122,7 +122,7 @@ class Migration(migrations.Migration):
                 "verbose_name": "رسالة محادثة",
                 "verbose_name_plural": "رسائل المحادثات",
                 "ordering": ["created_at"],
-                "indexes": [models.Index(fields=["school", "conversation", "created_at"], name="notifications_conv_msg_time_idx")],
+                "indexes": [models.Index(fields=["school", "conversation", "created_at"], name="ntf_cm_conv_time")],
             },
         ),
     ]
