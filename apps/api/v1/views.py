@@ -517,6 +517,34 @@ class GuardianRelationViewSet(TenantModelViewSet):
             school=self.get_school(), is_archived=False,
         ).select_related("student", "guardian__user")
 
+    def _ensure_verified_guardian(self, serializer):
+        school = self.get_school()
+        guardian = serializer.validated_data.get(
+            "guardian",
+            serializer.instance.guardian if serializer.instance else None,
+        )
+        student = serializer.validated_data.get(
+            "student",
+            serializer.instance.student if serializer.instance else None,
+        )
+        if guardian is None or student is None:
+            raise ValidationError("الطالب وولي الأمر مطلوبان.")
+        if guardian.school_id != school.pk or student.school_id != school.pk:
+            raise ValidationError("يجب أن يتبع الطالب وولي الأمر المدرسة النشطة نفسها.")
+        ensure_guardian_membership(
+            user=guardian.user, school=school, actor=self.request.user,
+        )
+
+    @transaction.atomic
+    def perform_create(self, serializer):
+        self._ensure_verified_guardian(serializer)
+        serializer.save(school=self.get_school())
+
+    @transaction.atomic
+    def perform_update(self, serializer):
+        self._ensure_verified_guardian(serializer)
+        serializer.save()
+
 
 class AcademicYearViewSet(TenantModelViewSet):
     serializer_class = AcademicYearSerializer
