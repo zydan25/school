@@ -247,21 +247,33 @@ class WhatsAppWebhookAPIView(APIView):
         if not school:
             return Response({"status": "error", "message": "لم يتم العثور على مدرسة مصرح بها لهذا الويب هوك."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Security: verify payload signature if secret token is configured
+        # Fail closed: an inbound webhook is accepted only for an active gateway
+        # with a configured signing secret and a valid signature.
         gateway = SchoolMessagingGateway.objects.filter(
             school=school,
             channel=SchoolMessagingGateway.Channel.WHATSAPP,
             is_active=True,
         ).first()
+        if gateway is None or not gateway.webhook_verify_token:
+            return Response(
+                {"detail": "بوابة الواتساب أو سر التحقق غير مهيأ؛ تم رفض الرسالة."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         sig_header = request.headers.get("X-Hub-Signature-256")
-        if gateway and gateway.webhook_verify_token:
-            if not sig_header:
-                return Response({"detail": "ترويسة التوقيع X-Hub-Signature-256 مطلوبة ومفقودة في الطلب."}, status=status.HTTP_401_UNAUTHORIZED)
-            import hmac
-            expected_sig = "sha256=" + hmac.new(gateway.webhook_verify_token.encode("utf-8"), request.body, hashlib.sha256).hexdigest()
-            if not hmac.compare_digest(sig_header, expected_sig):
-                return Response({"detail": "توقيع الرسالة غير صحيح."}, status=status.HTTP_403_FORBIDDEN)
+        if not sig_header:
+            return Response(
+                {"detail": "ترويسة التوقيع X-Hub-Signature-256 مطلوبة ومفقودة في الطلب."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        import hmac
+        expected_sig = "sha256=" + hmac.new(
+            gateway.webhook_verify_token.encode("utf-8"),
+            request.body,
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(sig_header, expected_sig):
+            return Response({"detail": "توقيع الرسالة غير صحيح."}, status=status.HTTP_403_FORBIDDEN)
 
         # Permanent deduplication and lifecycle state tracking
         from apps.notifications.models import InboundWebhookMessage
