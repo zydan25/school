@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -77,8 +78,9 @@ class CriticalAccessRegressionTests(TestCase):
         cls.student_role = SchoolRole.objects.create(
             school=cls.school, code="student", name="طالب",
         )
-        cls.teacher_role = SchoolRole.objects.create(
-            school=cls.school, code="teacher-test", name="معلم اختبار",
+        cls.teacher_role, _ = SchoolRole.objects.get_or_create(
+            school=cls.school, code="teacher",
+            defaults={"name": "معلم اختبار"},
         )
         for user, role in (
             (cls.student_user, cls.student_role),
@@ -207,6 +209,26 @@ class CriticalAccessRegressionTests(TestCase):
             f"/api/v1/copilot/student/grades/?school_code={self.school.code}&student_id={self.other_student.pk}",
         )
         self.assertEqual(foreign_student.status_code, status.HTTP_403_FORBIDDEN)
+
+        # A teacher role alone does not grant access to student-scoped Copilot data.
+        self.client.force_authenticate(user=self.teacher_user)
+        teacher_student_data = self.client.get(
+            f"/api/v1/copilot/student/grades/?school_code={self.school.code}&student_id={self.student.pk}",
+        )
+        self.assertEqual(teacher_student_data.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_profile_link_does_not_bypass_expired_membership(self):
+        membership = SchoolMembership.objects.get(
+            school=self.school, user=self.student_user,
+        )
+        membership.expires_at = timezone.now() - timezone.timedelta(days=1)
+        membership.save(update_fields=["expires_at", "updated_at"])
+
+        self.client.force_authenticate(user=self.student_user)
+        response = self.client.get(
+            f"/api/v1/fees/invoices/?school_code={self.school.code}",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_webhook_rejects_gateway_without_signing_secret(self):
         SchoolMessagingGateway.objects.create(
