@@ -19,20 +19,19 @@ class CurrentUserView(APIView):
     def get(self, request, version):
         from apps.api.v1.serializers import UserProfileSerializer
 
-        return Response({
-            "user": UserProfileSerializer(
-                request.user, context={"request": request},
-            ).data,
-            "active_school": (
-                {
-                    "id": str(request.school.pk),
-                    "code": request.school.code,
-                    "name": request.school.name,
-                }
-                if request.school else None
-            ),
-            "is_platform_admin": request.user.is_platform_admin,
-        })
+        data = UserProfileSerializer(
+            request.user, context={"request": request},
+        ).data
+        data["is_platform_admin"] = request.user.is_platform_admin
+        data["school"] = (
+            {
+                "id": str(request.school.pk),
+                "code": request.school.code,
+                "name": request.school.name,
+            }
+            if request.school else None
+        )
+        return Response(data)
 
     def patch(self, request, version):
         from apps.api.v1.serializers import UserProfileSerializer
@@ -42,10 +41,11 @@ class CurrentUserView(APIView):
             context={"request": request},
         )
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        user = serializer.save()
         return Response({
-            "user": serializer.data,
-            "active_school": (
+            **UserProfileSerializer(user, context={"request": request}).data,
+            "is_platform_admin": user.is_platform_admin,
+            "school": (
                 {
                     "id": str(request.school.pk),
                     "code": request.school.code,
