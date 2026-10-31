@@ -120,15 +120,18 @@ def send_phone_message(*, phone: str, message: str, purpose: str) -> None:
 
 @transaction.atomic
 def issue_phone_challenge(*, user, purpose: str, request_ip=None):
+    # Serialize OTP issuance for the account to prevent concurrent requests
+    # from bypassing resend intervals or per-hour limits.
+    locked_user = User.objects.select_for_update().get(pk=user.pk)
     now = timezone.now()
     recent = PhoneVerificationChallenge.objects.filter(
-        user=user, purpose=purpose, created_at__gte=now - timedelta(hours=1),
+        user=locked_user, purpose=purpose, created_at__gte=now - timedelta(hours=1),
     ).count()
     if recent >= 5:
         raise ValidationError("تجاوزت عدد طلبات رموز التحقق المسموح؛ حاول لاحقاً.")
 
     last = PhoneVerificationChallenge.objects.filter(
-        user=user, purpose=purpose,
+        user=locked_user, purpose=purpose,
     ).order_by("-created_at").first()
     if last and last.created_at > now - timedelta(seconds=60):
         raise ValidationError("انتظر دقيقة قبل طلب رمز تحقق جديد.")
@@ -140,16 +143,16 @@ def issue_phone_challenge(*, user, purpose: str, request_ip=None):
 
     code = f"{secrets.randbelow(1_000_000):06d}"
     challenge = PhoneVerificationChallenge.objects.create(
-        user=user,
-        phone=user.phone,
+        user=locked_user,
+        phone=locked_user.phone,
         purpose=purpose,
-        code_digest=_challenge_digest(purpose=purpose, phone=user.phone, code=code),
+        code_digest=_challenge_digest(purpose=purpose, phone=locked_user.phone, code=code),
         expires_at=now + timedelta(minutes=5),
         request_ip=request_ip,
     )
     message = f"رمز التحقق الخاص بمنصة سكول هو: {code}. صالح لمدة 5 دقائق ولا تشاركه مع أحد."
     try:
-        send_phone_message(phone=user.phone, message=message, purpose=purpose)
+        send_phone_message(phone=locked_user.phone, message=message, purpose=purpose)
     except Exception:
         challenge.delete()
         raise
