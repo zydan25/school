@@ -453,6 +453,8 @@ def disburse_payroll_run(
         disb_entry.post(user=disbursed_by)
 
         # Create Payment Voucher with complete details
+        from apps.accounting.models import PaymentVoucher
+
         v_num = f"PV-PAY-{locked_run.year}{locked_run.month:02d}"
         pv, _ = PaymentVoucher.objects.get_or_create(
             school=school,
