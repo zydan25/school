@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from django.db.models import Q
 from django.utils import timezone
-from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
 
 from apps.accounts.models import SchoolMembership
