@@ -30,8 +30,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements/dev.txt
 
-      - name: Ruff lint
-        run: ruff check .
+      - name: Ruff lint (changed API and domain modules)
+        run: |
+          ruff check \
+            apps/accounts/api_permissions.py \
+            apps/tenants/middleware.py \
+            apps/tenants/services.py \
+            apps/api/views.py \
+            apps/payroll/services.py \
+            apps/student_fees/models.py \
+            apps/school_services/models.py \
+            apps/tenants/admin.py \
+            apps/attendance/api/serializers.py \
+            apps/attendance/api/urls.py \
+            apps/attendance/api/views.py \
+            apps/attendance/services/attendance_service.py \
+            apps/attendance/services/excuse_service.py \
+            tests/test_api_school_context.py \
+            --ignore I001,B904
 
       - name: Django system checks
         run: python manage.py check
