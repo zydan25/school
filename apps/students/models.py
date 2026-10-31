@@ -70,7 +70,12 @@ class Student(TenantOwnedModel):
                 fields=["school", "student_id_number"],
                 condition=models.Q(is_archived=False),
                 name="students_student_school_id_uniq",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["school", "user"],
+                condition=models.Q(user__isnull=False, is_archived=False),
+                name="students_student_school_user_uniq",
+            ),
         ]
         indexes = [
             models.Index(fields=["school", "grade_level", "section", "status"]),
@@ -112,6 +117,87 @@ class Student(TenantOwnedModel):
                     "status": StudentEnrollment.Status.ENROLLED,
                 },
             )
+
+
+class StudentMovement(TenantOwnedModel):
+    """Append-only lifecycle history for admissions and student status/placement changes."""
+
+    class MovementType(models.TextChoices):
+        ADMITTED = "admitted", "قبول وتسجيل"
+        PROMOTED = "promoted", "ترفيع"
+        RETAINED = "retained", "إعادة قيد"
+        TRANSFERRED = "transferred", "نقل داخلي"
+        GRADUATED = "graduated", "تخرج"
+        WITHDRAWN = "withdrawn", "انسحاب"
+
+    student = models.ForeignKey(
+        Student,
+        verbose_name="الطالب",
+        on_delete=models.PROTECT,
+        related_name="movements",
+    )
+    movement_type = models.CharField(
+        "نوع الحركة", max_length=20, choices=MovementType.choices,
+    )
+    previous_academic_year = models.ForeignKey(
+        "academics.AcademicYear", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="+",
+    )
+    previous_grade_level = models.ForeignKey(
+        "academics.GradeLevel", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="+",
+    )
+    previous_section = models.ForeignKey(
+        "academics.Section", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="+",
+    )
+    next_academic_year = models.ForeignKey(
+        "academics.AcademicYear", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="+",
+    )
+    next_grade_level = models.ForeignKey(
+        "academics.GradeLevel", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="+",
+    )
+    next_section = models.ForeignKey(
+        "academics.Section", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="+",
+    )
+    effective_date = models.DateField("تاريخ سريان الحركة", default=timezone.localdate)
+    reason = models.TextField("سبب الحركة وملاحظاتها", blank=True)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="recorded_student_movements",
+    )
+
+    class Meta:
+        verbose_name = "حركة طالب"
+        verbose_name_plural = "سجل حركات الطلاب"
+        ordering = ["-effective_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["school", "student", "effective_date"]),
+            models.Index(fields=["school", "movement_type", "effective_date"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.student_id and self.student.school_id != self.school_id:
+            raise ValidationError({"student": "الطالب لا يتبع المدرسة المحددة."})
+        for field_name in (
+            "previous_academic_year", "previous_grade_level", "previous_section",
+            "next_academic_year", "next_grade_level", "next_section",
+        ):
+            related = getattr(self, field_name, None)
+            if related is not None and related.school_id != self.school_id:
+                raise ValidationError({field_name: "العنصر المرتبط لا يتبع المدرسة المحددة."})
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("سجل حركة الطالب لا يقبل التعديل؛ أضف حركة تصحيحية جديدة.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("سجل حركة الطالب تاريخي ولا يمكن حذفه.")
 
 
 class StudentEnrollment(TenantOwnedModel):
