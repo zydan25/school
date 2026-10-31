@@ -559,3 +559,69 @@ class Report4FixesTestCase(TestCase):
         # Payroll API - Runs
         resp = self.client.get(f"/api/v1/payroll/runs/?school_code={self.school.code}")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+
+    def test_student_api_create_update_archive_and_lifecycle_protection(self):
+        """Student profile CRUD must not bypass promotion/retention/withdraw workflows."""
+        token, _ = Token.objects.get_or_create(user=self.admin_user)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+
+        payload = {
+            "student_id_number": "STD-API-002",
+            "first_name": "سارة",
+            "middle_name": "محمد",
+            "last_name": "العطاب",
+            "gender": Student.Gender.FEMALE,
+            "national_id": "NID-API-002",
+            "birth_date": "2015-03-12",
+            "academic_year": str(self.year.pk),
+            "grade_level": str(self.grade1.pk),
+            "section": str(self.sec1.pk),
+            "enrollment_date": timezone.localdate().isoformat(),
+            "status": Student.Status.ACTIVE,
+            "credit_balance": "99999.00",
+        }
+        response = self.client.post(
+            f"/api/v1/students/?school_code={self.school.code}",
+            payload,
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        student_id = response.data["id"]
+        student = Student.objects.get(pk=student_id, school=self.school)
+        self.assertEqual(student.credit_balance, Decimal("0.00"))
+        self.assertTrue(
+            StudentEnrollment.objects.filter(
+                student=student, academic_year=self.year,
+            ).exists()
+        )
+
+        detail_url = f"/api/v1/students/{student_id}/?school_code={self.school.code}"
+        response = self.client.patch(
+            detail_url,
+            {"first_name": "سارة الجديدة"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        student.refresh_from_db()
+        self.assertEqual(student.first_name, "سارة الجديدة")
+
+        # Academic placement/status changes must go through the explicit lifecycle APIs.
+        response = self.client.patch(
+            detail_url,
+            {
+                "academic_year": str(self.next_year.pk),
+                "grade_level": str(self.grade2.pk),
+                "section": str(self.sec2.pk),
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        student.refresh_from_db()
+        self.assertEqual(student.academic_year_id, self.year.pk)
+        self.assertEqual(student.section_id, self.sec1.pk)
+
+        response = self.client.delete(detail_url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        student.refresh_from_db()
+        self.assertTrue(student.is_archived)
