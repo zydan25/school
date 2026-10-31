@@ -798,12 +798,18 @@ class GradeBookViewSet(TenantModelViewSet):
                         is_published=True,
                     )
             if has_school_roles(self.request.user, school, {"teacher"}):
-                teacher = user_teacher_profiles(self.request.user, school).first()
+                teacher = user_teacher_profiles(self.request.user, school).filter(
+                    is_active_teaching=True,
+                ).first()
                 if teacher:
-                    sections = teacher.assignments.filter(
-                        is_archived=False,
-                    ).values_list("section_id", flat=True)
-                    allowed |= Q(student__section_id__in=sections)
+                    assignments = teacher.assignments.filter(
+                        school=school, is_archived=False,
+                    ).values_list("section_id", "subject_id")
+                    for section_id, subject_id in assignments:
+                        allowed |= Q(
+                            student__section_id=section_id,
+                            subject_id=subject_id,
+                        )
             qs = qs.filter(allowed)
         term_id = self.request.query_params.get("academic_term_id")
         student_id = self.request.query_params.get("student_id")
@@ -847,9 +853,28 @@ class QuestionBankViewSet(TenantModelViewSet):
     write_roles = ACADEMIC_ADMIN_ROLES | {"teacher"}
 
     def get_queryset(self):
+        school = self.get_school()
         qs = QuestionBank.objects.filter(
-            school=self.get_school(), is_archived=False,
+            school=school, is_archived=False,
         ).select_related("subject", "grade_level", "created_by")
+        if has_school_roles(self.request.user, school, {"teacher"}) and not is_admin(
+            self.request.user, school,
+        ):
+            teacher = user_teacher_profiles(self.request.user, school).filter(
+                is_active_teaching=True,
+            ).first()
+            if teacher is None:
+                return qs.none()
+            allowed_questions = Q(created_by=self.request.user)
+            assignments = teacher.assignments.filter(
+                school=school, is_archived=False,
+            ).values_list("section__grade_id", "subject_id")
+            for grade_id, assigned_subject_id in assignments:
+                allowed_questions |= Q(
+                    grade_level_id=grade_id,
+                    subject_id=assigned_subject_id,
+                )
+            qs = qs.filter(allowed_questions)
         subject_id = self.request.query_params.get("subject_id")
         grade_id = self.request.query_params.get("grade_level_id")
         if subject_id:
@@ -906,16 +931,22 @@ class OnlineExamViewSet(TenantModelViewSet):
                         )
                     )
             if has_school_roles(self.request.user, school, {"teacher"}):
-                teacher = user_teacher_profiles(self.request.user, school).first()
+                teacher = user_teacher_profiles(self.request.user, school).filter(
+                    is_active_teaching=True,
+                ).first()
                 if teacher:
-                    assigned = teacher.assignments.filter(is_archived=False)
-                    sections = assigned.values_list("section_id", flat=True)
-                    grades = assigned.values_list("section__grade_id", flat=True)
-                    allowed |= (
-                        Q(created_by=self.request.user)
-                        | Q(section_id__in=sections)
-                        | Q(section__isnull=True, grade_level_id__in=grades)
-                    )
+                    allowed |= Q(created_by=self.request.user)
+                    assignments = teacher.assignments.filter(
+                        school=school, is_archived=False,
+                    ).values_list("section_id", "section__grade_id", "subject_id")
+                    for section_id, grade_id, subject_id in assignments:
+                        allowed |= Q(
+                            section_id=section_id, subject_id=subject_id,
+                        ) | Q(
+                            section__isnull=True,
+                            grade_level_id=grade_id,
+                            subject_id=subject_id,
+                        )
             qs = qs.filter(allowed)
         return qs.order_by("-start_time")
 
@@ -1084,14 +1115,22 @@ class ExamSubmissionViewSet(TenantModelViewSet):
                 if student:
                     allowed |= Q(student=student)
             if has_school_roles(self.request.user, school, {"teacher"}):
-                teacher = user_teacher_profiles(self.request.user, school).first()
+                teacher = user_teacher_profiles(self.request.user, school).filter(
+                    is_active_teaching=True,
+                ).first()
                 if teacher:
-                    assigned = teacher.assignments.filter(is_archived=False)
-                    allowed |= Q(exam__section_id__in=assigned.values_list("section_id", flat=True))
-                    allowed |= Q(
-                        exam__section__isnull=True,
-                        exam__grade_level_id__in=assigned.values_list("section__grade_id", flat=True),
-                    )
+                    assignments = teacher.assignments.filter(
+                        school=school, is_archived=False,
+                    ).values_list("section_id", "section__grade_id", "subject_id")
+                    for section_id, grade_id, subject_id in assignments:
+                        allowed |= Q(
+                            exam__section_id=section_id,
+                            exam__subject_id=subject_id,
+                        ) | Q(
+                            exam__section__isnull=True,
+                            exam__grade_level_id=grade_id,
+                            exam__subject_id=subject_id,
+                        )
             qs = qs.filter(allowed)
         return qs.order_by("-submitted_at")
 
