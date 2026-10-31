@@ -35,6 +35,18 @@ def get_or_create_register(
     bypass_calendar_check: bool = False,
 ) -> tuple[AttendanceRegister, bool]:
     """فتح أو جلب سجل الحضور المعتمد مع تهيئة سجلات الطلاب وربط الأعذار المسبقة."""
+    if section.school_id != school.pk or academic_year.school_id != school.pk:
+        raise ValidationError("الشعبة والسنة الدراسية يجب أن تتبعا المدرسة المحددة.")
+    if section.academic_year_id != academic_year.pk:
+        raise ValidationError("الشعبة لا تنتمي إلى السنة الدراسية المحددة.")
+    if date < academic_year.starts_on or date > academic_year.ends_on:
+        raise ValidationError("تاريخ الحضور يقع خارج حدود السنة الدراسية المحددة.")
+    if schedule and (
+        schedule.school_id != school.pk
+        or schedule.section_id != section.pk
+        or schedule.academic_year_id != academic_year.pk
+    ):
+        raise ValidationError("الحصة المجدولة لا تتبع المدرسة والشعبة والسنة المحددة.")
     if not bypass_calendar_check and not is_school_day(school, date, academic_year):
         raise ValidationError("لا يمكن فتح سجل حضور في يوم غير دراسي أو عطلة رسمية وفقاً للتقويم المدرسي.")
 
@@ -147,68 +159,81 @@ def bulk_record_attendance(
     recorded_by=None,
     ip_address: str | None = None,
 ) -> int:
-    """رصد وتحديث حالات الحضور والغياب للطلاب دفعة واحدة مع التدقيق الكامل."""
-    if not register.is_modifiable:
-        raise ValidationError("سجل الحضور مقفل أو معتمد نهائياً ولا يمكن التعديل عليه إلا بإذن إعادة فتح رسمي.")
+    """رصد جماعي آمن؛ يقفل سجل الحضور ويرفض أي طالب خارج السجل."""
+    if not records_data:
+        raise ValidationError("أرسل طالباً واحداً على الأقل لتسجيل الحضور.")
+
+    student_ids = [item.get("student_id") for item in records_data]
+    if None in student_ids or len(student_ids) != len(set(student_ids)):
+        raise ValidationError("قائمة الطلاب تحتوي على معرف مفقود أو مكرر.")
 
     updated_count = 0
     with transaction.atomic():
-        student_records_map = {
-            rec.student_id: rec
-            for rec in register.student_records.select_related("student")
-        }
+        locked_register = AttendanceRegister.objects.select_for_update().get(pk=register.pk)
+        if locked_register.status != AttendanceRegister.Status.OPEN:
+            raise ValidationError("لا يمكن تعديل السجل إلا عندما يكون مفتوحاً؛ اطلب إعادة فتحه رسمياً.")
 
-        for item in records_data:
-            student_id = item.get("student_id")
-            if student_id not in student_records_map:
-                continue
-
-            rec = student_records_map[student_id]
-            new_cat = item.get("status_category", rec.status_category)
-            new_late = item.get("late_minutes", rec.late_minutes)
-            new_notes = item.get("notes", rec.notes)
-
-            changed = (
-                rec.status_category != new_cat
-                or rec.late_minutes != new_late
-                or rec.notes != new_notes
+        records = locked_register.student_records.select_for_update().select_related("student")
+        student_records_map = {rec.student_id: rec for rec in records}
+        unknown_ids = set(student_ids) - set(student_records_map)
+        if unknown_ids:
+            raise ValidationError(
+                f"بعض الطلاب لا ينتمون إلى سجل الحضور المحدد: {sorted(str(item) for item in unknown_ids)}"
             )
 
-            if changed:
-                old_val = {
-                    "status_category": rec.status_category,
-                    "late_minutes": rec.late_minutes,
-                    "notes": rec.notes,
-                }
-                rec.status_category = new_cat
-                rec.late_minutes = new_late
-                rec.notes = new_notes
-                rec.recorded_by = recorded_by
-                rec.recorded_at = timezone.now()
-                rec.save()
+        valid_categories = {value for value, _label in AttendanceStatusType.Category.choices}
+        for item in records_data:
+            rec = student_records_map[item["student_id"]]
+            new_cat = item.get("status_category", rec.status_category)
+            if new_cat not in valid_categories:
+                raise ValidationError(f"حالة حضور غير مدعومة: {new_cat}")
+            new_late = item.get("late_minutes", rec.late_minutes)
+            if new_late < 0:
+                raise ValidationError("دقائق التأخر لا يمكن أن تكون سالبة.")
+            new_notes = item.get("notes", rec.notes)
 
-                _sync_legacy_attendance(rec, recorded_by)
+            if (
+                rec.status_category == new_cat
+                and rec.late_minutes == new_late
+                and rec.notes == new_notes
+            ):
+                continue
 
-                AttendanceAuditLog.objects.create(
-                    school=register.school,
-                    register=register,
-                    student_record=rec,
-                    action=AttendanceAuditLog.Action.RECORD_UPDATED,
-                    performed_by=recorded_by,
-                    old_value=old_val,
-                    new_value={
-                        "status_category": new_cat,
-                        "late_minutes": new_late,
-                        "notes": new_notes,
-                    },
-                    ip_address=ip_address,
-                )
-                updated_count += 1
+            old_value = {
+                "status_category": rec.status_category,
+                "late_minutes": rec.late_minutes,
+                "notes": rec.notes,
+            }
+            rec.status_category = new_cat
+            rec.late_minutes = new_late
+            rec.notes = new_notes
+            rec.recorded_by = recorded_by
+            rec.recorded_at = timezone.now()
+            rec.save()
 
-        if updated_count > 0:
-            cascade_daily_attendance_to_periods(register, user=recorded_by)
+            _sync_legacy_attendance(rec, recorded_by)
+            AttendanceAuditLog.objects.create(
+                school=locked_register.school,
+                register=locked_register,
+                student_record=rec,
+                action=AttendanceAuditLog.Action.RECORD_UPDATED,
+                performed_by=recorded_by,
+                old_value=old_value,
+                new_value={
+                    "status_category": new_cat,
+                    "late_minutes": new_late,
+                    "notes": new_notes,
+                },
+                ip_address=ip_address,
+            )
+            updated_count += 1
+
+        if updated_count:
+            cascade_daily_attendance_to_periods(locked_register, user=recorded_by)
 
     return updated_count
+
+
 
 
 def submit_register(
@@ -216,41 +241,42 @@ def submit_register(
     submitted_by=None,
     ip_address: str | None = None,
 ) -> AttendanceRegister:
-    """تسليم سجل الحضور للمراجعة والاعتماد وإشعار أولياء الأمور بالحالات المرصودة."""
-    if register.status == AttendanceRegister.Status.LOCKED:
-        raise ValidationError("السجل مقفل نهائياً.")
-
+    """تسليم سجل مفتوح للمراجعة مرة واحدة وإرسال التنبيهات بعد نجاح الانتقال."""
     with transaction.atomic():
-        register.status = AttendanceRegister.Status.SUBMITTED
-        register.submitted_by = submitted_by
-        register.submitted_at = timezone.now()
-        register.save(update_fields=["status", "submitted_by", "submitted_at", "updated_at"])
+        locked_register = AttendanceRegister.objects.select_for_update().get(pk=register.pk)
+        if locked_register.status != AttendanceRegister.Status.OPEN:
+            raise ValidationError("لا يمكن تسليم السجل إلا من الحالة المفتوحة.")
+
+        locked_register.status = AttendanceRegister.Status.SUBMITTED
+        locked_register.submitted_by = submitted_by
+        locked_register.submitted_at = timezone.now()
+        locked_register.save(update_fields=["status", "submitted_by", "submitted_at", "updated_at"])
 
         AttendanceAuditLog.objects.create(
-            school=register.school,
-            register=register,
+            school=locked_register.school,
+            register=locked_register,
             action=AttendanceAuditLog.Action.REGISTER_SUBMITTED,
             performed_by=submitted_by,
-            new_value={"status": register.status},
+            new_value={"status": locked_register.status},
             ip_address=ip_address,
         )
 
-        # Notify guardians for unexcused absence and late records
-        for rec in register.student_records.filter(
+        for rec in locked_register.student_records.filter(
             status_category__in=[
                 AttendanceStatusType.Category.ABSENT_UNEXCUSED,
                 AttendanceStatusType.Category.LATE,
             ]
         ).select_related("student"):
             notify_absence_or_late(
-                school=register.school,
+                school=locked_register.school,
                 student=rec.student,
-                date=register.date,
+                date=locked_register.date,
                 status_category=rec.status_category,
                 late_minutes=rec.late_minutes,
             )
+    return locked_register
 
-    return register
+
 
 
 def approve_register(
@@ -258,28 +284,29 @@ def approve_register(
     approved_by=None,
     ip_address: str | None = None,
 ) -> AttendanceRegister:
-    """اعتماد سجل الحضور من إدارة المدرسة أو المشرف المعتمد."""
-    if register.status == AttendanceRegister.Status.LOCKED:
-        raise ValidationError("السجل مقفل نهائياً.")
-
+    """اعتماد سجل تم تسليمه للمراجعة فقط."""
     with transaction.atomic():
-        register.status = AttendanceRegister.Status.APPROVED
-        register.approved_by = approved_by
-        register.approved_at = timezone.now()
-        register.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        locked_register = AttendanceRegister.objects.select_for_update().get(pk=register.pk)
+        if locked_register.status != AttendanceRegister.Status.SUBMITTED:
+            raise ValidationError("لا يمكن اعتماد السجل إلا بعد تسليمه للمراجعة.")
+
+        locked_register.status = AttendanceRegister.Status.APPROVED
+        locked_register.approved_by = approved_by
+        locked_register.approved_at = timezone.now()
+        locked_register.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
 
         AttendanceAuditLog.objects.create(
-            school=register.school,
-            register=register,
+            school=locked_register.school,
+            register=locked_register,
             action=AttendanceAuditLog.Action.REGISTER_APPROVED,
             performed_by=approved_by,
-            new_value={"status": register.status},
+            new_value={"status": locked_register.status},
             ip_address=ip_address,
         )
+        cascade_daily_attendance_to_periods(locked_register, user=approved_by)
+    return locked_register
 
-        cascade_daily_attendance_to_periods(register, user=approved_by)
 
-    return register
 
 
 def lock_register(
@@ -287,23 +314,28 @@ def lock_register(
     locked_by=None,
     ip_address: str | None = None,
 ) -> AttendanceRegister:
-    """إقفال سجل الحضور نهائياً وحمايته من أي تعديل مستقبلي."""
+    """إقفال سجل تم اعتماده فقط."""
     with transaction.atomic():
-        register.status = AttendanceRegister.Status.LOCKED
-        register.locked_by = locked_by
-        register.locked_at = timezone.now()
-        register.save(update_fields=["status", "locked_by", "locked_at", "updated_at"])
+        locked_register = AttendanceRegister.objects.select_for_update().get(pk=register.pk)
+        if locked_register.status != AttendanceRegister.Status.APPROVED:
+            raise ValidationError("لا يمكن إقفال السجل إلا بعد اعتماده.")
+
+        locked_register.status = AttendanceRegister.Status.LOCKED
+        locked_register.locked_by = locked_by
+        locked_register.locked_at = timezone.now()
+        locked_register.save(update_fields=["status", "locked_by", "locked_at", "updated_at"])
 
         AttendanceAuditLog.objects.create(
-            school=register.school,
-            register=register,
+            school=locked_register.school,
+            register=locked_register,
             action=AttendanceAuditLog.Action.REGISTER_LOCKED,
             performed_by=locked_by,
-            new_value={"status": register.status},
+            new_value={"status": locked_register.status},
             ip_address=ip_address,
         )
+    return locked_register
 
-    return register
+
 
 
 def request_reopen_register(
@@ -339,18 +371,23 @@ def review_reopen_request(
     is_approved: bool,
     review_notes: str = "",
 ) -> AttendanceReopenRequest:
-    """مراجعة واعتماد أو رفض طلب إعادة فتح السجل."""
+    """مراجعة طلب إعادة فتح معلق مرة واحدة فقط مع قفل السجل والطلب."""
     with transaction.atomic():
-        reopen_request.reviewed_by = reviewed_by
-        reopen_request.reviewed_at = timezone.now()
-        reopen_request.review_notes = review_notes
+        locked_request = AttendanceReopenRequest.objects.select_for_update().get(pk=reopen_request.pk)
+        if locked_request.status != AttendanceReopenRequest.Status.PENDING:
+            raise ValidationError("تمت معالجة طلب إعادة الفتح مسبقاً.")
+
+        register = AttendanceRegister.objects.select_for_update().get(pk=locked_request.register_id)
+        locked_request.reviewed_by = reviewed_by
+        locked_request.reviewed_at = timezone.now()
+        locked_request.review_notes = review_notes
 
         if is_approved:
-            reopen_request.status = AttendanceReopenRequest.Status.APPROVED
-            register = reopen_request.register
+            if register.status == AttendanceRegister.Status.OPEN:
+                raise ValidationError("السجل مفتوح بالفعل ولا يحتاج إلى إعادة فتح.")
+            locked_request.status = AttendanceReopenRequest.Status.APPROVED
             register.status = AttendanceRegister.Status.OPEN
             register.save(update_fields=["status", "updated_at"])
-
             AttendanceAuditLog.objects.create(
                 school=register.school,
                 register=register,
@@ -359,11 +396,12 @@ def review_reopen_request(
                 reason=review_notes,
             )
         else:
-            reopen_request.status = AttendanceReopenRequest.Status.REJECTED
+            locked_request.status = AttendanceReopenRequest.Status.REJECTED
 
-        reopen_request.save()
+        locked_request.save()
+    return locked_request
 
-    return reopen_request
+
 
 
 def _sync_legacy_attendance(rec: StudentAttendanceRecord, user=None):
