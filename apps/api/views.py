@@ -9,6 +9,15 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from apps.accounts.throttling import (
+    LoginDeviceRateThrottle,
+    LoginPhoneRateThrottle,
+    OTPRequestPhoneRateThrottle,
+    OTPVerifyPhoneRateThrottle,
+    PasswordResetPhoneRateThrottle,
+    RegistrationPhoneRateThrottle,
+)
+
 
 class HealthView(APIView):
     permission_classes = [AllowAny]
@@ -103,7 +112,7 @@ class APILoginView(APIView):
     """Rate-limited phone/password login issuing a separate bearer session per device."""
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, LoginPhoneRateThrottle, LoginDeviceRateThrottle]
     throttle_scope = "login"
 
     def post(self, request, *args, **kwargs):
@@ -211,7 +220,7 @@ class PhoneRegistrationAPIView(APIView):
     """Create a pending account and send a one-time phone verification code."""
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, RegistrationPhoneRateThrottle]
     throttle_scope = "registration"
 
     def post(self, request, *args, **kwargs):
@@ -295,7 +304,7 @@ class PhoneRegistrationAPIView(APIView):
 class PhoneVerificationAPIView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, OTPVerifyPhoneRateThrottle]
     throttle_scope = "otp_verify"
 
     def post(self, request, *args, **kwargs):
@@ -339,7 +348,7 @@ class PhoneVerificationAPIView(APIView):
 class ResendPhoneVerificationAPIView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, OTPRequestPhoneRateThrottle]
     throttle_scope = "otp_request"
 
     def post(self, request, *args, **kwargs):
@@ -369,7 +378,7 @@ class ResendPhoneVerificationAPIView(APIView):
 class PasswordResetRequestAPIView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, PasswordResetPhoneRateThrottle]
     throttle_scope = "password_reset"
 
     def post(self, request, *args, **kwargs):
