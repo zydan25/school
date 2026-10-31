@@ -8,6 +8,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.models import SchoolMembership
+from rest_framework.exceptions import ValidationError
+
 from apps.accounts.api_permissions import (
     HR_ROLES,
     require_school_role_or_permission,
@@ -34,22 +37,75 @@ def _resolve_school(request):
     return resolve_active_school(request)
 
 
-class StaffMemberListAPIView(generics.ListAPIView):
+class StaffMemberListAPIView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = StaffMemberListSerializer
 
-    def get_queryset(self):
+    def get_school(self):
         school = _resolve_school(self.request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
-        qs = StaffMember.objects.filter(school=school, is_archived=False).select_related("user")
+        return school
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        require_school_role_or_permission(request, self.get_school(), HR_ROLES, "staff.view_staffmember")
+
+    def get_queryset(self):
+        school = self.get_school()
+        qs = StaffMember.objects.filter(
+            school=school, is_archived=False,
+        ).select_related("user")
         role = self.request.query_params.get("role")
+        search = self.request.query_params.get("search")
         if role:
             qs = qs.filter(role=role)
-        search = self.request.query_params.get("search")
         if search:
-            qs = qs.filter(user__first_name__icontains=search) | qs.filter(user__last_name__icontains=search) | qs.filter(job_title__icontains=search)
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(user__first_name__icontains=search)
+                | Q(user__middle_name__icontains=search)
+                | Q(user__last_name__icontains=search)
+                | Q(employee_number__icontains=search)
+                | Q(job_title__icontains=search)
+            )
         return qs.order_by("role", "job_title")
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        user = serializer.validated_data["user"]
+        membership = user.school_memberships.filter(
+            school=school, status=SchoolMembership.Status.ACTIVE,
+        ).filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
+        ).first()
+        if membership is None:
+            raise ValidationError("يجب أن يمتلك المستخدم عضوية مدرسة نشطة وسارية قبل إنشاء ملف موظف.")
+        serializer.save(school=school)
+
+
+class StaffMemberDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = StaffMemberListSerializer
+    lookup_url_kwarg = "pk"
+
+    def get_school(self):
+        school = _resolve_school(self.request)
+        if not school:
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        return school
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        require_school_role_or_permission(request, self.get_school(), HR_ROLES, "staff.change_staffmember")
+
+    def get_queryset(self):
+        return StaffMember.objects.filter(
+            school=self.get_school(), is_archived=False,
+        ).select_related("user")
+
+    def perform_destroy(self, instance):
+        instance.archive(actor=self.request.user, reason="أرشفة الموظف عبر API")
 
 
 class LeaveRequestListCreateAPIView(APIView):
