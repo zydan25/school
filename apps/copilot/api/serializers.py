@@ -29,6 +29,7 @@ class EssayGradingRequestSerializer(serializers.Serializer):
 class StudentChatRequestSerializer(serializers.Serializer):
     message = serializers.CharField(required=True)
     session_id = serializers.UUIDField(required=False, allow_null=True)
+    student_id = serializers.UUIDField(required=False)
 
 
 class AIChatMessageSerializer(serializers.ModelSerializer):
