@@ -42,6 +42,9 @@ class PayrollRunListAPIView(generics.ListAPIView):
         school = _resolve_school(self.request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(
+            self.request, school, FINANCIAL_ROLES | HR_ROLES, "payroll.view_payrollrun",
+        )
         qs = PayrollRun.objects.filter(school=school, is_archived=False).select_related("journal_entry")
         year = self.request.query_params.get("year")
         if year:
@@ -60,7 +63,12 @@ class PayrollRunDetailAPIView(generics.RetrieveAPIView):
         school = _resolve_school(self.request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
-        return PayrollRun.objects.filter(school=school, is_archived=False).select_related("journal_entry").prefetch_related(
+        require_school_role_or_permission(
+            self.request, school, FINANCIAL_ROLES | HR_ROLES, "payroll.view_payrollrun",
+        )
+        return PayrollRun.objects.filter(
+            school=school, is_archived=False,
+        ).select_related("journal_entry").prefetch_related(
             "payslips__employee_contract__teacher__user",
             "payslips__employee_contract__staff_member__user",
         )
