@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.db import transaction
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 
@@ -97,14 +98,12 @@ class SchoolAdmin(AuditedAdminMixin, ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
+    @transaction.atomic
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         if obj.owner and obj.status == School.Status.ACTIVE:
             from apps.tenants.services import provision_school
-            try:
-                provision_school(obj, actor=request.user)
-            except Exception:
-                pass
+            provision_school(obj, actor=request.user)
 
 
 @admin.register(Branch)
