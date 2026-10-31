@@ -19,8 +19,14 @@ def resolve_active_school(request) -> School | None:
     """
     if getattr(request, "school_context_error", None):
         return None
-    if getattr(request, "school", None):
-        return request.school
+    contextual_school = getattr(request, "school", None)
+    if contextual_school is not None:
+        if (
+            contextual_school.status != School.Status.ACTIVE
+            or contextual_school.is_archived
+        ):
+            return None
+        return contextual_school
 
     if not request.user or not request.user.is_authenticated:
         return None
