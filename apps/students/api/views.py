@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied
@@ -9,9 +11,11 @@ from rest_framework.views import APIView
 
 from apps.accounts.api_permissions import (
     STUDENT_AFFAIRS_ROLES,
+    has_school_roles,
     require_school_role_or_permission,
     resolve_active_school,
 )
+from apps.accounts.services import is_platform_operator
 from apps.academics.models import AcademicYear, GradeLevel, Section
 from apps.students.api.serializers import (
     PromoteStudentSerializer,
@@ -33,45 +37,172 @@ def _resolve_school(request):
     return resolve_active_school(request)
 
 
-class StudentListAPIView(generics.ListAPIView):
+STUDENT_MANAGE_ROLES = STUDENT_AFFAIRS_ROLES | {
+    "admin", "school-admin", "school_admin",
+    "principal", "school-principal",
+}
+STUDENT_READ_ADMIN_ROLES = STUDENT_MANAGE_ROLES | {
+    "registrar", "academic-coordinator", "academic_coordinator",
+}
+
+
+def _student_read_queryset(request, school):
+    qs = Student.objects.filter(
+        school=school, is_archived=False,
+    ).select_related("grade_level", "section", "academic_year")
+    if is_platform_operator(request.user) or has_school_roles(
+        request.user, school, STUDENT_READ_ADMIN_ROLES,
+    ):
+        return qs
+
+    scope = Q(pk__in=[])
+    found_profile = False
+
+    if has_school_roles(request.user, school, {"teacher"}):
+        teacher = request.user.teacher_profiles.filter(
+            school=school, is_archived=False,
+        ).first()
+        if teacher:
+            found_profile = True
+            section_ids = teacher.assignments.filter(
+                is_archived=False,
+            ).values_list("section_id", flat=True)
+            scope |= Q(section_id__in=section_ids)
+
+    if has_school_roles(request.user, school, {"guardian"}):
+        guardian = request.user.guardian_profiles.filter(
+            school=school, is_archived=False,
+        ).first()
+        if guardian:
+            found_profile = True
+            scope |= Q(pk__in=guardian.children.filter(
+                school=school, is_archived=False,
+            ).values_list("pk", flat=True))
+
+    if has_school_roles(request.user, school, {"student"}):
+        found_profile = True
+        scope |= Q(user=request.user)
+
+    if not found_profile:
+        raise PermissionDenied("لا تملك دوراً أو ملفاً يسمح بعرض سجلات الطلاب.")
+    return qs.filter(scope).distinct()
+
+
+class StudentListAPIView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = StudentListSerializer
 
-    def get_queryset(self):
+    def get_school(self):
         school = _resolve_school(self.request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة أو لا تملك صلاحية الوصول.")
-        qs = Student.objects.filter(school=school, is_archived=False).select_related(
-            "grade_level", "section", "academic_year"
-        )
+        return school
+
+    def get_queryset(self):
+        school = self.get_school()
+        qs = _student_read_queryset(self.request, school)
         search = self.request.query_params.get("search")
         if search:
             qs = qs.filter(
-                first_name__icontains=search
-            ) | qs.filter(last_name__icontains=search) | qs.filter(student_id_number__icontains=search)
+                Q(first_name__icontains=search)
+                | Q(middle_name__icontains=search)
+                | Q(last_name__icontains=search)
+                | Q(student_id_number__icontains=search)
+            )
         grade_id = self.request.query_params.get("grade_level")
         if grade_id:
             qs = qs.filter(grade_level_id=grade_id)
         section_id = self.request.query_params.get("section")
         if section_id:
             qs = qs.filter(section_id=section_id)
+        year_id = self.request.query_params.get("academic_year")
+        if year_id:
+            qs = qs.filter(academic_year_id=year_id)
         status_filter = self.request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
         return qs.order_by("first_name", "last_name")
 
+    def perform_create(self, serializer):
+        school = self.get_school()
+        require_school_role_or_permission(
+            self.request, school, STUDENT_MANAGE_ROLES,
+            "students.add_student",
+        )
+        data = serializer.validated_data
+        year = get_object_or_404(
+            AcademicYear, pk=data["academic_year"].pk, school=school,
+            is_archived=False,
+        )
+        grade = get_object_or_404(
+            GradeLevel, pk=data["grade_level"].pk, school=school,
+            is_archived=False,
+        )
+        section = get_object_or_404(
+            Section, pk=data["section"].pk, school=school,
+            is_archived=False,
+        )
+        if section.grade_id != grade.pk or section.academic_year_id != year.pk:
+            raise PermissionDenied("يجب أن تتبع الشعبة الصف والسنة الدراسية المحددين.")
+        with transaction.atomic():
+            student = Student(
+                school=school,
+                academic_year=year,
+                grade_level=grade,
+                section=section,
+                student_id_number=data["student_id_number"].strip(),
+                first_name=data["first_name"].strip(),
+                middle_name=data.get("middle_name", "").strip(),
+                last_name=data["last_name"].strip(),
+                gender=data.get("gender", Student.Gender.MALE),
+                national_id=data.get("national_id", ""),
+                birth_date=data.get("birth_date"),
+                enrollment_date=data.get("enrollment_date") or timezone.localdate(),
+                status=data.get("status", Student.Status.ACTIVE),
+            )
+            student.full_clean()
+            student.save()
+            serializer.instance = student
 
-class StudentDetailAPIView(generics.RetrieveAPIView):
+
+class StudentDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = StudentDetailSerializer
+    lookup_url_kwarg = "pk"
 
-    def get_queryset(self):
+    def get_school(self):
         school = _resolve_school(self.request)
         if not school:
-            raise PermissionDenied("لم يتم تحديد المدرسة أو لا تملك صلاحية الوصول.")
-        return Student.objects.filter(school=school, is_archived=False).select_related(
-            "grade_level", "section", "academic_year"
-        ).prefetch_related("enrollment_history__academic_year", "enrollment_history__grade_level", "enrollment_history__section")
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        return school
+
+    def get_queryset(self):
+        return _student_read_queryset(self.request, self.get_school()).prefetch_related(
+            "enrollment_history__academic_year",
+            "enrollment_history__grade_level",
+            "enrollment_history__section",
+        )
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        require_school_role_or_permission(
+            self.request, school, STUDENT_MANAGE_ROLES,
+            "students.change_student",
+        )
+        for field in ("academic_year", "grade_level", "section"):
+            obj = serializer.validated_data.get(field)
+            if obj and obj.school_id != school.pk:
+                raise PermissionDenied("لا يمكن ربط الطالب بسجل تابع لمدرسة أخرى.")
+        student = serializer.save()
+        student.full_clean()
+        student.save()
+
+    def perform_destroy(self, instance):
+        require_school_role_or_permission(
+            self.request, self.get_school(), STUDENT_MANAGE_ROLES,
+            "students.delete_student",
+        )
+        instance.archive(actor=self.request.user, reason="أرشفة الطالب عبر API")
 
 
 class StudentPromoteAPIView(APIView):
