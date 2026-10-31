@@ -88,21 +88,23 @@ def review_excuse_request(
     is_approved: bool,
     review_notes: str = "",
 ) -> AttendanceExcuseRequest:
-    """مراجعة واعتماد أو رفض عذر الغياب وتحديث السجلات المرصودة بأثر رجعي."""
+    """مراجعة طلب عذر قيد التقديم مرة واحدة مع حماية سجلات الحضور التابعة."""
     with transaction.atomic():
-        excuse_request.reviewed_by = reviewed_by
-        excuse_request.reviewed_at = timezone.now()
-        excuse_request.review_notes = review_notes
+        locked_request = AttendanceExcuseRequest.objects.select_for_update().get(pk=excuse_request.pk)
+        if locked_request.status != AttendanceExcuseRequest.Status.SUBMITTED:
+            raise ValidationError("لا يمكن مراجعة العذر إلا إذا كان قيد التقديم ولم تتم معالجته مسبقاً.")
+
+        locked_request.reviewed_by = reviewed_by
+        locked_request.reviewed_at = timezone.now()
+        locked_request.review_notes = review_notes
 
         if is_approved:
-            excuse_request.status = AttendanceExcuseRequest.Status.APPROVED
-
-            # Update student attendance records within range
-            records = StudentAttendanceRecord.objects.filter(
-                school=excuse_request.school,
-                student=excuse_request.student,
-                register__date__gte=excuse_request.start_date,
-                register__date__lte=excuse_request.end_date,
+            locked_request.status = AttendanceExcuseRequest.Status.APPROVED
+            records = StudentAttendanceRecord.objects.select_for_update().filter(
+                school=locked_request.school,
+                student=locked_request.student,
+                register__date__gte=locked_request.start_date,
+                register__date__lte=locked_request.end_date,
                 is_archived=False,
             ).select_related("register")
 
@@ -116,36 +118,41 @@ def review_excuse_request(
                 elif rec.status_category == AttendanceStatusType.Category.LATE:
                     rec.status_category = AttendanceStatusType.Category.LATE_EXCUSED
 
-                rec.excuse_request = excuse_request
+                rec.excuse_request = locked_request
                 rec.save(update_fields=["status_category", "excuse_request", "updated_at"])
 
-                # Update legacy daily attendance if exists
                 DailyAttendance.objects.filter(
                     school=rec.school,
                     student=rec.student,
                     date=rec.register.date,
                 ).update(
                     status=DailyAttendance.Status.ABSENT_EXCUSED,
-                    excuse_reason=excuse_request.reason,
+                    excuse_reason=locked_request.reason,
                 )
 
                 AttendanceAuditLog.objects.create(
-                    school=excuse_request.school,
+                    school=locked_request.school,
                     register=rec.register,
                     student_record=rec,
                     action=AttendanceAuditLog.Action.EXCUSE_REVIEWED,
                     performed_by=reviewed_by,
                     old_value={"status_category": old_cat},
-                    new_value={"status_category": rec.status_category, "excuse_id": str(excuse_request.id)},
+                    new_value={
+                        "status_category": rec.status_category,
+                        "excuse_id": str(locked_request.id),
+                    },
                     reason=f"تم قبول العذر: {review_notes}",
                 )
         else:
-            excuse_request.status = AttendanceExcuseRequest.Status.REJECTED
+            locked_request.status = AttendanceExcuseRequest.Status.REJECTED
 
-        excuse_request.save()
-        notify_excuse_status_change(excuse_request)
+        locked_request.save()
+        notify_excuse_status_change(locked_request)
 
+    excuse_request.refresh_from_db()
     return excuse_request
+
+
 
 
 def create_early_departure_request(
@@ -199,17 +206,75 @@ def approve_early_departure(
     departure_request: EarlyDepartureRequest,
     approved_by,
 ) -> EarlyDepartureRequest:
-    """اعتماد طلب الانصراف المبكر من قبل إدارة المدرسة وتفويض حارس البوابة."""
-    departure_request.status = EarlyDepartureRequest.Status.APPROVED
-    departure_request.approved_by = approved_by
-    departure_request.approved_at = timezone.now()
-    departure_request.save()
+    """اعتماد طلب انصراف معلق مرة واحدة فقط."""
+    with transaction.atomic():
+        locked_request = EarlyDepartureRequest.objects.select_for_update().get(pk=departure_request.pk)
+        if locked_request.status != EarlyDepartureRequest.Status.PENDING:
+            raise ValidationError("لا يمكن اعتماد طلب الانصراف إلا إذا كان معلقاً ولم تتم معالجته مسبقاً.")
+        locked_request.status = EarlyDepartureRequest.Status.APPROVED
+        locked_request.approved_by = approved_by
+        locked_request.approved_at = timezone.now()
+        locked_request.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        notify_early_departure_change(locked_request, is_exit=False)
 
-    notify_early_departure_change(departure_request, is_exit=False)
+    departure_request.refresh_from_db()
     return departure_request
 
 
+
+
 def confirm_gate_exit(
+    departure_request: EarlyDepartureRequest,
+    confirmed_by,
+    exit_notes: str = "",
+) -> EarlyDepartureRequest:
+    """تأكيد الخروج من البوابة مرة واحدة بعد اعتماد الطلب."""
+    with transaction.atomic():
+        locked_request = EarlyDepartureRequest.objects.select_for_update().get(pk=departure_request.pk)
+        if locked_request.status != EarlyDepartureRequest.Status.APPROVED:
+            raise ValidationError("لا يمكن تأكيد خروج الطالب إلا بعد اعتماد طلب الانصراف رسمياً.")
+
+        locked_request.status = EarlyDepartureRequest.Status.EXITED
+        locked_request.exit_confirmed_at = timezone.now()
+        locked_request.exit_confirmed_by = confirmed_by
+        locked_request.exit_notes = exit_notes
+        locked_request.save(update_fields=[
+            "status", "exit_confirmed_at", "exit_confirmed_by", "exit_notes", "updated_at"
+        ])
+
+        records = StudentAttendanceRecord.objects.select_for_update().filter(
+            school=locked_request.school,
+            student=locked_request.student,
+            register__date=locked_request.date,
+            is_archived=False,
+        ).select_related("register")
+
+        for rec in records:
+            rec.status_category = AttendanceStatusType.Category.AUTHORIZED_DEPARTURE
+            rec.notes = f"انصراف مبكر مصرح به مع ({locked_request.recipient_name})"
+            rec.save(update_fields=["status_category", "notes", "updated_at"])
+
+            from apps.attendance.services.attendance_service import cascade_daily_attendance_to_periods
+            cascade_daily_attendance_to_periods(rec.register, student=rec.student, user=confirmed_by)
+
+            AttendanceAuditLog.objects.create(
+                school=locked_request.school,
+                register=rec.register,
+                student_record=rec,
+                action=AttendanceAuditLog.Action.EARLY_EXIT_CONFIRMED,
+                performed_by=confirmed_by,
+                reason=exit_notes or "خروج مصرح به من البوابة",
+            )
+
+        notify_early_departure_change(locked_request, is_exit=True)
+
+    departure_request.refresh_from_db()
+    return departure_request
+
+
+
+
+
     departure_request: EarlyDepartureRequest,
     confirmed_by,
     exit_notes: str = "",
