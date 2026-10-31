@@ -257,6 +257,13 @@ class SchoolCalendarDaySerializer(serializers.ModelSerializer):
             "notes",
         ]
 
+    def validate(self, attrs):
+        school = self.context.get("school")
+        calendar = attrs.get("calendar") or getattr(self.instance, "calendar", None)
+        if school and calendar and calendar.school_id != school.pk:
+            raise serializers.ValidationError({"calendar": "التقويم لا يتبع المدرسة الحالية."})
+        return attrs
+
 
 class CalendarEventSerializer(serializers.ModelSerializer):
     class Meta:
@@ -310,6 +317,16 @@ class CalendarEventSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class CalendarOccurrenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CalendarOccurrence
+        fields = [
+            "id", "event", "date", "start_time", "end_time",
+            "status", "exception_reason",
+        ]
+        read_only_fields = fields
+
+
 class AttendanceScoringPolicySerializer(serializers.ModelSerializer):
     class Meta:
         model = AttendanceScoringPolicy
@@ -327,9 +344,22 @@ class AttendanceScoringPolicySerializer(serializers.ModelSerializer):
             "notes",
         ]
 
+    def validate(self, attrs):
+        school = self.context.get("school")
+        academic_year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
+        subject = attrs.get("subject") if "subject" in attrs else getattr(self.instance, "subject", None)
+        if school and academic_year and academic_year.school_id != school.pk:
+            raise serializers.ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة الحالية."})
+        if school and subject and subject.school_id != school.pk:
+            raise serializers.ValidationError({"subject": "المادة لا تتبع المدرسة الحالية."})
+        return attrs
+
 
 class AttendanceScoreEntrySerializer(serializers.ModelSerializer):
-    student_name = serializers.CharField(source="student.__str__", read_only=True)
+    student_name = serializers.SerializerMethodField()
+
+    def get_student_name(self, obj):
+        return str(obj.student)
     student_id_number = serializers.CharField(source="student.student_id_number", read_only=True)
 
     class Meta:
