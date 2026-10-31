@@ -342,8 +342,9 @@ class SchoolInvitationAPIView(APIView):
             message=request.data.get("message", ""),
         )
         delivery_channels = []
-        try:
-            if email:
+        delivery_errors = []
+        if email:
+            try:
                 subject = f"دعوة للانضمام إلى {school.name}"
                 body = (
                     f"مرحباً،\n\nتمت دعوتك للانضمام إلى {school.name}.\n"
@@ -355,21 +356,31 @@ class SchoolInvitationAPIView(APIView):
                     subject, body, settings.DEFAULT_FROM_EMAIL, [email],
                     fail_silently=False,
                 )
-                if sent != 1:
-                    raise RuntimeError("لم يؤكد مزود البريد تسليم رسالة الدعوة.")
-                delivery_channels.append("email")
-            if phone:
+                if sent == 1:
+                    delivery_channels.append("email")
+                else:
+                    delivery_errors.append("لم يؤكد مزود البريد تسليم رسالة الدعوة.")
+            except Exception:
+                delivery_errors.append("فشل تسليم الدعوة عبر البريد الإلكتروني.")
+        if phone:
+            try:
                 send_phone_message(
                     phone=phone,
                     message=f"دعوة الانضمام إلى {school.name}. رمز القبول: {raw_token}",
                     purpose="school_invitation",
                 )
                 delivery_channels.append("sms")
-        except Exception as exc:
+            except Exception:
+                delivery_errors.append("فشل تسليم الدعوة عبر الرسائل النصية.")
+
+        if not delivery_channels:
             invitation.status = SchoolInvitation.Status.REVOKED
             invitation.save(update_fields=["status", "updated_at"])
             return Response(
-                {"error": f"تعذر تسليم الدعوة؛ ألغيت الدعوة غير المسلمة. {str(exc)}"},
+                {
+                    "error": "تعذر تسليم الدعوة عبر أي من قنوات الاتصال؛ ألغيت الدعوة غير المسلمة.",
+                    "delivery_errors": delivery_errors,
+                },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
