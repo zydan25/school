@@ -58,6 +58,7 @@ from apps.staff.models import (
 from apps.students.models import (
     Guardian, Student, StudentGuardianRelation,
 )
+from apps.students.services import ensure_guardian_membership
 from apps.timetable.models import (
     ClassSchedule,
 )
