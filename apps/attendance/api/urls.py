@@ -7,6 +7,7 @@ from apps.attendance.api.views import (
     AttendancePolicyViewSet,
     AttendanceRegisterViewSet,
     AttendanceReportsView,
+    MyChildrenAttendanceAPIView,
     AttendanceScoringViewSet,
     AttendanceStatusTypeViewSet,
     CalendarEventViewSet,
@@ -26,5 +27,6 @@ router.register("scoring", AttendanceScoringViewSet, basename="attendance-scorin
 
 urlpatterns = [
     path("", include(router.urls)),
+    path("me/children/records/", MyChildrenAttendanceAPIView.as_view(), name="my-children-attendance"),
     path("reports/<str:report_type>/", AttendanceReportsView.as_view(), name="attendance-report"),
 ]
