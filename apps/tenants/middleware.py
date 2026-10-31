@@ -64,8 +64,12 @@ class SchoolContextMiddleware(MiddlewareMixin):
             request.school_context_error = "المدرسة المختارة غير متاحة لهذا الحساب."
             return None
 
-        membership = membership_qs.filter(is_default=True).first() or membership_qs.order_by("joined_at", "created_at").first()
+        membership = membership_qs.filter(is_default=True).first()
+        if membership is None and membership_qs.count() == 1:
+            membership = membership_qs.first()
         if membership:
             request.school = membership.school
             request.school_membership = membership
+        elif membership_qs.exists():
+            request.school_context_error = "لديك أكثر من مدرسة؛ أرسل X-School-ID أو X-School-Code لتحديد المدرسة النشطة."
         return None
