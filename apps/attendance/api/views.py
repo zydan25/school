@@ -560,10 +560,17 @@ class SchoolCalendarDayViewSet(BaseAttendanceViewSet):
         date_to = self.request.query_params.get("to")
         if calendar_id:
             qs = qs.filter(calendar_id=calendar_id)
-        if date_from:
-            qs = qs.filter(date__gte=date_from)
-        if date_to:
-            qs = qs.filter(date__lte=date_to)
+        try:
+            start_value = datetime.date.fromisoformat(date_from) if date_from else None
+            end_value = datetime.date.fromisoformat(date_to) if date_to else None
+        except (TypeError, ValueError):
+            raise ValidationError("صيغة فترة التقويم غير صحيحة؛ استخدم YYYY-MM-DD.")
+        if start_value and end_value and end_value < start_value:
+            raise ValidationError("تاريخ نهاية الفترة يسبق تاريخ بدايتها.")
+        if start_value:
+            qs = qs.filter(date__gte=start_value)
+        if end_value:
+            qs = qs.filter(date__lte=end_value)
         return qs
 
     def perform_create(self, serializer):
