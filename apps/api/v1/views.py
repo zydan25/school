@@ -5,7 +5,7 @@ import os
 from decimal import Decimal
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
@@ -1745,16 +1745,27 @@ class PushDeviceViewSet(viewsets.ModelViewSet):
         serializer = PushDeviceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        device, created = PushDevice.objects.update_or_create(
-            user=request.user, device_id=data["device_id"],
-            defaults={
-                "platform": data["platform"], "push_token": data["push_token"],
-                "app_version": data.get("app_version", ""),
-                "device_name": data.get("device_name", ""),
-                "is_active": True, "last_seen_at": timezone.now(),
-            },
+        try:
+            with transaction.atomic():
+                device, created = PushDevice.objects.update_or_create(
+                    user=request.user, device_id=data["device_id"],
+                    defaults={
+                        "platform": data["platform"],
+                        "push_token": data["push_token"],
+                        "app_version": data.get("app_version", ""),
+                        "device_name": data.get("device_name", ""),
+                        "is_active": True,
+                        "last_seen_at": timezone.now(),
+                    },
+                )
+        except IntegrityError as exc:
+            raise ValidationError({
+                "push_token": "رمز الإشعارات مسجل مسبقاً على جهاز أو حساب آخر.",
+            }) from exc
+        return Response(
+            PushDeviceSerializer(device).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
-        return Response(PushDeviceSerializer(device).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="deactivate")
     def deactivate(self, request, pk=None):
@@ -1906,6 +1917,15 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         if conv.status != SchoolConversation.Status.OPEN:
             raise ValidationError("المحادثة مغلقة ولا تقبل رسائل جديدة.")
         attachment = request.FILES.get("attachment")
+        if attachment:
+            extension = os.path.splitext(attachment.name)[1].lower()
+            if extension not in {
+                ".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx",
+                ".xls", ".xlsx", ".txt",
+            }:
+                raise ValidationError({"attachment": "نوع الملف غير مدعوم للمحادثات."})
+            if attachment.size > 15 * 1024 * 1024:
+                raise ValidationError({"attachment": "الحد الأقصى لحجم المرفق 15 ميجابايت."})
         reply = None
         if serializer.validated_data.get("reply_to_id"):
             reply = get_object_or_404(conv.messages, pk=serializer.validated_data["reply_to_id"], is_archived=False)
