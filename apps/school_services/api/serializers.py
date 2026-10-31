@@ -70,6 +70,12 @@ class SchoolServiceSerializer(serializers.ModelSerializer):
 
 class BusRouteSerializer(SchoolServiceSerializer):
     bus_capacity = serializers.IntegerField(min_value=1)
+    monthly_fee = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=Decimal("0.00")
+    )
+    contract_amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=Decimal("0.00")
+    )
 
     class Meta(SchoolServiceSerializer.Meta):
         model = BusRoute
@@ -115,7 +121,7 @@ class BookLoanSerializer(SchoolServiceSerializer):
         model = BookLoan
         fields = "__all__"
         read_only_fields = SchoolServiceSerializer.Meta.read_only_fields + (
-            "status", "return_date",
+            "status", "return_date", "fine_amount",
         )
 
     def validate(self, attrs):
@@ -132,6 +138,10 @@ class BookLoanSerializer(SchoolServiceSerializer):
 
 
 class BusFinancialSettlementSerializer(SchoolServiceSerializer):
+    advances_withdrawn = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=Decimal("0.00")
+    )
+
     class Meta(SchoolServiceSerializer.Meta):
         model = BusFinancialSettlement
         fields = "__all__"
@@ -169,6 +179,9 @@ class BusFinancialSettlementSerializer(SchoolServiceSerializer):
 class StudentBookDistributionSerializer(SchoolServiceSerializer):
     quantity = serializers.DecimalField(
         max_digits=6, decimal_places=2, min_value=Decimal("0.01")
+    )
+    fee_amount = serializers.DecimalField(
+        max_digits=10, decimal_places=2, min_value=Decimal("0.00")
     )
 
     class Meta(SchoolServiceSerializer.Meta):

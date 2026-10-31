@@ -139,6 +139,25 @@ class BusRouteViewSet(SchoolServiceViewSet):
             queryset = queryset.filter(driver_user=self.request.user)
         return queryset.order_by("route_name")
 
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            route = get_object_or_404(
+                BusRoute.objects.select_for_update(),
+                pk=serializer.instance.pk,
+                school=self.get_school(),
+                is_archived=False,
+            )
+            capacity = serializer.validated_data.get("bus_capacity", route.bus_capacity)
+            active_count = route.student_subscriptions.filter(
+                status=StudentBusSubscription.Status.ACTIVE,
+                is_archived=False,
+            ).count()
+            if capacity < active_count:
+                raise ValidationError(
+                    "لا يمكن خفض سعة الحافلة عن عدد اشتراكاتها النشطة."
+                )
+            serializer.save()
+
 
 class StudentBusSubscriptionViewSet(SchoolServiceViewSet):
     serializer_class = StudentBusSubscriptionSerializer
@@ -161,6 +180,53 @@ class StudentBusSubscriptionViewSet(SchoolServiceViewSet):
                 student__guardians__guardian__is_archived=False,
             )
         return queryset.distinct().order_by("-created_at")
+
+    def _check_route_capacity(self, route, *, exclude_subscription_id=None):
+        if not route.is_active:
+            raise ValidationError({"bus_route": "خط النقل غير نشط ولا يقبل اشتراكات جديدة."})
+        active = route.student_subscriptions.filter(
+            status=StudentBusSubscription.Status.ACTIVE,
+            is_archived=False,
+        )
+        if exclude_subscription_id:
+            active = active.exclude(pk=exclude_subscription_id)
+        if active.count() >= route.bus_capacity:
+            raise ValidationError({"bus_route": "اكتملت سعة الحافلة لهذا الخط."})
+
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            route = get_object_or_404(
+                BusRoute.objects.select_for_update(),
+                pk=serializer.validated_data["bus_route"].pk,
+                school=self.get_school(),
+                is_archived=False,
+            )
+            status_value = serializer.validated_data.get(
+                "status", StudentBusSubscription.Status.ACTIVE
+            )
+            if status_value == StudentBusSubscription.Status.ACTIVE:
+                self._check_route_capacity(route)
+            serializer.save(school=self.get_school())
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            route_id = serializer.validated_data.get(
+                "bus_route", serializer.instance.bus_route
+            ).pk
+            route = get_object_or_404(
+                BusRoute.objects.select_for_update(),
+                pk=route_id,
+                school=self.get_school(),
+                is_archived=False,
+            )
+            status_value = serializer.validated_data.get(
+                "status", serializer.instance.status
+            )
+            if status_value == StudentBusSubscription.Status.ACTIVE:
+                self._check_route_capacity(
+                    route, exclude_subscription_id=serializer.instance.pk
+                )
+            serializer.save()
 
 
 class LibraryBookViewSet(SchoolServiceViewSet):
@@ -424,7 +490,7 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
                 raise ValidationError("تتضمن كميات الاعتماد بنداً لا يتبع أمر الصرف الحالي.")
             for item in order.items.select_for_update():
                 quantity = approved_by_id.get(str(item.pk), item.quantity_requested)
-                if quantity is None or not isinstance(quantity, int):
+                if quantity is None or isinstance(quantity, bool) or not isinstance(quantity, int):
                     raise ValidationError("كمية الاعتماد يجب أن تكون عدداً صحيحاً.")
                 if quantity < 0 or quantity > item.quantity_requested:
                     raise ValidationError("كمية الاعتماد يجب أن تكون بين صفر والكمية المطلوبة.")
