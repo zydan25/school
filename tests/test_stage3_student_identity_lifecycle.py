@@ -196,7 +196,8 @@ class StudentIdentityAndLifecycleTests(TestCase):
             f"/api/v1/students/?school_code={self.school.code}",
         )
         self.assertEqual(own_profile.status_code, status.HTTP_200_OK)
-        self.assertNotIn("credit_balance", own_profile.data[0])
+        own_results = own_profile.data.get("results", own_profile.data)
+        self.assertNotIn("credit_balance", own_results[0])
         detail = self.client.get(
             f"/api/v1/students/{Student.objects.get(user=family).pk}/?school_code={self.school.code}",
         )
