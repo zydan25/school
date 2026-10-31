@@ -149,6 +149,9 @@ class WhatsAppWebhookAPIView(APIView):
         hub_challenge = request.query_params.get("hub.challenge")
         hub_verify_token = request.query_params.get("hub.verify_token")
 
+        if not hub_mode and not hub_verify_token:
+            return Response({"status": "active", "service": "whatsapp_webhook"}, status=status.HTTP_200_OK)
+
         if hub_mode == "subscribe":
             gateway = None
             if school_code:
@@ -169,7 +172,7 @@ class WhatsAppWebhookAPIView(APIView):
                     return Response(int(hub_challenge) if hub_challenge and hub_challenge.isdigit() else hub_challenge, status=status.HTTP_200_OK)
             return Response({"detail": "فشل التحقق: رمز التحقق غير مطابق أو البوابة غير مهيأة."}, status=status.HTTP_403_FORBIDDEN)
 
-        return Response({"status": "active", "service": "school-whatsapp-webhook"})
+        return Response({"detail": "طلب غير صالح: وضع التحقق hub.mode غير مطابق."}, status=status.HTTP_400_BAD_REQUEST)
 
     def post(self, request, school_code=None, *args, **kwargs):
         """استقبال رسالة واتساب واردة ومعالجتها بالرد الذكي الفوري مع التحقق الأمني الكامل."""
@@ -252,13 +255,15 @@ class WhatsAppWebhookAPIView(APIView):
         ).first()
 
         sig_header = request.headers.get("X-Hub-Signature-256")
-        if gateway and gateway.webhook_verify_token and sig_header:
+        if gateway and gateway.webhook_verify_token:
+            if not sig_header:
+                return Response({"detail": "ترويسة التوقيع X-Hub-Signature-256 مطلوبة ومفقودة في الطلب."}, status=status.HTTP_401_UNAUTHORIZED)
             import hmac
             expected_sig = "sha256=" + hmac.new(gateway.webhook_verify_token.encode("utf-8"), request.body, hashlib.sha256).hexdigest()
             if not hmac.compare_digest(sig_header, expected_sig):
                 return Response({"detail": "توقيع الرسالة غير صحيح."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Permanent deduplication via database record
+        # Permanent deduplication and lifecycle state tracking
         from apps.notifications.models import InboundWebhookMessage
         provider_msg_id = str(
             extracted_msg_id or
@@ -269,17 +274,20 @@ class WhatsAppWebhookAPIView(APIView):
             f"hash_{hashlib.sha256((clean_phone + message_text.strip()).encode()).hexdigest()[:24]}"
         )
 
-        if InboundWebhookMessage.objects.filter(school=school, provider_msg_id=provider_msg_id).exists():
+        existing_msg = InboundWebhookMessage.objects.filter(school=school, provider_msg_id=provider_msg_id).first()
+        if existing_msg and existing_msg.processed:
             return Response({"status": "duplicate_ignored", "reason": "Message already processed."}, status=status.HTTP_200_OK)
 
-        try:
-            InboundWebhookMessage.objects.create(
-                school=school,
-                provider_msg_id=provider_msg_id,
-                sender_phone=clean_phone,
-            )
-        except Exception:
-            return Response({"status": "duplicate_ignored", "reason": "Message already processed."}, status=status.HTTP_200_OK)
+        if not existing_msg:
+            try:
+                existing_msg = InboundWebhookMessage.objects.create(
+                    school=school,
+                    provider_msg_id=provider_msg_id,
+                    sender_phone=clean_phone,
+                    processed=False,
+                )
+            except Exception:
+                return Response({"status": "duplicate_ignored", "reason": "Message already processed."}, status=status.HTTP_200_OK)
 
         # Check if gateway has AI auto-reply enabled
         reply_text = ""
@@ -289,6 +297,10 @@ class WhatsAppWebhookAPIView(APIView):
         # Optional dispatch to actual WhatsApp Gateway API if configured
         if gateway and gateway.api_endpoint_url and gateway.auth_token and reply_text:
             _dispatch_to_gateway(gateway, sender_phone, reply_text)
+
+        # Mark message as successfully processed
+        existing_msg.processed = True
+        existing_msg.save(update_fields=["processed"])
 
         return Response({
             "status": "success",
@@ -303,10 +315,29 @@ class SchoolWhatsAppWebhookAPIView(WhatsAppWebhookAPIView):
     pass
 
 
+def _is_safe_url(url: str) -> bool:
+    try:
+        import urllib.parse
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        host = (parsed.hostname or "").lower()
+        if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "169.254.169.254"):
+            return False
+        if host.startswith("10.") or host.startswith("192.168.") or host.startswith("172."):
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def _dispatch_to_gateway(gateway: SchoolMessagingGateway, recipient: str, text: str):
-    """إرسال فعلي للرد إلى خادم مزود خدمة الواتساب عبر HTTP REST API."""
+    """إرسال فعلي للرد إلى خادم مزود خدمة الواتساب عبر HTTP REST API مع حماية SSRF."""
     try:
         url = gateway.api_endpoint_url
+        if not _is_safe_url(url):
+            logger.warning(f"Blocked SSRF attempt or invalid gateway URL: {url}")
+            return
         payload = {
             "token": gateway.auth_token,
             "to": recipient,

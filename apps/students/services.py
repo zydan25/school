@@ -26,6 +26,8 @@ def promote_student(
     if next_section:
         if next_section.school_id != student.school_id:
             raise ValidationError("الشعبة الجديدة لا تتبع مدرسة الطالب.")
+        if next_section.academic_year_id != next_academic_year.pk:
+            raise ValidationError("الشعبة الجديدة لا تنتمي إلى العام الدراسي الجديد المحدد.")
         if next_section.grade_id != next_grade_level.pk:
             raise ValidationError("الشعبة المختارة لا تنتمي إلى الصف الدراسي المحدد.")
 
@@ -51,12 +53,13 @@ def promote_student(
         target_section = next_section or (
             Section.objects.filter(
                 school=locked_student.school,
+                academic_year=next_academic_year,
                 grade=next_grade_level,
                 is_archived=False,
             ).first()
         )
         if not target_section:
-            raise ValidationError(f"لا توجد شعب دراسية متاحة في الصف {next_grade_level.name}.")
+            raise ValidationError(f"لا توجد شعب دراسية متاحة في الصف {next_grade_level.name} للعام الدراسي {next_academic_year.name}.")
 
         new_enrollment, _ = StudentEnrollment.objects.update_or_create(
             school=locked_student.school,
@@ -94,8 +97,13 @@ def retain_student(
     """
     if next_academic_year.school_id != student.school_id:
         raise ValidationError("العام الدراسي الجديد لا يتبع مدرسة الطالب.")
-    if section and section.school_id != student.school_id:
-        raise ValidationError("الشعبة المختارة لا تتبع مدرسة الطالب.")
+    if section:
+        if section.school_id != student.school_id:
+            raise ValidationError("الشعبة المختارة لا تتبع مدرسة الطالب.")
+        if section.academic_year_id != next_academic_year.pk:
+            raise ValidationError("الشعبة المختارة لا تنتمي إلى العام الدراسي الجديد المحدد.")
+        if section.grade_id != student.grade_level_id:
+            raise ValidationError("الشعبة المختارة لا تنتمي إلى نفس الصف الدراسي للطالب.")
 
     with transaction.atomic():
         locked_student = Student.objects.select_for_update().get(pk=student.pk)
@@ -115,7 +123,17 @@ def retain_student(
                 prev_enrollment.notes = f"{prev_enrollment.notes}\n{notes}".strip()
             prev_enrollment.save(update_fields=["status", "final_result", "notes", "updated_at"])
 
-        target_section = section or locked_student.section
+        target_section = section or (
+            Section.objects.filter(
+                school=locked_student.school,
+                academic_year=next_academic_year,
+                grade=locked_student.grade_level,
+                is_archived=False,
+            ).first()
+        )
+        if not target_section:
+            raise ValidationError(f"لا توجد شعب دراسية متاحة في الصف {locked_student.grade_level.name} للعام الدراسي {next_academic_year.name}.")
+
         new_enrollment, _ = StudentEnrollment.objects.update_or_create(
             school=locked_student.school,
             student=locked_student,
@@ -132,8 +150,7 @@ def retain_student(
         )
 
         locked_student.academic_year = next_academic_year
-        if section:
-            locked_student.section = section
+        locked_student.section = target_section
         locked_student.status = Student.Status.ACTIVE
         locked_student.save(update_fields=["academic_year", "section", "status", "updated_at"])
 

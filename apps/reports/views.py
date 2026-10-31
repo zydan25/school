@@ -275,13 +275,22 @@ class StudentReportCardAPIView(BaseSchoolReportView):
 
         student = get_object_or_404(Student, id=student_id, school=school)
 
-        # التحقق من صلاحية الوصول لشهادة الطالب
-        if not (request.user.is_staff or request.user.is_superuser):
+        # التحقق الصارم من صلاحية الوصول لشهادة الطالب ومنع تجاوز is_staff
+        from apps.accounts.services import is_platform_operator
+        from django.db.models import Q
+        if not is_platform_operator(request.user):
+            now = timezone.now()
+            membership = request.user.school_memberships.filter(
+                school=school,
+                status="active",
+            ).filter(
+                Q(expires_at__isnull=True) | Q(expires_at__gt=now)
+            ).first()
+
             is_own_student = (student.user_id == request.user.id)
             is_own_guardian = request.user.guardian_profiles.filter(school=school, children=student).exists() if hasattr(request.user, "guardian_profiles") else False
             
             # المعلم أو المشرف الأكاديمي المصرح له
-            membership = request.user.school_memberships.filter(school=school, status="active").first()
             user_roles = membership.get_role_codes() if membership else set()
             is_academic = bool(user_roles & {"school-director", "school_director", "academic-coordinator", "academic_coordinator", "student-affairs", "control-officer"})
             is_section_teacher = False

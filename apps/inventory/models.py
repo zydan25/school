@@ -159,25 +159,44 @@ class StockMovement(TenantOwnedModel):
         is_new = self._state.adding
         from django.db import transaction
         with transaction.atomic():
-            locked_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
-            if not is_new and self.pk:
-                old = StockMovement.objects.filter(pk=self.pk).first()
+            old = StockMovement.objects.filter(pk=self.pk).first() if (not is_new and self.pk) else None
+
+            # إذا تغير الصنف، يتم إلغاء الحركة من الصنف القديم وتطبيقها على الصنف الجديد
+            if old and old.item_id != self.item_id:
+                old_item = InventoryItem.objects.select_for_update().get(pk=old.item_id)
+                new_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
+
+                if old.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
+                    if old_item.current_stock < old.quantity:
+                        raise ValidationError(f"لا يمكن تغيير الصنف: رصيد الصنف السابق ({old_item.current_stock}) أقل من الكمية السابقة ({old.quantity}).")
+                    old_item.current_stock -= old.quantity
+                else:
+                    old_item.current_stock += old.quantity
+                old_item.save(update_fields=["current_stock"])
+
+                if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
+                    new_item.current_stock += self.quantity
+                else:
+                    if new_item.current_stock < self.quantity:
+                        raise ValidationError(f"الكمية المطلوبة ({self.quantity}) تتجاوز الرصيد المتاح في الصنف الجديد ({new_item.current_stock}).")
+                    new_item.current_stock -= self.quantity
+                new_item.save(update_fields=["current_stock"])
+            else:
+                locked_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
                 if old:
-                    # Unwind previous movement from item stock
                     if old.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
                         locked_item.current_stock -= old.quantity
                     else:
                         locked_item.current_stock += old.quantity
 
-            # Apply current movement
-            if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
-                locked_item.current_stock += self.quantity
-            else:
-                if locked_item.current_stock < self.quantity:
-                    raise ValidationError(f"الكمية المطلوبة ({self.quantity}) تتجاوز الرصيد المتاح بالمستودع ({locked_item.current_stock}).")
-                locked_item.current_stock -= self.quantity
+                if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
+                    locked_item.current_stock += self.quantity
+                else:
+                    if locked_item.current_stock < self.quantity:
+                        raise ValidationError(f"الكمية المطلوبة ({self.quantity}) تتجاوز الرصيد المتاح بالمستودع ({locked_item.current_stock}).")
+                    locked_item.current_stock -= self.quantity
+                locked_item.save(update_fields=["current_stock"])
 
-            locked_item.save(update_fields=["current_stock"])
             super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
@@ -185,7 +204,12 @@ class StockMovement(TenantOwnedModel):
         with transaction.atomic():
             locked_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
             if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
-                locked_item.current_stock = max(Decimal("0.00"), locked_item.current_stock - self.quantity)
+                if locked_item.current_stock < self.quantity:
+                    raise ValidationError(
+                        f"لا يمكن حذف حركة التوريد: رصيد الصنف الحالي بالمستودع ({locked_item.current_stock}) "
+                        f"أقل من الكمية المراد حذفها ({self.quantity}) وسيؤدي ذلك إلى رصيد سالب غير مسموح."
+                    )
+                locked_item.current_stock -= self.quantity
             else:
                 locked_item.current_stock += self.quantity
             locked_item.save(update_fields=["current_stock"])
@@ -241,29 +265,32 @@ class PurchaseOrder(TenantOwnedModel):
         return f"أمر شراء #{self.order_number} - {self.supplier.name} ({self.total_amount})"
 
     def receive_into_warehouse(self, user=None):
-        """تحويل أمر الشراء إلى حركات توريد مخزنية فعلية وتحديث رصيد المستودع."""
-        if self.status == self.Status.RECEIVED:
-            return []
-        if self.status != self.Status.APPROVED:
-            raise ValidationError("لا يمكن استلام أمر الشراء في المخزن إلا بعد اعتماده رسمياً (APPROVED).")
+        """تحويل أمر الشراء إلى حركات توريد مخزنية فعلية وتحديث رصيد المستودع مع قفل تشاؤمي صارم لمنع التكرار المتزامن."""
         from django.db import transaction
-        created_movements = []
         with transaction.atomic():
-            for po_item in self.items.all():
+            locked_po = PurchaseOrder.objects.select_for_update().get(pk=self.pk)
+            if locked_po.status == self.Status.RECEIVED:
+                return []
+            if locked_po.status != self.Status.APPROVED:
+                raise ValidationError("لا يمكن استلام أمر الشراء في المخزن إلا بعد اعتماده رسمياً (APPROVED).")
+
+            created_movements = []
+            for po_item in locked_po.items.all():
                 movement = StockMovement.objects.create(
-                    school=self.school,
+                    school=locked_po.school,
                     item=po_item.item,
                     movement_type=StockMovement.MovementType.RECEIPT,
                     quantity=po_item.quantity,
                     unit_cost=po_item.unit_price,
-                    reference=f"استلام أمر شراء #{self.order_number}",
-                    recipient_name=self.supplier.name,
+                    reference=f"استلام أمر شراء #{locked_po.order_number}",
+                    recipient_name=locked_po.supplier.name,
                 )
                 created_movements.append(movement)
-            self.status = self.Status.RECEIVED
-            if user and not self.approved_by:
-                self.approved_by = user
-            self.save(update_fields=["status", "approved_by", "updated_at"])
+            locked_po.status = self.Status.RECEIVED
+            if user and not locked_po.approved_by:
+                locked_po.approved_by = user
+            locked_po.save(update_fields=["status", "approved_by", "updated_at"])
+            self.status = locked_po.status
         return created_movements
 
 
@@ -339,9 +366,30 @@ class VendorInvoice(TenantOwnedModel):
     class Meta:
         verbose_name = "فاتورة مورد"
         verbose_name_plural = "فواتير الموردين والذمم الدائنة"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "invoice_number"],
+                condition=models.Q(is_archived=False),
+                name="inventory_vendor_invoice_num_uniq",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"فاتورة مورد #{self.invoice_number} - {self.supplier.name} ({self.total_amount})"
+
+    def clean(self):
+        super().clean()
+        if self.school_id and self.supplier_id and self.supplier.school_id != self.school_id:
+            raise ValidationError({"supplier": "المورد المحدد لا يتبع نفس المدرسة."})
+        if self.school_id and self.purchase_order_id:
+            if self.purchase_order.school_id != self.school_id:
+                raise ValidationError({"purchase_order": "أمر الشراء لا يتبع نفس المدرسة."})
+            if self.purchase_order.supplier_id != self.supplier_id:
+                raise ValidationError({"purchase_order": "أمر الشراء مرتبط بمورد مختلف عن مورد الفاتورة."})
+        if self.total_amount <= Decimal("0.00"):
+            raise ValidationError({"total_amount": "إجمالي الفاتورة يجب أن يكون أكبر من الصفر."})
+        if self.due_date and self.invoice_date and self.due_date < self.invoice_date:
+            raise ValidationError({"due_date": "تاريخ استحقاق الفاتورة يجب ألا يسبق تاريخ إصدارها."})
 
     @property
     def remaining_amount(self) -> Decimal:

@@ -343,7 +343,12 @@ from apps.students.models import (
     StudentGuardianRelation,
     StudentIncidentReport,
 )
-from apps.timetable.models import ClassSchedule, DailyLessonLog
+from apps.timetable.models import (
+    ClassSchedule,
+    DailyLessonLog,
+    SchedulePeriodTemplate,
+    SchoolBellSchedule,
+)
 
 
 @admin.register(StaffMember, site=school_admin_site)
@@ -486,12 +491,47 @@ class SchoolComplaintAdmin(SchoolScopedAdmin):
     readonly_fields = ("id", "created_at", "updated_at", "resolved_at")
 
 
+class SchoolSchedulePeriodTemplateInline(TabularInline):
+    model = SchedulePeriodTemplate
+    extra = 0
+    fields = ("order", "period_type", "period_number", "name", "start_time", "end_time", "day_of_week", "is_active")
+    ordering = ("order", "start_time")
+
+
+@admin.register(SchoolBellSchedule, site=school_admin_site)
+class SchoolBellScheduleAdmin(SchoolScopedAdmin):
+    list_display = (
+        "name",
+        "academic_year",
+        "day_start_time",
+        "day_end_time",
+        "periods_per_day",
+        "has_morning_assembly",
+        "is_default",
+        "is_active",
+    )
+    list_filter = ("is_default", "is_active", "has_morning_assembly", "academic_year")
+    search_fields = ("name", "academic_year__name")
+    autocomplete_fields = ("branch", "academic_year")
+    readonly_fields = ("id", "created_at", "updated_at")
+    inlines = [SchoolSchedulePeriodTemplateInline]
+
+
+@admin.register(SchedulePeriodTemplate, site=school_admin_site)
+class SchoolSchedulePeriodTemplateAdmin(SchoolScopedAdmin):
+    list_display = ("schedule", "order", "period_type", "period_number", "name", "start_time", "end_time", "day_of_week", "is_active")
+    list_filter = ("period_type", "day_of_week", "is_active", "schedule")
+    search_fields = ("name", "schedule__name")
+    autocomplete_fields = ("branch", "schedule")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
 @admin.register(ClassSchedule, site=school_admin_site)
 class SchoolClassScheduleAdmin(SchoolScopedAdmin):
-    list_display = ("get_day_of_week_display", "period_number", "subject", "section", "teacher", "classroom")
-    list_filter = ("day_of_week", "academic_year", "subject")
+    list_display = ("get_day_of_week_display", "period_number", "start_time", "end_time", "subject", "section", "teacher", "classroom")
+    list_filter = ("day_of_week", "academic_year", "subject", "bell_schedule")
     search_fields = ("subject__name", "section__name", "teacher__user__first_name")
-    autocomplete_fields = ("academic_year", "academic_term", "section", "subject", "teacher", "classroom")
+    autocomplete_fields = ("bell_schedule", "academic_year", "academic_term", "section", "subject", "teacher", "classroom")
     readonly_fields = ("id", "created_at", "updated_at")
 
 

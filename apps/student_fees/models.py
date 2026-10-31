@@ -473,6 +473,23 @@ class StudentCreditTransaction(TenantOwnedModel):
         on_delete=models.SET_NULL,
         related_name="credit_transactions",
     )
+    source_receipt = models.ForeignKey(
+        PaymentReceipt,
+        verbose_name="سند القبض مصدر الفائض",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="derived_credit_usages",
+    )
+    is_reversed = models.BooleanField("تم عكس الحركة", default=False)
+    reversed_by_transaction = models.ForeignKey(
+        "self",
+        verbose_name="حركة العكس المرتبطة",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reverses_transactions",
+    )
     created_at = models.DateTimeField("تاريخ الحركة", default=timezone.now)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -526,6 +543,17 @@ def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: De
             locked_invoice.status = StudentInvoice.Status.PARTIAL
         locked_invoice.save(update_fields=["paid_amount", "status", "updated_at"])
 
+        # Identify source receipt if traceable from unreversed deposit
+        src_receipt = None
+        latest_dep = StudentCreditTransaction.objects.filter(
+            student=locked_student,
+            transaction_type=StudentCreditTransaction.TransactionType.DEPOSIT,
+            is_reversed=False,
+            receipt__isnull=False,
+        ).order_by("-created_at").first()
+        if latest_dep:
+            src_receipt = latest_dep.receipt
+
         tx = StudentCreditTransaction.objects.create(
             school=locked_student.school,
             student=locked_student,
@@ -534,6 +562,7 @@ def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: De
             balance_before=bal_before,
             balance_after=bal_after,
             invoice=locked_invoice,
+            source_receipt=src_receipt,
             created_by=user,
             notes=f"سداد الفاتورة #{locked_invoice.invoice_number} من الرصيد الدائن للطالب",
         )
@@ -546,14 +575,19 @@ def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: De
 def reverse_credit_usage(usage_tx: StudentCreditTransaction, reason: str, reversed_by=None) -> StudentCreditTransaction:
     """
     عكس حركة استخدام رصيد دائن لسداد فاتورة:
-    إلغاء السداد من الفاتورة، إعادة الرصيد للطالب، وعكس قيد التسوية المحاسبي.
+    إلغاء السداد من الفاتورة، إعادة الرصيد للطالب، ومنع العكس المكرر، وعكس قيد التسوية المحاسبي.
     """
+    if usage_tx.is_reversed:
+        raise ValidationError("تم عكس حركة استخدام الرصيد الدائن مسبقاً ولا يجوز عكسها أكثر من مرة.")
     if usage_tx.transaction_type != StudentCreditTransaction.TransactionType.USAGE:
         raise ValidationError("الحركة المحددة ليست حركة استخدام رصيد دائن.")
     
     from django.db import transaction
     with transaction.atomic():
         locked_tx = StudentCreditTransaction.objects.select_for_update().get(pk=usage_tx.pk)
+        if locked_tx.is_reversed:
+            raise ValidationError("تم عكس حركة استخدام الرصيد الدائن مسبقاً ولا يجوز عكسها أكثر من مرة.")
+
         locked_student = type(locked_tx.student).objects.select_for_update().get(pk=locked_tx.student_id)
         
         # Restore invoice balance
@@ -584,6 +618,10 @@ def reverse_credit_usage(usage_tx: StudentCreditTransaction, reason: str, revers
             created_by=reversed_by,
             notes=f"عكس حركة استخدام رصيد دائن #{locked_tx.id}: {reason}",
         )
+
+        locked_tx.is_reversed = True
+        locked_tx.reversed_by_transaction = reversal_tx
+        locked_tx.save(update_fields=["is_reversed", "reversed_by_transaction", "updated_at"])
 
         # Reverse the journal entry for this settlement
         from apps.accounting.models import JournalEntry
@@ -651,9 +689,10 @@ def reverse_payment_receipt(receipt: PaymentReceipt, reason: str, reversed_by=No
             alloc.save(update_fields=["status", "notes", "updated_at"])
 
         # Reverse excess student credit if any
-        deposit_txs = locked_receipt.credit_transactions.filter(
-            transaction_type=StudentCreditTransaction.TransactionType.DEPOSIT
-        )
+        deposit_txs = list(locked_receipt.credit_transactions.filter(
+            transaction_type=StudentCreditTransaction.TransactionType.DEPOSIT,
+            is_reversed=False,
+        ))
         total_excess = sum(t.amount for t in deposit_txs)
         if total_excess > Decimal("0.00"):
             student = type(locked_receipt.student).objects.select_for_update().get(pk=locked_receipt.student_id)
@@ -661,11 +700,13 @@ def reverse_payment_receipt(receipt: PaymentReceipt, reason: str, reversed_by=No
             # If part of this deposit was already used to pay other invoices:
             if student.credit_balance < total_excess:
                 used_amount = total_excess - student.credit_balance
-                # Find the usage transactions after this receipt's deposit to unwind them
+                # Find active (unreversed) usage transactions linked to this receipt or chronologically after deposit
                 usage_txs = list(StudentCreditTransaction.objects.filter(
                     student=student,
                     transaction_type=StudentCreditTransaction.TransactionType.USAGE,
-                    created_at__gte=locked_receipt.paid_at,
+                    is_reversed=False,
+                ).filter(
+                    models.Q(source_receipt=locked_receipt) | models.Q(created_at__gte=locked_receipt.paid_at)
                 ).order_by("-created_at"))
                 
                 # Unwind usages automatically until student.credit_balance >= total_excess
@@ -687,6 +728,11 @@ def reverse_payment_receipt(receipt: PaymentReceipt, reason: str, reversed_by=No
             bal_after = max(Decimal("0.00"), bal_before - total_excess)
             student.credit_balance = bal_after
             student.save(update_fields=["credit_balance"])
+
+            # Mark all deposit transactions as reversed
+            for dep in deposit_txs:
+                dep.is_reversed = True
+                dep.save(update_fields=["is_reversed", "updated_at"])
 
             StudentCreditTransaction.objects.create(
                 school=locked_receipt.school,

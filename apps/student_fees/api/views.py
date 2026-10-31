@@ -11,6 +11,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.api_permissions import (
+    FINANCIAL_ROLES,
+    require_school_role_or_permission,
+    resolve_active_school,
+)
 from apps.academics.models import AcademicYear
 from apps.accounting.services.auto_posting import post_student_invoice_to_journal
 from apps.student_fees.api.serializers import (
@@ -32,27 +37,7 @@ from apps.students.models import Student
 
 
 def _resolve_school(request):
-    if getattr(request, "school", None):
-        return request.school
-    from apps.accounts.services import is_platform_operator
-    from apps.tenants.models import School
-    school_id = request.headers.get("X-School-ID") or request.query_params.get("school_id")
-    school_code = request.headers.get("X-School-Code") or request.query_params.get("school_code")
-    if is_platform_operator(request.user):
-        if school_id:
-            return School.objects.filter(pk=school_id, status=School.Status.ACTIVE).first()
-        if school_code:
-            return School.objects.filter(code=school_code.upper(), status=School.Status.ACTIVE).first()
-        return School.objects.filter(status=School.Status.ACTIVE).first()
-    memberships = request.user.school_memberships.filter(status="active", school__status=School.Status.ACTIVE)
-    if school_id:
-        m = memberships.filter(school_id=school_id).first()
-        return m.school if m else None
-    if school_code:
-        m = memberships.filter(school__code=school_code.upper()).first()
-        return m.school if m else None
-    first_m = memberships.first()
-    return first_m.school if first_m else None
+    return resolve_active_school(request)
 
 
 class StudentInvoiceListCreateAPIView(APIView):
@@ -81,6 +66,7 @@ class StudentInvoiceListCreateAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة أو لا تملك صلاحية الوصول.")
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "student_fees.add_studentinvoice")
 
         serializer = CreateStudentInvoiceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -170,9 +156,9 @@ class PaymentReceiptListCreateAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة أو لا تملك صلاحية الوصول.")
-
         serializer = CreatePaymentReceiptSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "student_fees.add_paymentreceipt")
         data = serializer.validated_data
 
         student = get_object_or_404(Student, pk=data["student_id"], school=school, is_archived=False)
@@ -221,6 +207,7 @@ class PaymentReceiptReverseAPIView(APIView):
             raise PermissionDenied("لم يتم تحديد المدرسة أو لا تملك صلاحية الوصول.")
 
         receipt = get_object_or_404(PaymentReceipt, pk=pk, school=school, is_archived=False)
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "student_fees.change_paymentreceipt")
         serializer = ReverseReceiptSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         reason = serializer.validated_data["reason"]

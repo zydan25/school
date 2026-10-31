@@ -7,6 +7,12 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.api_permissions import (
+    FINANCIAL_ROLES,
+    HR_ROLES,
+    require_school_role_or_permission,
+    resolve_active_school,
+)
 from apps.accounting.models import Account
 from apps.payroll.api.serializers import (
     DisbursePayrollSerializer,
@@ -25,27 +31,7 @@ from apps.payroll.services import (
 
 
 def _resolve_school(request):
-    if getattr(request, "school", None):
-        return request.school
-    from apps.accounts.services import is_platform_operator
-    from apps.tenants.models import School
-    school_id = request.headers.get("X-School-ID") or request.query_params.get("school_id")
-    school_code = request.headers.get("X-School-Code") or request.query_params.get("school_code")
-    if is_platform_operator(request.user):
-        if school_id:
-            return School.objects.filter(pk=school_id, status=School.Status.ACTIVE).first()
-        if school_code:
-            return School.objects.filter(code=school_code.upper(), status=School.Status.ACTIVE).first()
-        return School.objects.filter(status=School.Status.ACTIVE).first()
-    memberships = request.user.school_memberships.filter(status="active", school__status=School.Status.ACTIVE)
-    if school_id:
-        m = memberships.filter(school_id=school_id).first()
-        return m.school if m else None
-    if school_code:
-        m = memberships.filter(school__code=school_code.upper()).first()
-        return m.school if m else None
-    first_m = memberships.first()
-    return first_m.school if first_m else None
+    return resolve_active_school(request)
 
 
 class PayrollRunListAPIView(generics.ListAPIView):
@@ -87,6 +73,7 @@ class PayrollRunGenerateAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES | HR_ROLES, "payroll.add_payrollrun")
         serializer = GeneratePayrollSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         year = serializer.validated_data["year"]
@@ -109,6 +96,7 @@ class PayrollRunApproveAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(request, school, {"school-director", "school_director"}, "payroll.change_payrollrun")
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
         if run.status != PayrollRun.Status.DRAFT:
             raise ValidationError(f"لا يمكن اعتماد مسير بحالة {run.get_status_display()}.")
@@ -130,6 +118,7 @@ class PayrollRunPostAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.change_payrollrun")
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
 
         journal_entry = post_payroll_to_accounting(payroll_run=run, user=request.user)
@@ -147,6 +136,7 @@ class PayrollRunDisburseAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.change_payrollrun")
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
         serializer = DisbursePayrollSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -176,6 +166,7 @@ class PayrollRunReverseAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.delete_payrollrun")
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
         serializer = ReversePayrollSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

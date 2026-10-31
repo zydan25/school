@@ -351,13 +351,14 @@ def reverse_payroll_run(payroll_run: PayrollRun, reason: str, reversed_by=None) 
             raise ValidationError("لا يمكن عكس مسير رواتب تم صرفه فعلياً.")
         
         # 1. Reverse EmployeeLoanRepayment records and restore loan balances
-        repayments = list(locked_run.loan_repayments.all())
+        repayments = list(locked_run.loan_repayments.filter(is_reversed=False))
         for rep in repayments:
             loan = EmployeeLoanAdvance.objects.select_for_update().get(pk=rep.loan_id)
             loan.repaid_amount = max(Decimal("0.00"), loan.repaid_amount - rep.amount)
             loan.status = EmployeeLoanAdvance.Status.ACTIVE
             loan.save(update_fields=["repaid_amount", "status", "updated_at"])
-            rep.delete()
+            rep.is_reversed = True
+            rep.save(update_fields=["is_reversed", "updated_at"])
 
         # 2. Reverse the journal entry
         if locked_run.journal_entry:
@@ -380,11 +381,13 @@ def disburse_payroll_run(
     payment_method: str = "bank_transfer",
     reference_number: str = "",
     disbursed_by=None,
-) -> JournalEntry:
+    user=None,
+) -> tuple[JournalEntry, PaymentVoucher]:
     """
     تنفيذ الصرف الفعلي لمسير الرواتب من حساب الصندوق أو البنك،
     وإنشاء قيد صرف مالي وسند صرف وتحديث قسائم الموظفين كـ مدفوعة.
     """
+    disbursed_by = disbursed_by or user
     if payment_account is None and credit_account is not None:
         payment_account = credit_account
 

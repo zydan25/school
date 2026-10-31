@@ -133,8 +133,26 @@ class CostCenter(TenantOwnedModel):
         return f"{self.code} - {self.name}"
 
 
+class JournalEntryQuerySet(models.QuerySet):
+    """حماية دفتر الأستاذ العام من التعديل أو الحذف الجماعي للقيود المرحّلة."""
+    def update(self, **kwargs):
+        if self.filter(status="posted").exists():
+            allowed = {"is_reversed", "reversed_by_entry", "reversed_by_entry_id", "reversal_reason", "updated_at", "is_archived"}
+            disallowed = set(kwargs.keys()) - allowed
+            if disallowed or ("status" in kwargs and kwargs["status"] != "posted"):
+                raise ValidationError(f"لا يمكن تعديل القيود المحاسبية المرحّلة في دفتر الأستاذ عبر التحديث الجماعي QuerySet.update ({disallowed}).")
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(status="posted").exists():
+            raise ValidationError("لا يمكن حذف قيود محاسبية مرحّلة في دفتر الأستاذ عبر الحذف الجماعي QuerySet.delete(). يرجى إنشاء قيود عكسية.")
+        return super().delete()
+
+
 class JournalEntry(TenantOwnedModel):
     """رأس القيد اليومي المزدوج المعتمد."""
+    objects = JournalEntryQuerySet.as_manager()
+
     class Status(models.TextChoices):
         DRAFT = "draft", "مسودة"
         POSTED = "posted", "مرحل في دفتر الأستاذ"
@@ -205,6 +223,8 @@ class JournalEntry(TenantOwnedModel):
         if self.pk:
             orig = JournalEntry.objects.filter(pk=self.pk).first()
             if orig and orig.status == self.Status.POSTED:
+                if self.status != self.Status.POSTED:
+                    raise ValidationError("لا يمكن تحويل قيد محاسبي مرحّل إلى مسودة أو إلغاء ترحيله مباشرة؛ التصحيح يتم عبر قيد عكسي فقط.")
                 allowed_fields = {"is_reversed", "reversed_by_entry", "reversed_by_entry_id", "reversal_reason", "updated_at", "is_archived"}
                 update_fields = kwargs.get("update_fields")
                 if update_fields:
@@ -241,6 +261,9 @@ class JournalEntry(TenantOwnedModel):
             raise ValidationError("لا يمكن ترحيل القيد على فترة محاسبية مقفلة.")
         if self.fiscal_period and self.fiscal_period.fiscal_year.is_closed:
             raise ValidationError("السنة المالية التابعة لها هذه الفترة مقفلة.")
+        if self.fiscal_period:
+            if self.date < self.fiscal_period.start_date or self.date > self.fiscal_period.end_date:
+                raise ValidationError(f"تاريخ القيد ({self.date}) يقع خارج حدود الفترة المحاسبية المحددة ({self.fiscal_period.start_date} إلى {self.fiscal_period.end_date}).")
 
         lines = list(self.lines.all())
         if not lines:
@@ -254,6 +277,16 @@ class JournalEntry(TenantOwnedModel):
         for line in lines:
             if line.school_id != self.school_id or line.account.school_id != self.school_id:
                 raise ValidationError("عدم تطابق المدرسة: يجب أن تتبع كافة أسطر القيد وحساباتها نفس مدرسة القيد.")
+            if not line.account.is_leaf:
+                raise ValidationError(f"لا يمكن الترحيل على الحساب '{line.account.name}' لأنه حساب رئيسي تجميعي؛ يرجى اختيار حساب فرعي تفصيلي.")
+            if line.account.is_archived:
+                raise ValidationError(f"الحساب '{line.account.name}' معطل وموقوف عن العمليات.")
+            if line.debit < Decimal("0.00") or line.credit < Decimal("0.00"):
+                raise ValidationError("لا يمكن إدخال مبالغ سالبة في أسطر القيد المحاسبي.")
+            if line.debit == Decimal("0.00") and line.credit == Decimal("0.00"):
+                raise ValidationError("يجب إدخال مبلغ مدين أو دائن أكبر من الصفر في كل سطر من أسطر القيد.")
+            if line.debit > Decimal("0.00") and line.credit > Decimal("0.00"):
+                raise ValidationError("لا يمكن أن يكون السطر مديناً ودائناً في نفس الوقت.")
             if line.cost_center and line.cost_center.school_id != self.school_id:
                 raise ValidationError("مركز التكلفة المحدد في سطر القيد لا يتبع نفس المدرسة.")
 
@@ -265,8 +298,22 @@ class JournalEntry(TenantOwnedModel):
         return self
 
 
+class JournalEntryLineQuerySet(models.QuerySet):
+    """حماية أسطر القيود في دفتر الأستاذ من التعديل أو الحذف الجماعي."""
+    def update(self, **kwargs):
+        if self.filter(journal_entry__status="posted").exists():
+            raise ValidationError("لا يمكن تعديل أسطر قيود محاسبية مرحّلة في دفتر الأستاذ عبر التحديث الجماعي QuerySet.update().")
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(journal_entry__status="posted").exists():
+            raise ValidationError("لا يمكن حذف أسطر قيود محاسبية مرحّلة في دفتر الأستاذ عبر الحذف الجماعي QuerySet.delete().")
+        return super().delete()
+
+
 class JournalEntryLine(TenantOwnedModel):
     """أسطر وأطراف القيد اليومي (المدين والدائن)."""
+    objects = JournalEntryLineQuerySet.as_manager()
     journal_entry = models.ForeignKey(
         JournalEntry,
         verbose_name="القيد التابع له",

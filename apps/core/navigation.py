@@ -99,6 +99,8 @@ def central_navigation():
         {
             "title": _("الجدول المدرسي والتدريس والذكاء الاصطناعي"), "separator": True, "collapsible": True,
             "items": [
+                {"title": _("قوالب ومواعيد اليوم الدراسي"), "icon": "alarm", "link": reverse_lazy("admin:timetable_schoolbellschedule_changelist"), "permission": _central_check("timetable.view_schoolbellschedule")},
+                {"title": _("فترات الحصص والطابور والفسح"), "icon": "more_time", "link": reverse_lazy("admin:timetable_scheduleperiodtemplate_changelist"), "permission": _central_check("timetable.view_scheduleperiodtemplate")},
                 {"title": _("جدول الحصص الأسبوعي"), "icon": "calendar_month", "link": reverse_lazy("admin:timetable_classschedule_changelist"), "permission": _central_check("timetable.view_classschedule")},
                 {"title": _("سجلات الدروس اليومية"), "icon": "history_edu", "link": reverse_lazy("admin:timetable_dailylessonlog_changelist"), "permission": _central_check("timetable.view_dailylessonlog")},
                 {"title": _("وثائق المناهج (RAG)"), "icon": "menu_book", "link": reverse_lazy("admin:copilot_curriculumdocument_changelist"), "permission": _central_check("copilot.view_curriculumdocument")},
@@ -272,6 +274,8 @@ def school_navigation():
         {
             "title": _("الجدول والتدريس والذكاء الاصطناعي"), "separator": True, "collapsible": True,
             "items": [
+                {"title": _("قوالب ومواعيد اليوم الدراسي"), "icon": "alarm", "link": reverse_lazy("school_admin:timetable_schoolbellschedule_changelist"), "permission": _school_check("timetable.view_schoolbellschedule")},
+                {"title": _("فترات الحصص والطابور والفسح"), "icon": "more_time", "link": reverse_lazy("school_admin:timetable_scheduleperiodtemplate_changelist"), "permission": _school_check("timetable.view_scheduleperiodtemplate")},
                 {"title": _("جدول الحصص"), "icon": "calendar_month", "link": reverse_lazy("school_admin:timetable_classschedule_changelist"), "permission": _school_check("timetable.view_classschedule")},
                 {"title": _("سجلات الدروس اليومية"), "icon": "history_edu", "link": reverse_lazy("school_admin:timetable_dailylessonlog_changelist"), "permission": _school_check("timetable.view_dailylessonlog")},
                 {"title": _("وثائق المناهج (RAG)"), "icon": "menu_book", "link": reverse_lazy("school_admin:copilot_curriculumdocument_changelist"), "permission": _school_check("copilot.view_curriculumdocument")},

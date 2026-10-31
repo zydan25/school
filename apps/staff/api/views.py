@@ -8,6 +8,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.api_permissions import (
+    HR_ROLES,
+    require_school_role_or_permission,
+    resolve_active_school,
+)
 from apps.staff.api.serializers import (
     ApproveLeaveRequestSerializer,
     CreateLeaveRequestSerializer,
@@ -26,27 +31,7 @@ from apps.staff.models import (
 
 
 def _resolve_school(request):
-    if getattr(request, "school", None):
-        return request.school
-    from apps.accounts.services import is_platform_operator
-    from apps.tenants.models import School
-    school_id = request.headers.get("X-School-ID") or request.query_params.get("school_id")
-    school_code = request.headers.get("X-School-Code") or request.query_params.get("school_code")
-    if is_platform_operator(request.user):
-        if school_id:
-            return School.objects.filter(pk=school_id, status=School.Status.ACTIVE).first()
-        if school_code:
-            return School.objects.filter(code=school_code.upper(), status=School.Status.ACTIVE).first()
-        return School.objects.filter(status=School.Status.ACTIVE).first()
-    memberships = request.user.school_memberships.filter(status="active", school__status=School.Status.ACTIVE)
-    if school_id:
-        m = memberships.filter(school_id=school_id).first()
-        return m.school if m else None
-    if school_code:
-        m = memberships.filter(school__code=school_code.upper()).first()
-        return m.school if m else None
-    first_m = memberships.first()
-    return first_m.school if first_m else None
+    return resolve_active_school(request)
 
 
 class StaffMemberListAPIView(generics.ListAPIView):
@@ -121,6 +106,7 @@ class LeaveRequestApproveRejectAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(request, school, HR_ROLES, "staff.change_leaverequest")
         leave_req = get_object_or_404(LeaveRequest, pk=pk, school=school, is_archived=False)
         serializer = ApproveLeaveRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

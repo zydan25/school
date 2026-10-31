@@ -475,17 +475,50 @@ class StudentBookDistribution(TenantOwnedModel):
                     recipient_name=f"الطالب: {locked_dist.student}",
                     reference=f"تسليم كتاب للطالب {locked_dist.student.student_id_number}",
                 )
+            # الربط المالي التلقائي: إنشاء فاتورة رسوم الكتاب إن وجدت قيمة للرسم
+            if locked_dist.fee_amount > Decimal("0.00") and not locked_dist.invoice:
+                from apps.student_fees.models import FeeCategory, StudentInvoice, StudentInvoiceItem
+                from apps.accounting.services.auto_posting import post_student_invoice_to_journal
+                import uuid
+                cat, _ = FeeCategory.objects.get_or_create(
+                    school=locked_dist.school,
+                    code="BOOKS",
+                    defaults={"name": "رسوم الكتب والمستلزمات الدراسية", "is_mandatory": False},
+                )
+                inv = StudentInvoice.objects.create(
+                    school=locked_dist.school,
+                    student=locked_dist.student,
+                    academic_year=locked_dist.academic_year,
+                    invoice_number=f"INV-BOOK-{timezone.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}",
+                    issue_date=timezone.localdate(),
+                    due_date=timezone.localdate(),
+                    total_amount=locked_dist.fee_amount,
+                )
+                StudentInvoiceItem.objects.create(
+                    school=locked_dist.school,
+                    invoice=inv,
+                    fee_category=cat,
+                    description=f"كتاب: {locked_dist.book_title} (عدد {locked_dist.quantity})",
+                    amount=locked_dist.fee_amount,
+                )
+                try:
+                    post_student_invoice_to_journal(inv)
+                except Exception:
+                    pass
+                locked_dist.invoice = inv
+                self.invoice = inv
+
             locked_dist.delivery_status = self.DeliveryStatus.DELIVERED
             locked_dist.delivered_at = timezone.now()
             if user:
                 locked_dist.delivered_by = user
-            locked_dist.save(update_fields=["delivery_status", "delivered_at", "delivered_by", "updated_at"])
+            locked_dist.save(update_fields=["delivery_status", "delivered_at", "delivered_by", "invoice", "updated_at"])
             self.delivery_status = locked_dist.delivery_status
             self.delivered_at = locked_dist.delivered_at
             self.delivered_by = locked_dist.delivered_by
 
     def return_book(self, user=None):
-        """استرجاع الكتاب إلى المخزون وتحديث حالته مع قفل تشاؤمي."""
+        """استرجاع الكتاب إلى المخزون وتحديث حالته والتسوية المالية مع قفل تشاؤمي."""
         from django.db import transaction
         with transaction.atomic():
             locked_dist = StudentBookDistribution.objects.select_for_update().get(pk=self.pk)
@@ -503,6 +536,15 @@ class StudentBookDistribution(TenantOwnedModel):
                     recipient_name=f"استرجاع من الطالب: {locked_dist.student}",
                     reference=f"استرجاع كتاب من الطالب {locked_dist.student.student_id_number}",
                 )
+
+            # معالجة الأثر المالي عند استرجاع الكتاب
+            if locked_dist.invoice_id:
+                from apps.student_fees.models import StudentInvoice
+                inv = StudentInvoice.objects.select_for_update().get(pk=locked_dist.invoice_id)
+                if inv.paid_amount == Decimal("0.00"):
+                    inv.status = StudentInvoice.Status.CANCELLED
+                    inv.save(update_fields=["status", "updated_at"])
+
             locked_dist.delivery_status = self.DeliveryStatus.RETURNED
             locked_dist.returned_at = timezone.now()
             if user:
