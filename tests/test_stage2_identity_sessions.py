@@ -218,19 +218,26 @@ class IdentitySessionSecurityTests(TestCase):
         )
 
         user = self.create_user(phone="+967770007706")
-        with patch("apps.accounts.session_services.send_phone_message", return_value=True):
+        messages = []
+        def fake_sender(*, phone, message, purpose):
+            messages.append(message)
+            return True
+
+        with patch("apps.accounts.session_services.send_phone_message", side_effect=fake_sender):
             challenge = issue_phone_challenge(
                 user=user,
                 purpose=PhoneVerificationChallenge.Purpose.VERIFY_PHONE,
             )
 
+        real_code = re.search(r"(\\d{6})", messages[-1]).group(1)
+        wrong_code = f"{(int(real_code) + 1) % 1_000_000:06d}"
         for expected_attempts in range(1, 6):
             with self.assertRaises(ValidationError):
                 consume_phone_challenge(
                     user=user,
                     phone=user.phone,
                     purpose=PhoneVerificationChallenge.Purpose.VERIFY_PHONE,
-                    code="000000" if challenge.code_digest else "999999",
+                    code=wrong_code,
                 )
             challenge.refresh_from_db()
             self.assertEqual(challenge.attempts, expected_attempts)
