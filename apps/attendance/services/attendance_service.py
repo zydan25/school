@@ -343,25 +343,36 @@ def request_reopen_register(
     requested_by,
     reason: str,
 ) -> AttendanceReopenRequest:
-    """تقديم طلب لإعادة فتح سجل مقفل أو معتمد مع بيان الأسباب."""
-    if register.status == AttendanceRegister.Status.OPEN:
-        raise ValidationError("السجل مفتوح بالفعل ولا يحتاج لإعادة فتح.")
+    """طلب إعادة فتح سجل معتمد/مقفل مرة واحدة، مع توثيق السبب."""
+    if not reason or not reason.strip():
+        raise ValidationError("يرجى ذكر سبب طلب إعادة فتح سجل الحضور.")
 
-    req = AttendanceReopenRequest.objects.create(
-        school=register.school,
-        register=register,
-        requested_by=requested_by,
-        reason=reason,
-        status=AttendanceReopenRequest.Status.PENDING,
-    )
+    with transaction.atomic():
+        locked_register = AttendanceRegister.objects.select_for_update().get(pk=register.pk)
+        if locked_register.status not in [
+            AttendanceRegister.Status.APPROVED,
+            AttendanceRegister.Status.LOCKED,
+        ]:
+            raise ValidationError("يمكن طلب إعادة الفتح لسجل معتمد أو مقفل فقط.")
+        if locked_register.reopen_requests.filter(
+            status=AttendanceReopenRequest.Status.PENDING
+        ).exists():
+            raise ValidationError("يوجد بالفعل طلب إعادة فتح معلق لهذا السجل.")
 
-    AttendanceAuditLog.objects.create(
-        school=register.school,
-        register=register,
-        action=AttendanceAuditLog.Action.REOPEN_REQUESTED,
-        performed_by=requested_by,
-        reason=reason,
-    )
+        req = AttendanceReopenRequest.objects.create(
+            school=locked_register.school,
+            register=locked_register,
+            requested_by=requested_by,
+            reason=reason.strip(),
+            status=AttendanceReopenRequest.Status.PENDING,
+        )
+        AttendanceAuditLog.objects.create(
+            school=locked_register.school,
+            register=locked_register,
+            action=AttendanceAuditLog.Action.REOPEN_REQUESTED,
+            performed_by=requested_by,
+            reason=reason.strip(),
+        )
     return req
 
 
