@@ -407,6 +407,33 @@ class GuardianChildrenAPIView(APIView):
         raise PermissionDenied("الواجهة متاحة لولي الأمر المرتبط بأبناء أو لإدارة المدرسة.")
 
 
+class GuardianProfileViewSet(TenantModelViewSet):
+    serializer_class = GuardianSerializer
+    read_roles = ADMIN_ROLES | {"guardian"}
+    write_roles = STUDENT_AFFAIRS_ROLES
+
+    def get_queryset(self):
+        qs = Guardian.objects.filter(
+            school=self.get_school(), is_archived=False,
+        ).select_related("user").prefetch_related("children")
+        if has_school_roles(self.request.user, self.get_school(), {"guardian"}) and not is_admin(self.request.user, self.get_school()):
+            qs = qs.filter(user=self.request.user)
+        return qs
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        require_school_role_or_permission(
+            self.request, school, STUDENT_AFFAIRS_ROLES,
+            "students.add_guardian",
+        )
+        user = get_object_or_404(
+            User, pk=self.request.data.get("user_id"), is_active=True,
+        )
+        if active_membership(user=user, school=school) is None:
+            raise ValidationError("يجب أن يمتلك ولي الأمر عضوية نشطة في المدرسة أولاً.")
+        serializer.save(school=school, user=user)
+
+
 class GuardianRelationViewSet(TenantModelViewSet):
     serializer_class = StudentGuardianRelationSerializer
     read_roles = ADMIN_ROLES
