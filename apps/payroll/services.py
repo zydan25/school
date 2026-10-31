@@ -482,4 +482,4 @@ def disburse_payroll_run(
             updated_at=timezone.now(),
         )
 
-        return disb_entry
+        return disb_entry, pv
