@@ -252,6 +252,86 @@ class StudentIdentityAndLifecycleTests(TestCase):
         self.assertEqual(relation2.status_code, status.HTTP_201_CREATED)
         self.assertEqual(guardian.children.filter(is_archived=False).count(), 2)
 
+        second_guardian_user = self.create_verified_user("+967770008808")
+        second_guardian_response = self.client.post(
+            f"/api/v1/app/guardians/?school_code={self.school.code}",
+            {"phone": second_guardian_user.phone, "relationship_type": "mother"},
+            format="json",
+        )
+        self.assertEqual(second_guardian_response.status_code, status.HTTP_201_CREATED)
+        second_guardian = Guardian.objects.get(pk=second_guardian_response.data["id"])
+        relation3 = self.client.post(
+            f"/api/v1/app/guardian-relations/?school_code={self.school.code}",
+            {"student": str(self.student.pk), "guardian": str(second_guardian.pk)},
+            format="json",
+        )
+        self.assertEqual(relation3.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(self.student.guardians.filter(is_archived=False).count(), 2)
+
+    def test_teacher_and_staff_profiles_require_verified_accounts_and_active_memberships(self):
+        unverified_teacher = User.objects.create_user(
+            phone="+967770008809",
+            password="Strong-Stage3-User!",
+            first_name="معلم",
+            last_name="غيرموثق",
+        )
+        SchoolMembership.objects.create(
+            school=self.school,
+            user=unverified_teacher,
+            status=SchoolMembership.Status.ACTIVE,
+        )
+        query = f"?school_code={self.school.code}"
+        rejected_teacher = self.client.post(
+            f"/api/v1/app/teachers/{query}",
+            {"user_id": str(unverified_teacher.pk), "specialization": "رياضيات"},
+            format="json",
+        )
+        self.assertEqual(rejected_teacher.status_code, status.HTTP_400_BAD_REQUEST)
+
+        verified_teacher = self.create_verified_user("+967770008810")
+        SchoolMembership.objects.create(
+            school=self.school,
+            user=verified_teacher,
+            status=SchoolMembership.Status.ACTIVE,
+        )
+        created_teacher = self.client.post(
+            f"/api/v1/app/teachers/{query}",
+            {"user_id": str(verified_teacher.pk), "specialization": "رياضيات"},
+            format="json",
+        )
+        self.assertEqual(created_teacher.status_code, status.HTTP_201_CREATED)
+
+        unverified_staff = User.objects.create_user(
+            phone="+967770008811",
+            password="Strong-Stage3-User!",
+            first_name="موظف",
+            last_name="غيرموثق",
+        )
+        SchoolMembership.objects.create(
+            school=self.school,
+            user=unverified_staff,
+            status=SchoolMembership.Status.ACTIVE,
+        )
+        rejected_staff = self.client.post(
+            f"/api/v1/staff/members/{query}",
+            {"user": str(unverified_staff.pk), "job_title": "سكرتير", "role": "secretary"},
+            format="json",
+        )
+        self.assertEqual(rejected_staff.status_code, status.HTTP_400_BAD_REQUEST)
+
+        verified_staff = self.create_verified_user("+967770008812")
+        SchoolMembership.objects.create(
+            school=self.school,
+            user=verified_staff,
+            status=SchoolMembership.Status.ACTIVE,
+        )
+        created_staff = self.client.post(
+            f"/api/v1/staff/members/{query}",
+            {"user": str(verified_staff.pk), "job_title": "سكرتير", "role": "secretary"},
+            format="json",
+        )
+        self.assertEqual(created_staff.status_code, status.HTTP_201_CREATED)
+
     def test_transfer_and_promotion_create_append_only_movements(self):
         transferred = transfer_student(
             student=self.student,
