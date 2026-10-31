@@ -156,27 +156,34 @@ def issue_phone_challenge(*, user, purpose: str, request_ip=None):
     return challenge
 
 
-@transaction.atomic
 def consume_phone_challenge(*, user, phone: str, purpose: str, code: str):
     now = timezone.now()
-    challenge = PhoneVerificationChallenge.objects.select_for_update().filter(
-        user=user,
-        phone=phone,
-        purpose=purpose,
-        consumed_at__isnull=True,
-    ).order_by("-created_at").first()
-    if challenge is None or challenge.expires_at <= now or challenge.attempts >= 5:
-        raise ValidationError("رمز التحقق غير صحيح أو منتهي الصلاحية.")
+    invalid = False
+    consumed = None
+    with transaction.atomic():
+        challenge = PhoneVerificationChallenge.objects.select_for_update().filter(
+            user=user,
+            phone=phone,
+            purpose=purpose,
+            consumed_at__isnull=True,
+        ).order_by("-created_at").first()
+        if challenge is None or challenge.expires_at <= now or challenge.attempts >= 5:
+            invalid = True
+        else:
+            expected = challenge.code_digest
+            actual = _challenge_digest(purpose=purpose, phone=phone, code=code)
+            if not constant_time_compare(expected, actual):
+                challenge.attempts += 1
+                if challenge.attempts >= 5:
+                    challenge.consumed_at = now
+                challenge.save(update_fields=["attempts", "consumed_at", "updated_at"])
+                invalid = True
+            else:
+                challenge.consumed_at = now
+                challenge.save(update_fields=["consumed_at", "updated_at"])
+                consumed = challenge
 
-    expected = challenge.code_digest
-    actual = _challenge_digest(purpose=purpose, phone=phone, code=code)
-    if not constant_time_compare(expected, actual):
-        challenge.attempts += 1
-        if challenge.attempts >= 5:
-            challenge.consumed_at = now
-        challenge.save(update_fields=["attempts", "consumed_at", "updated_at"])
+    # Raise outside the atomic block so the failed-attempt counter is committed.
+    if invalid:
         raise ValidationError("رمز التحقق غير صحيح أو منتهي الصلاحية.")
-
-    challenge.consumed_at = now
-    challenge.save(update_fields=["consumed_at", "updated_at"])
-    return challenge
+    return consumed
