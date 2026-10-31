@@ -5,7 +5,9 @@ from apps.core.admin import AuditedAdminMixin
 from apps.students.models import (
     AdministrativeSummon,
     Guardian,
+    GuardianConsent,
     SchoolComplaint,
+    StudentDocument,
     Student,
     StudentEnrollment,
     StudentGuardianRelation,
@@ -81,3 +83,35 @@ class StudentEnrollmentAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("student__first_name", "student__last_name", "student__student_id_number", "notes")
     raw_id_fields = ("student", "academic_year", "grade_level", "section", "school", "branch")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(StudentDocument)
+class StudentDocumentAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = (
+        "title", "student", "document_type", "visible_to_guardian",
+        "uploaded_by", "created_at", "school",
+    )
+    list_filter = ("document_type", "visible_to_guardian", "school")
+    search_fields = (
+        "title", "student__first_name", "student__last_name",
+        "student__student_id_number",
+    )
+    raw_id_fields = ("school", "branch", "student", "uploaded_by")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(GuardianConsent)
+class GuardianConsentAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = (
+        "title", "student", "guardian", "consent_type",
+        "status", "requested_at", "responded_at", "school",
+    )
+    list_filter = ("consent_type", "status", "school")
+    search_fields = (
+        "title", "student__first_name", "student__last_name",
+        "guardian__user__phone", "guardian__user__full_name",
+    )
+    raw_id_fields = (
+        "school", "branch", "student", "guardian", "requested_by", "responded_by",
+    )
+    readonly_fields = ("id", "created_at", "updated_at", "requested_at", "responded_at")
