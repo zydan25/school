@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.utils import timezone
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -23,6 +24,7 @@ from apps.attendance.api.serializers import (
     AttendanceStatusTypeSerializer,
     BulkRecordInputSerializer,
     CalendarEventSerializer,
+    CalendarOccurrenceSerializer,
     EarlyDepartureRequestSerializer,
     ExcuseReviewInputSerializer,
     GateExitInputSerializer,
@@ -41,6 +43,7 @@ from apps.attendance.models import (
     AttendanceScoringPolicy,
     AttendanceStatusType,
     CalendarEvent,
+    CalendarOccurrence,
     EarlyDepartureRequest,
     StudentAttendanceRecord,
     SchoolCalendar,
@@ -65,6 +68,7 @@ from apps.attendance.services import (
     create_early_departure_request,
     create_excuse_request,
     get_or_create_register,
+    generate_event_occurrences,
     lock_register,
     recalculate_term_scores,
     request_reopen_register,
@@ -104,6 +108,17 @@ class BaseAttendanceViewSet(viewsets.ModelViewSet):
         context = super().get_serializer_context()
         context["school"] = self.get_school()
         return context
+
+    def perform_destroy(self, instance):
+        # Treat API DELETE as archive, preserving records referenced by history.
+        instance.is_archived = True
+        fields = ["is_archived"]
+        if hasattr(instance, "is_active"):
+            instance.is_active = False
+            fields.append("is_active")
+        if hasattr(instance, "updated_at"):
+            fields.append("updated_at")
+        instance.save(update_fields=fields)
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
@@ -526,12 +541,43 @@ class SchoolCalendarViewSet(BaseAttendanceViewSet):
         return Response({"message": "تم إنشاء وتصنيف أيام التقويم الدراسي بنجاح."})
 
 
+class SchoolCalendarDayViewSet(BaseAttendanceViewSet):
+    serializer_class = SchoolCalendarDaySerializer
+    action_role_map = {
+        "list": ATTENDANCE_READ_ROLES, "retrieve": ATTENDANCE_READ_ROLES,
+        "create": ATTENDANCE_ADMIN_ROLES, "update": ATTENDANCE_ADMIN_ROLES,
+        "partial_update": ATTENDANCE_ADMIN_ROLES, "destroy": ATTENDANCE_ADMIN_ROLES,
+    }
+
+    def get_queryset(self):
+        qs = SchoolCalendarDay.objects.filter(
+            school=self.get_school(),
+            calendar__school=self.get_school(),
+            is_archived=False,
+        ).select_related("calendar").order_by("date")
+        calendar_id = self.request.query_params.get("calendar_id")
+        date_from = self.request.query_params.get("from")
+        date_to = self.request.query_params.get("to")
+        if calendar_id:
+            qs = qs.filter(calendar_id=calendar_id)
+        if date_from:
+            qs = qs.filter(date__gte=date_from)
+        if date_to:
+            qs = qs.filter(date__lte=date_to)
+        return qs
+
+    def perform_create(self, serializer):
+        serializer.save(school=self.get_school())
+
+
 class CalendarEventViewSet(BaseAttendanceViewSet):
     serializer_class = CalendarEventSerializer
     action_role_map = {
         "list": ATTENDANCE_READ_ROLES, "retrieve": ATTENDANCE_READ_ROLES,
         "create": ATTENDANCE_ADMIN_ROLES, "update": ATTENDANCE_ADMIN_ROLES,
         "partial_update": ATTENDANCE_ADMIN_ROLES, "destroy": ATTENDANCE_ADMIN_ROLES,
+        "generate_occurrences": ATTENDANCE_ADMIN_ROLES,
+        "occurrences": ATTENDANCE_READ_ROLES,
     }
 
     def get_queryset(self):
@@ -541,127 +587,91 @@ class CalendarEventViewSet(BaseAttendanceViewSet):
         ).order_by("-start_date")
 
     def perform_create(self, serializer):
+        with transaction.atomic():
+            event = serializer.save(school=self.get_school())
+            generate_event_occurrences(event)
+
+    @action(detail=True, methods=["get"], url_path="occurrences")
+    def occurrences(self, request, pk=None):
+        event = self.get_object()
+        occurrences = CalendarOccurrence.objects.filter(
+            school=self.get_school(), event=event, is_archived=False
+        ).order_by("date", "start_time")
+        return Response(CalendarOccurrenceSerializer(occurrences, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="generate-occurrences")
+    def generate_occurrences(self, request, pk=None):
+        event = self.get_object()
+        created = generate_event_occurrences(event)
+        return Response({
+            "event_id": str(event.pk),
+            "created_count": len(created),
+            "occurrences": CalendarOccurrenceSerializer(created, many=True).data,
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+class AttendanceScoringPolicyViewSet(BaseAttendanceViewSet):
+    serializer_class = AttendanceScoringPolicySerializer
+    action_role_map = {
+        "list": ATTENDANCE_READ_ROLES, "retrieve": ATTENDANCE_READ_ROLES,
+        "create": ATTENDANCE_ADMIN_ROLES, "update": ATTENDANCE_ADMIN_ROLES,
+        "partial_update": ATTENDANCE_ADMIN_ROLES, "destroy": ATTENDANCE_ADMIN_ROLES,
+    }
+
+    def get_queryset(self):
+        qs = AttendanceScoringPolicy.objects.filter(
+            school=self.get_school(), is_archived=False
+        ).select_related("academic_year", "subject").order_by("academic_year__starts_on", "subject__name")
+        year_id = self.request.query_params.get("academic_year_id")
+        subject_id = self.request.query_params.get("subject_id")
+        if year_id:
+            qs = qs.filter(academic_year_id=year_id)
+        if subject_id:
+            qs = qs.filter(subject_id=subject_id)
+        return qs
+
+    def perform_create(self, serializer):
         serializer.save(school=self.get_school())
 
 
-class AttendanceScoringViewSet(viewsets.ViewSet):
+class AttendanceScoreEntryViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
-
-    def initial(self, request, *args, **kwargs):
-        super().initial(request, *args, **kwargs)
-        require_school_role_or_permission(request, self.get_school(), ATTENDANCE_ADMIN_ROLES)
+    serializer_class = AttendanceScoreEntrySerializer
 
     def get_school(self):
         school = _resolve_school(self.request)
         if not school:
-            raise PermissionDenied("لم يتم تحديد المدرسة.")
+            raise PermissionDenied("حدد مدرسة نشطة تملك عضوية سارية فيها.")
         return school
 
-    @action(detail=False, methods=["post"], url_path="calculate")
-    def calculate_score(self, request):
-        school = self.get_school()
-        student_id = request.data.get("student_id")
-        term_id = request.data.get("academic_term_id")
-        subject_id = request.data.get("subject_id")
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        require_school_role_or_permission(request, self.get_school(), ATTENDANCE_READ_ROLES)
 
-        if not student_id or not term_id:
-            raise ValidationError("student_id و academic_term_id مطلوبان.")
-
-        student = get_object_or_404(Student, pk=student_id, school=school)
-        term = get_object_or_404(AcademicTerm, pk=term_id, school=school)
-        subject = get_object_or_404(Subject, pk=subject_id, school=school) if subject_id else None
-
-        entry = calculate_student_attendance_score(school, student, term, subject)
-        return Response(AttendanceScoreEntrySerializer(entry).data)
-
-    @action(detail=False, methods=["post"], url_path="recalculate-term")
-    def recalculate_term(self, request):
-        school = self.get_school()
-        term_id = request.data.get("academic_term_id")
-        section_id = request.data.get("section_id")
-        subject_id = request.data.get("subject_id")
-
-        if not term_id:
-            raise ValidationError("academic_term_id مطلوب.")
-
-        term = get_object_or_404(AcademicTerm, pk=term_id, school=school)
-        section = get_object_or_404(Section, pk=section_id, school=school) if section_id else None
-        subject = get_object_or_404(Subject, pk=subject_id, school=school) if subject_id else None
-
-        entries = recalculate_term_scores(school, term, section, subject)
-        return Response({"message": f"تم احتساب درجات المواظبة لـ {len(entries)} طالب بنجاح."})
-
-    @action(detail=True, methods=["post"], url_path="sync-gradebook")
-    def sync_to_gradebook_action(self, request, pk=None):
-        school = self.get_school()
-        entry = get_object_or_404(AttendanceScoreEntry, pk=pk, school=school)
-        gradebook = sync_score_to_gradebook(entry)
-        if not gradebook:
-            raise ValidationError("تعذر مزامنة الدرجة، تأكد من توفر مادة دراسية صالحة.")
-        return Response({"message": "تم ترحيل درجة المواظبة بنجاح إلى سجل الدرجات العام.", "score": entry.final_score})
-
-
-class MyChildrenAttendanceAPIView(APIView):
-    """سجل حضور الأبناء المرتبطين حصراً بولي الأمر المصادق عليه."""
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get(self, request):
-        school = _resolve_school(request)
-        if not school:
-            raise PermissionDenied("حدد المدرسة النشطة أولاً.")
-        guardian = Guardian.objects.filter(school=school, user=request.user).first()
-        if not guardian:
-            raise PermissionDenied("هذه الخدمة متاحة لحساب ولي الأمر فقط.")
-
-        children = guardian.children.filter(
-            school=school, is_archived=False
-        ).order_by("first_name", "last_name")
-        student_id = request.query_params.get("student_id")
-        if student_id:
-            children = children.filter(pk=student_id)
-            if not children.exists():
-                raise PermissionDenied("الطالب المحدد ليس من الأبناء المرتبطين بحسابك.")
-
-        records = StudentAttendanceRecord.objects.filter(
-            school=school, student__in=children, is_archived=False
-        ).select_related("student", "register", "register__section").order_by(
-            "-register__date", "-recorded_at"
+    def get_queryset(self):
+        qs = AttendanceScoreEntry.objects.filter(
+            school=self.get_school(), is_archived=False
+        ).select_related("student", "academic_term", "subject").order_by(
+            "-calculated_at", "student__first_name"
         )
-        date_from = request.query_params.get("from")
-        date_to = request.query_params.get("to")
-        try:
-            if date_from:
-                datetime.date.fromisoformat(date_from)
-                records = records.filter(register__date__gte=date_from)
-            if date_to:
-                datetime.date.fromisoformat(date_to)
-                records = records.filter(register__date__lte=date_to)
-        except ValueError:
-            raise ValidationError("صيغة التاريخ غير صحيحة؛ استخدم YYYY-MM-DD.")
+        student_id = self.request.query_params.get("student_id")
+        term_id = self.request.query_params.get("academic_term_id")
+        section_id = self.request.query_params.get("section_id")
+        if student_id:
+            qs = qs.filter(student_id=student_id)
+        if term_id:
+            qs = qs.filter(academic_term_id=term_id)
+        if section_id:
+            qs = qs.filter(student__section_id=section_id)
+        if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not has_school_roles(
+            self.request.user, self.get_school(), ATTENDANCE_ADMIN_ROLES
+        ):
+            teacher = self.request.user.teacher_profiles.filter(school=self.get_school()).first()
+            section_ids = teacher.assignments.filter(is_archived=False).values_list("section_id", flat=True) if teacher else []
+            qs = qs.filter(student__section_id__in=section_ids)
+        return qs
 
-        rows = [{
-            "id": str(record.pk),
-            "student_id": str(record.student_id),
-            "student_name": str(record.student),
-            "section": record.register.section.name,
-            "date": record.register.date.isoformat(),
-            "session_type": record.register.session_type,
-            "status": record.status_category,
-            "late_minutes": record.late_minutes,
-            "notes": record.notes,
-            "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
-        } for record in records[:250]]
-        return Response({
-            "children": [{
-                "id": str(child.pk),
-                "student_number": child.student_id_number,
-                "name": str(child),
-                "section": child.section.name if child.section_id else None,
-            } for child in children],
-            "results": rows,
-            "count": len(rows),
-        })
 
+class AttendanceScoringViewSet(viewsets.ViewSet):
 
 class AttendanceReportsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
