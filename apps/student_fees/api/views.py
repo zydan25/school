@@ -48,7 +48,12 @@ def _scope_student_finance_read(queryset, request, school, permission_codename):
     Restrict financial records to the school finance team or the student's own
     authenticated account / linked guardian. Never trust a requested student ID.
     """
-    if has_school_roles(request.user, school, FINANCIAL_ROLES | {"cashier"}):
+    finance_read_roles = FINANCIAL_ROLES | {
+        "cashier", "admin", "school-admin", "school_admin",
+        "school-director", "school_director", "principal",
+        "school-principal", "general-manager", "general_manager",
+    }
+    if has_school_roles(request.user, school, finance_read_roles):
         return queryset
     if has_school_permission(
         user=request.user, school=school, permission=permission_codename,
