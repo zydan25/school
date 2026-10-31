@@ -42,6 +42,15 @@ class AttendancePolicySerializer(serializers.ModelSerializer):
         ]
 
 
+class AttendanceStatusTypeSerializer
+    def validate(self, attrs):
+        school = self.context.get("school")
+        academic_year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
+        if school and academic_year and academic_year.school_id != school.pk:
+            raise serializers.ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة الحالية."})
+        return attrs
+
+
 class AttendanceStatusTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = AttendanceStatusType
@@ -229,6 +238,15 @@ class SchoolCalendarSerializer(serializers.ModelSerializer):
         ]
 
 
+class SchoolCalendarDaySerializer
+    def validate(self, attrs):
+        school = self.context.get("school")
+        academic_year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
+        if school and academic_year and academic_year.school_id != school.pk:
+            raise serializers.ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة الحالية."})
+        return attrs
+
+
 class SchoolCalendarDaySerializer(serializers.ModelSerializer):
     class Meta:
         model = SchoolCalendarDay
@@ -267,6 +285,33 @@ class CalendarEventSerializer(serializers.ModelSerializer):
             "is_active",
             "description",
         ]
+
+
+class AttendanceScoringPolicySerializer
+    def validate(self, attrs):
+        school = self.context.get("school")
+        related_fields = (
+            "academic_year", "stage", "grade_level", "section",
+            "subject", "teacher", "classroom",
+        )
+        if school:
+            for field in related_fields:
+                related = attrs.get(field)
+                if related is None and self.instance is not None:
+                    related = getattr(self.instance, field, None)
+                if related is not None and related.school_id != school.pk:
+                    raise serializers.ValidationError({
+                        field: "السجل المرتبط لا يتبع المدرسة الحالية."
+                    })
+
+        academic_year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
+        section = attrs.get("section") or getattr(self.instance, "section", None)
+        grade_level = attrs.get("grade_level") or getattr(self.instance, "grade_level", None)
+        if section and academic_year and section.academic_year_id != academic_year.pk:
+            raise serializers.ValidationError({"section": "الشعبة لا تنتمي إلى السنة الدراسية المحددة."})
+        if section and grade_level and section.grade_id != grade_level.pk:
+            raise serializers.ValidationError({"section": "الشعبة لا تتبع الصف المحدد."})
+        return attrs
 
 
 class AttendanceScoringPolicySerializer(serializers.ModelSerializer):
