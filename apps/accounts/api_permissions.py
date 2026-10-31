@@ -114,5 +114,9 @@ def require_school_role_or_permission(request, school: School, allowed_roles: se
 
 
 FINANCIAL_ROLES = {"school-director", "school_director", "accountant", "school-accountant", "school_accountant", "financial-manager", "financial_manager"}
-HR_ROLES = {"school-director", "school_director", "hr", "hr-specialist", "hr_specialist", "principal", "school-principal"}
+HR_ROLES = {
+    "admin", "school-admin", "school_admin",
+    "school-director", "school_director", "hr", "hr-specialist",
+    "hr_specialist", "hr-manager", "hr_manager", "principal", "school-principal",
+}
 STUDENT_AFFAIRS_ROLES = {"school-director", "school_director", "student-affairs", "student_affairs", "registrar", "academic-coordinator", "academic_coordinator"}
