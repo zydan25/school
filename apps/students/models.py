@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.core.models import TenantOwnedModel
@@ -102,21 +102,21 @@ class Student(TenantOwnedModel):
             raise ValidationError({"section": "الشعبة الصفية لا تنتمي إلى السنة الدراسية المحددة للطالب."})
 
     def save(self, *args, **kwargs):
-        is_new = self._state.adding
-        super().save(*args, **kwargs)
-        # Keep academic history / enrollment track synchronized
-        if self.academic_year_id and self.grade_level_id and self.section_id:
-            StudentEnrollment.objects.get_or_create(
-                school=self.school,
-                student=self,
-                academic_year=self.academic_year,
-                defaults={
-                    "grade_level": self.grade_level,
-                    "section": self.section,
-                    "enrollment_date": self.enrollment_date,
-                    "status": StudentEnrollment.Status.ENROLLED,
-                },
-            )
+        # The student record and its initial annual enrollment are one operation.
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            if self.academic_year_id and self.grade_level_id and self.section_id:
+                StudentEnrollment.objects.get_or_create(
+                    school=self.school,
+                    student=self,
+                    academic_year=self.academic_year,
+                    defaults={
+                        "grade_level": self.grade_level,
+                        "section": self.section,
+                        "enrollment_date": self.enrollment_date,
+                        "status": StudentEnrollment.Status.ENROLLED,
+                    },
+                )
 
 
 class StudentMovement(TenantOwnedModel):
