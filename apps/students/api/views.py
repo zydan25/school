@@ -18,6 +18,7 @@ from rest_framework.views import APIView
 from apps.accounts.api_permissions import (
     FINANCIAL_ROLES,
     STUDENT_AFFAIRS_ROLES,
+    has_school_permission,
     has_school_roles,
     require_school_role_or_permission,
     resolve_active_school,
@@ -68,8 +69,15 @@ def _student_read_queryset(request, school):
     qs = Student.objects.filter(
         school=school, is_archived=False,
     ).select_related("grade_level", "section", "academic_year")
-    if is_platform_operator(request.user) or has_school_roles(
-        request.user, school, STUDENT_READ_ADMIN_ROLES,
+    if (
+        is_platform_operator(request.user)
+        or has_school_roles(
+            request.user, school,
+            STUDENT_READ_ADMIN_ROLES | FINANCIAL_ROLES,
+        )
+        or has_school_permission(
+            user=request.user, school=school, permission="students.view_student",
+        )
     ):
         return qs
 
