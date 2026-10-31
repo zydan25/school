@@ -3,6 +3,7 @@ from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.accounts.api_permissions import has_school_roles
 from apps.accounts.models import SchoolMembership, User
 from apps.staff.models import Teacher
 from apps.students.models import (
@@ -310,9 +311,9 @@ class GuardianConsentSerializer(StudentSupportTenantSerializer):
                 })
             if not active_school_user_queryset(school).filter(
                 pk=guardian.user_id
-            ).exists():
+            ).exists() or not has_school_roles(guardian.user, school, {"guardian"}):
                 raise serializers.ValidationError({
-                    "guardian": "حساب ولي الأمر لا يملك عضوية نشطة وسارية في المدرسة."
+                    "guardian": "حساب ولي الأمر لا يملك دوراً وعضوية نشطين وساريين في المدرسة."
                 })
         return attrs
 
