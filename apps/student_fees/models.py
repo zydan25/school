@@ -543,18 +543,19 @@ def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: De
             locked_invoice.status = StudentInvoice.Status.PARTIAL
         locked_invoice.save(update_fields=["paid_amount", "status", "updated_at"])
 
-        # Link this use only when one deposit has enough unconsumed value to fund it.
-        # When the balance is pooled across deposits, leave the source unspecified rather
-        # than recording a false provenance link.
+        # The schema has a single source_receipt FK, so we can guarantee provenance
+        # only when there is exactly one active deposit source for this student.
+        # Pooled balances must remain unlinked until a multi-source allocation ledger exists.
         src_receipt = None
-        from django.db.models import Sum
-        deposits = StudentCreditTransaction.objects.filter(
+        deposits = list(StudentCreditTransaction.objects.filter(
             student=locked_student,
             transaction_type=StudentCreditTransaction.TransactionType.DEPOSIT,
             is_reversed=False,
             receipt__isnull=False,
-        ).order_by("created_at", "pk")
-        for deposit in deposits:
+        ).order_by("created_at", "pk"))
+        if len(deposits) == 1:
+            deposit = deposits[0]
+            from django.db.models import Sum
             consumed = StudentCreditTransaction.objects.filter(
                 student=locked_student,
                 transaction_type=StudentCreditTransaction.TransactionType.USAGE,
@@ -563,7 +564,6 @@ def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: De
             ).aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
             if deposit.amount - consumed >= amount:
                 src_receipt = deposit.receipt
-                break
 
         tx = StudentCreditTransaction.objects.create(
             school=locked_student.school,
@@ -699,47 +699,59 @@ def reverse_payment_receipt(receipt: PaymentReceipt, reason: str, reversed_by=No
             alloc.notes = f"{alloc.notes} | تم العكس لسبب: {reason}".strip(" |")
             alloc.save(update_fields=["status", "notes", "updated_at"])
 
-        # Reverse excess student credit if any
+        # Reverse excess student credit if any. First unwind transactions with an
+        # explicit source link. If historical pooled usages have no source, stop safely
+        # instead of reversing an unrelated invoice based on timestamps.
         deposit_txs = list(locked_receipt.credit_transactions.filter(
             transaction_type=StudentCreditTransaction.TransactionType.DEPOSIT,
             is_reversed=False,
         ))
-        total_excess = sum(t.amount for t in deposit_txs)
+        total_excess = sum((tx.amount for tx in deposit_txs), Decimal("0.00"))
         if total_excess > Decimal("0.00"):
-            student = type(locked_receipt.student).objects.select_for_update().get(pk=locked_receipt.student_id)
-            
-            # If part of this deposit was already used to pay other invoices:
-            if student.credit_balance < total_excess:
-                used_amount = total_excess - student.credit_balance
-                # Never infer ownership from timestamps: another receipt may have funded the usage.
-                usage_txs = list(StudentCreditTransaction.objects.filter(
+            student = type(locked_receipt.student).objects.select_for_update().get(
+                pk=locked_receipt.student_id
+            )
+            if deposit_txs:
+                first_deposit_at = min(tx.created_at for tx in deposit_txs)
+                ambiguous_usages = StudentCreditTransaction.objects.filter(
                     student=student,
                     transaction_type=StudentCreditTransaction.TransactionType.USAGE,
-                    source_receipt=locked_receipt,
+                    source_receipt__isnull=True,
                     is_reversed=False,
-                ).order_by("-created_at", "-pk"))
-                
-                # Unwind usages automatically until student.credit_balance >= total_excess
-                for u_tx in usage_txs:
-                    if student.credit_balance >= total_excess:
-                        break
-                    reverse_credit_usage(u_tx, reason=f"عكس تتابعي بسبب إلغاء سند القبض #{locked_receipt.receipt_number}", reversed_by=reversed_by)
-                    student.refresh_from_db()
-
-                # If still insufficient:
-                if student.credit_balance < total_excess:
+                    created_at__gte=first_deposit_at,
+                )
+                if ambiguous_usages.exists():
                     raise ValidationError(
-                        f"لا يمكن عكس سند القبض #{locked_receipt.receipt_number}: تم استخدام مبلغ ({used_amount}) "
-                        f"من فائض السند في تسديد فواتير أخرى ورصيد الطالب المتبقي ({student.credit_balance}) "
-                        f"أقل من فائض السند المطلوب عكسه ({total_excess}). يرجى إلغاء تسويات الفواتير التابعة أولاً."
+                        "لا يمكن عكس فائض هذا السند بأمان لوجود استخدامات رصيد قديمة غير مرتبطة بسند مصدر. "
+                        "يجب تسوية هذه الاستخدامات أو ربطها بمصادرها قبل إلغاء السند؛ لم يتم عكس أي فاتورة أخرى."
                     )
 
+            usage_txs = list(StudentCreditTransaction.objects.select_for_update().filter(
+                student=student,
+                transaction_type=StudentCreditTransaction.TransactionType.USAGE,
+                source_receipt=locked_receipt,
+                is_reversed=False,
+            ).order_by("-created_at", "-pk"))
+
+            for usage_tx in usage_txs:
+                reverse_credit_usage(
+                    usage_tx,
+                    reason=f"عكس تتابعي بسبب إلغاء سند القبض #{locked_receipt.receipt_number}",
+                    reversed_by=reversed_by,
+                )
+
+            student.refresh_from_db()
+            if student.credit_balance < total_excess:
+                raise ValidationError(
+                    f"لا يمكن عكس سند القبض #{locked_receipt.receipt_number}: الرصيد المتاح "
+                    f"({student.credit_balance}) أقل من فائض السند المطلوب عكسه ({total_excess})."
+                )
+
             bal_before = student.credit_balance
-            bal_after = max(Decimal("0.00"), bal_before - total_excess)
+            bal_after = bal_before - total_excess
             student.credit_balance = bal_after
             student.save(update_fields=["credit_balance"])
 
-            # Mark all deposit transactions as reversed
             for dep in deposit_txs:
                 dep.is_reversed = True
                 dep.save(update_fields=["is_reversed", "updated_at"])
