@@ -756,6 +756,129 @@ class AttendanceScoreEntryViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class AttendanceScoringViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_school(self):
+        school = _resolve_school(self.request)
+        if not school:
+            raise PermissionDenied("حدد مدرسة نشطة تملك عضوية سارية فيها.")
+        return school
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        require_school_role_or_permission(request, self.get_school(), ATTENDANCE_ADMIN_ROLES)
+
+    @action(detail=False, methods=["post"], url_path="calculate")
+    def calculate_score(self, request):
+        school = self.get_school()
+        student_id = request.data.get("student_id")
+        term_id = request.data.get("academic_term_id")
+        subject_id = request.data.get("subject_id")
+        if not student_id or not term_id:
+            raise ValidationError("student_id و academic_term_id مطلوبان.")
+
+        student = get_object_or_404(Student, pk=student_id, school=school, is_archived=False)
+        term = get_object_or_404(AcademicTerm, pk=term_id, school=school)
+        if student.academic_year_id != term.academic_year_id:
+            raise ValidationError("الفصل الدراسي لا يتبع العام الحالي للطالب.")
+        subject = get_object_or_404(Subject, pk=subject_id, school=school) if subject_id else None
+        entry = calculate_student_attendance_score(school, student, term, subject)
+        return Response(AttendanceScoreEntrySerializer(entry).data)
+
+    @action(detail=False, methods=["post"], url_path="recalculate-term")
+    def recalculate_term(self, request):
+        school = self.get_school()
+        term_id = request.data.get("academic_term_id")
+        section_id = request.data.get("section_id")
+        subject_id = request.data.get("subject_id")
+        if not term_id:
+            raise ValidationError("academic_term_id مطلوب.")
+
+        term = get_object_or_404(AcademicTerm, pk=term_id, school=school)
+        section = get_object_or_404(Section, pk=section_id, school=school) if section_id else None
+        subject = get_object_or_404(Subject, pk=subject_id, school=school) if subject_id else None
+        if section and section.academic_year_id != term.academic_year_id:
+            raise ValidationError("الشعبة لا تنتمي إلى العام الدراسي لهذا الفصل.")
+        entries = recalculate_term_scores(school, term, section, subject)
+        return Response({"message": f"تم احتساب درجات المواظبة لـ {len(entries)} طالب بنجاح.", "count": len(entries)})
+
+    @action(detail=True, methods=["post"], url_path="sync-gradebook")
+    def sync_to_gradebook_action(self, request, pk=None):
+        school = self.get_school()
+        entry = get_object_or_404(AttendanceScoreEntry, pk=pk, school=school, is_archived=False)
+        gradebook = sync_score_to_gradebook(entry)
+        if not gradebook:
+            raise ValidationError("تعذر مزامنة الدرجة؛ تحقق من توفر مادة دراسية نشطة.")
+        return Response({
+            "message": "تم ترحيل درجة المواظبة بنجاح إلى سجل الدرجات العام.",
+            "score": str(entry.final_score),
+            "gradebook_id": str(gradebook.pk),
+        })
+
+
+class MyChildrenAttendanceAPIView(APIView):
+    """سجل حضور الأبناء المرتبطين حصراً بولي الأمر المصادق عليه."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        school = _resolve_school(request)
+        if not school:
+            raise PermissionDenied("حدد المدرسة النشطة أولاً.")
+        guardian = Guardian.objects.filter(school=school, user=request.user).first()
+        if not guardian:
+            raise PermissionDenied("هذه الخدمة متاحة لحساب ولي الأمر فقط.")
+
+        children = guardian.children.filter(
+            school=school, is_archived=False
+        ).select_related("section", "grade_level").order_by("first_name", "last_name")
+        student_id = request.query_params.get("student_id")
+        if student_id:
+            children = children.filter(pk=student_id)
+            if not children.exists():
+                raise PermissionDenied("الطالب المحدد ليس من الأبناء المرتبطين بحسابك.")
+
+        records = StudentAttendanceRecord.objects.filter(
+            school=school, student__in=children, is_archived=False
+        ).select_related("student", "register", "register__section").order_by(
+            "-register__date", "-recorded_at"
+        )
+        date_from = request.query_params.get("from")
+        date_to = request.query_params.get("to")
+        try:
+            start_value = datetime.date.fromisoformat(date_from) if date_from else None
+            end_value = datetime.date.fromisoformat(date_to) if date_to else None
+        except (TypeError, ValueError):
+            raise ValidationError("صيغة التاريخ غير صحيحة؛ استخدم YYYY-MM-DD.")
+        if start_value and end_value and end_value < start_value:
+            raise ValidationError("تاريخ نهاية الفترة يسبق تاريخ بدايتها.")
+        if start_value:
+            records = records.filter(register__date__gte=start_value)
+        if end_value:
+            records = records.filter(register__date__lte=end_value)
+
+        rows = [{
+            "id": str(record.pk),
+            "student_id": str(record.student_id),
+            "student_name": str(record.student),
+            "section": record.register.section.name,
+            "date": record.register.date.isoformat(),
+            "session_type": record.register.session_type,
+            "status": record.status_category,
+            "late_minutes": record.late_minutes,
+            "notes": record.notes,
+            "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
+        } for record in records[:250]]
+        return Response({
+            "children": [{
+                "id": str(child.pk),
+                "student_number": child.student_id_number,
+                "name": str(child),
+                "section": child.section.name if child.section_id else None,
+            } for child in children],
+            "results": rows,
+            "count": len(rows),
+        })
+
 
 class MyChildrenAttendanceScoresAPIView(APIView):
     """درجات المواظبة الفصلية للأبناء المرتبطين بولي الأمر الحالي فقط."""
