@@ -124,7 +124,10 @@ class MembershipSerializer(serializers.ModelSerializer):
 class SchoolRoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = SchoolRole
-        fields = ["id", "code", "name", "description", "is_system", "is_active", "is_archived"]
+        fields = [
+            "id", "code", "name", "description", "permissions",
+            "is_system", "is_active", "is_archived",
+        ]
         read_only_fields = ["id", "is_system", "is_archived"]
 
 
