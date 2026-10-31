@@ -1364,8 +1364,8 @@ class JournalEntryViewSet(TenantModelViewSet):
     read_roles = FINANCE_ADMIN_ROLES
     write_roles = FINANCE_ADMIN_ROLES
     action_role_map = {
-        "list": FINANCIAL_ROLES | ADMIN_ROLES,
-        "retrieve": FINANCIAL_ROLES | ADMIN_ROLES,
+        "list": FINANCE_ADMIN_ROLES,
+        "retrieve": FINANCE_ADMIN_ROLES,
         "create": FINANCE_ADMIN_ROLES,
         "post": FINANCE_ADMIN_ROLES,
         "reverse": FINANCE_ADMIN_ROLES,
