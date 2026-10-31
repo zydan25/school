@@ -420,6 +420,7 @@ class StudentDocument(TenantOwnedModel):
     file = models.FileField(
         "ملف الوثيقة",
         upload_to=student_document_upload_path,
+        max_length=255,
         validators=[validate_student_document_file],
     )
     description = models.TextField("ملاحظات", blank=True)
