@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
@@ -105,6 +106,18 @@ class StaffMemberDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         return StaffMember.objects.filter(
             school=self.get_school(), is_archived=False,
         ).select_related("user")
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        user = serializer.validated_data.get("user", serializer.instance.user)
+        membership = user.school_memberships.filter(
+            school=school, status=SchoolMembership.Status.ACTIVE,
+        ).filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
+        ).first()
+        if membership is None:
+            raise ValidationError("يجب أن يمتلك المستخدم عضوية مدرسة نشطة وسارية.")
+        serializer.save()
 
     def perform_destroy(self, instance):
         instance.archive(actor=self.request.user, reason="أرشفة الموظف عبر API")
