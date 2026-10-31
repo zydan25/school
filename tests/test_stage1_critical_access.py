@@ -197,18 +197,10 @@ class CriticalAccessRegressionTests(TestCase):
         self.client.force_authenticate(user=self.student_user)
 
         teacher_endpoint = self.client.post(
-            "/api/v1/copilot/teacher/quiz/",
+            f"/api/v1/copilot/teacher/quiz/?school_code={self.school.code}",
             {"lesson_plan_or_topic": "الكسور"},
             format="json",
-            **{"QUERY_STRING": f"school_code={self.school.code}"},
         )
-        # The API client query string is supplied separately below for deterministic routing.
-        if teacher_endpoint.status_code == status.HTTP_400_BAD_REQUEST:
-            teacher_endpoint = self.client.post(
-                f"/api/v1/copilot/teacher/quiz/?school_code={self.school.code}",
-                {"lesson_plan_or_topic": "الكسور"},
-                format="json",
-            )
         self.assertEqual(teacher_endpoint.status_code, status.HTTP_403_FORBIDDEN)
 
         foreign_student = self.client.get(
