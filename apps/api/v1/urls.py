@@ -27,6 +27,7 @@ from apps.api.v1.views import (
     GradeBookViewSet,
     GradeLevelViewSet,
     GuardianChildrenAPIView,
+    GuardianProfileViewSet,
     GuardianRelationViewSet,
     HomeworkAttachmentDownloadAPIView,
     HomeworkSubmissionViewSet,
@@ -69,6 +70,7 @@ router = DefaultRouter()
 router.register("memberships", MembershipViewSet, basename="app-membership")
 router.register("roles", SchoolRoleViewSet, basename="app-school-role")
 router.register("membership-roles", MembershipRoleViewSet, basename="app-membership-role")
+router.register("guardians", GuardianProfileViewSet, basename="app-guardian")
 router.register("guardian-relations", GuardianRelationViewSet, basename="app-guardian-relation")
 
 router.register("academic-years", AcademicYearViewSet, basename="app-academic-year")
