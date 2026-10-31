@@ -480,17 +480,30 @@ class GuardianProfileViewSet(TenantModelViewSet):
             qs = qs.filter(user=self.request.user)
         return qs
 
+    @transaction.atomic
     def perform_create(self, serializer):
         school = self.get_school()
         require_school_role_or_permission(
             self.request, school, STUDENT_AFFAIRS_ROLES,
             "students.add_guardian",
         )
-        user = get_object_or_404(
-            User, pk=self.request.data.get("user_id"), is_active=True,
-        )
-        if active_membership(user=user, school=school) is None:
-            raise ValidationError("يجب أن يمتلك ولي الأمر عضوية نشطة في المدرسة أولاً.")
+        from apps.accounts.models import normalize_phone
+
+        phone = normalize_phone(self.request.data.get("phone") or "")
+        user_id = self.request.data.get("user_id")
+        user = None
+        if phone:
+            user = User.objects.select_for_update().filter(phone=phone).first()
+        elif user_id:
+            # Compatibility for verified accounts created by earlier integrations.
+            user = User.objects.select_for_update().filter(pk=user_id).first()
+        if user is None:
+            raise ValidationError({"phone": "لم يتم العثور على حساب مستخدم برقم الهاتف المحدد."})
+        if Guardian.objects.filter(
+            school=school, user=user, is_archived=False,
+        ).exists():
+            raise ValidationError("يوجد بالفعل ملف ولي أمر لهذا الحساب في المدرسة.")
+        ensure_guardian_membership(user=user, school=school, actor=self.request.user)
         serializer.save(school=school, user=user)
 
 
