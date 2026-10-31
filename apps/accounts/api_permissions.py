@@ -18,6 +18,8 @@ def resolve_active_school(request) -> School | None:
     """
     تحديد المدرسة النشطة للمستخدم مع التحقق الصارم من سريان العضوية وعدم انتهائها.
     """
+    if getattr(request, "school_context_error", None):
+        return None
     if getattr(request, "school", None):
         return request.school
 
@@ -33,7 +35,8 @@ def resolve_active_school(request) -> School | None:
             return School.objects.filter(pk=school_id, status=School.Status.ACTIVE).first()
         if school_code:
             return School.objects.filter(code=school_code.upper(), status=School.Status.ACTIVE).first()
-        return School.objects.filter(status=School.Status.ACTIVE).first()
+        active_schools = School.objects.filter(status=School.Status.ACTIVE)
+        return active_schools.first() if active_schools.count() == 1 else None
 
     # Regular users must have an ACTIVE, NON-EXPIRED membership
     now = timezone.now()
@@ -52,9 +55,14 @@ def resolve_active_school(request) -> School | None:
         m = active_memberships.filter(school__code=school_code.upper()).first()
         return m.school if m else None
 
-    # Default to user's first active non-expired school membership
-    first_m = active_memberships.first()
-    return first_m.school if first_m else None
+    # Never silently choose the first school for a multi-school account.
+    default_membership = active_memberships.filter(is_default=True).first()
+    if default_membership:
+        return default_membership.school
+    if active_memberships.count() == 1:
+        only_membership = active_memberships.first()
+        return only_membership.school if only_membership else None
+    return None
 
 
 def require_school_context(request) -> School:
