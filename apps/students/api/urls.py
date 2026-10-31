@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 
 from apps.students.api.views import (
     StudentDetailAPIView,
@@ -16,4 +16,5 @@ urlpatterns = [
     path("<uuid:pk>/retain/", StudentRetainAPIView.as_view(), name="student-retain"),
     path("<uuid:pk>/graduate/", StudentGraduateAPIView.as_view(), name="student-graduate"),
     path("<uuid:pk>/withdraw/", StudentWithdrawAPIView.as_view(), name="student-withdraw"),
+    path("", include("apps.students.api.support_urls")),
 ]
