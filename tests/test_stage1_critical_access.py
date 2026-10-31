@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from django.test import TestCase
@@ -221,7 +221,7 @@ class CriticalAccessRegressionTests(TestCase):
         membership = SchoolMembership.objects.get(
             school=self.school, user=self.student_user,
         )
-        membership.expires_at = timezone.now() - timezone.timedelta(days=1)
+        membership.expires_at = timezone.now() - timedelta(days=1)
         membership.save(update_fields=["expires_at", "updated_at"])
 
         self.client.force_authenticate(user=self.student_user)
