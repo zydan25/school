@@ -1982,6 +1982,61 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         return Response({"id": str(conv.pk), "status": conv.status})
 
 
+class ConversationMessageDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _get_message(self, request, conversation_id, message_id):
+        school = school_for(request)
+        conversation = get_object_or_404(
+            SchoolConversation, pk=conversation_id, school=school,
+            is_archived=False,
+        )
+        participant = get_object_or_404(
+            ConversationParticipant, school=school,
+            conversation=conversation, user=request.user,
+            is_active=True, is_archived=False,
+        )
+        message = get_object_or_404(
+            ConversationMessage, pk=message_id, school=school,
+            conversation=conversation, is_archived=False,
+        )
+        return school, conversation, participant, message
+
+    def patch(self, request, conversation_id, message_id):
+        school, conversation, participant, message = self._get_message(
+            request, conversation_id, message_id,
+        )
+        if message.sender_id != request.user.pk or message.is_deleted:
+            raise PermissionDenied("يمكنك تعديل رسائلك غير المحذوفة فقط.")
+        if conversation.status != SchoolConversation.Status.OPEN:
+            raise ValidationError("المحادثة مغلقة.")
+        body = request.data.get("body")
+        if not isinstance(body, str) or not body.strip():
+            raise ValidationError({"body": "نص الرسالة مطلوب."})
+        if len(body) > 10000:
+            raise ValidationError({"body": "الحد الأقصى لطول الرسالة 10000 حرف."})
+        message.body = body.strip()
+        message.edited_at = timezone.now()
+        message.save(update_fields=["body", "edited_at", "updated_at"])
+        return Response(ConversationMessageSerializer(message).data)
+
+    def delete(self, request, conversation_id, message_id):
+        school, conversation, participant, message = self._get_message(
+            request, conversation_id, message_id,
+        )
+        if (
+            message.sender_id != request.user.pk
+            and not is_admin(request.user, school)
+        ):
+            raise PermissionDenied("لا يمكنك حذف رسالة أرسلها مستخدم آخر.")
+        if message.is_deleted:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        message.is_deleted = True
+        message.edited_at = timezone.now()
+        message.save(update_fields=["is_deleted", "edited_at", "updated_at"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
 class ConversationAttachmentDownloadAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
