@@ -533,21 +533,34 @@ class HomeworkViewSet(TenantModelViewSet):
     serializer_class = HomeworkSerializer
     read_roles = ADMIN_ROLES | {"teacher", "student", "guardian"}
     write_roles = TEACHER_ROLES
-    action_role_map = {"list": ADMIN_ROLES | {"teacher", "student", "guardian"}, "retrieve": ADMIN_ROLES | {"teacher", "student", "guardian"}}
+    action_role_map = {
+        "list": ADMIN_ROLES | {"teacher", "student", "guardian"},
+        "retrieve": ADMIN_ROLES | {"teacher", "student", "guardian"},
+    }
 
     def get_queryset(self):
         school = self.get_school()
-        qs = Homework.objects.filter(school=school, is_archived=False, is_active=True).select_related("subject", "section", "teacher__user")
-        if has_school_roles(self.request.user, school, {"teacher"}) and not is_admin(self.request.user, school):
-            teacher = user_teacher_profiles(self.request.user, school).first()
-            qs = qs.filter(teacher=teacher) if teacher else qs.none()
-        elif has_school_roles(self.request.user, school, {"student"}):
-            student = user_student_profiles(self.request.user, school).first()
-            qs = qs.filter(section_id=student.section_id) if student else qs.none()
-        elif has_school_roles(self.request.user, school, {"guardian"}) and not is_admin(self.request.user, school):
-            guardian = user_guardian_profiles(self.request.user, school).first()
-            sections = guardian.children.filter(is_archived=False).values_list("section_id", flat=True) if guardian else []
-            qs = qs.filter(section_id__in=sections)
+        qs = Homework.objects.filter(
+            school=school, is_archived=False, is_active=True,
+        ).select_related("subject", "section", "teacher__user")
+        if not is_admin(self.request.user, school):
+            allowed = Q(pk__in=[])
+            if has_school_roles(self.request.user, school, {"teacher"}):
+                teacher = user_teacher_profiles(self.request.user, school).first()
+                if teacher:
+                    allowed |= Q(teacher=teacher)
+            if has_school_roles(self.request.user, school, {"student"}):
+                student = user_student_profiles(self.request.user, school).first()
+                if student:
+                    allowed |= Q(section_id=student.section_id)
+            if has_school_roles(self.request.user, school, {"guardian"}):
+                guardian = user_guardian_profiles(self.request.user, school).first()
+                if guardian:
+                    sections = guardian.children.filter(
+                        school=school, is_archived=False,
+                    ).values_list("section_id", flat=True)
+                    allowed |= Q(section_id__in=sections)
+            qs = qs.filter(allowed)
         section_id = self.request.query_params.get("section_id")
         subject_id = self.request.query_params.get("subject_id")
         if section_id:
@@ -559,7 +572,13 @@ class HomeworkViewSet(TenantModelViewSet):
     def perform_create(self, serializer):
         school = self.get_school()
         teacher = user_teacher_profiles(self.request.user, school).first()
-        if not teacher and not is_admin(self.request.user, school):
+        requested_teacher_id = self.request.data.get("teacher_id")
+        if is_admin(self.request.user, school) and requested_teacher_id:
+            teacher = get_object_or_404(
+                Teacher, pk=requested_teacher_id, school=school,
+                is_archived=False, is_active_teaching=True,
+            )
+        elif not teacher:
             raise PermissionDenied("يجب ربط حسابك بملف معلم قبل إنشاء واجب.")
         section = serializer.validated_data["section"]
         subject = serializer.validated_data["subject"]
@@ -570,35 +589,42 @@ class HomeworkViewSet(TenantModelViewSet):
             ).exists()
             if not assigned:
                 raise PermissionDenied("لا يمكنك إسناد واجب لمادة أو شعبة غير مسندة إليك.")
-        assigned_teacher = teacher
-        if assigned_teacher is None:
-            teacher_id = self.request.data.get("teacher_id")
-            assigned_teacher = get_object_or_404(
-                Teacher, pk=teacher_id, school=school, is_archived=False,
-                is_active_teaching=True,
-            )
-        serializer.save(school=school, teacher=assigned_teacher)
+        serializer.save(school=school, teacher=teacher)
 
 
 class HomeworkSubmissionViewSet(TenantModelViewSet):
     serializer_class = HomeworkSubmissionSerializer
     read_roles = ADMIN_ROLES | {"teacher", "student", "guardian"}
     write_roles = {"student", "teacher"} | ADMIN_ROLES
-    action_role_map = {"list": ADMIN_ROLES | {"teacher", "student", "guardian"}, "retrieve": ADMIN_ROLES | {"teacher", "student", "guardian"}, "submit": {"student"} | ADMIN_ROLES, "grade": TEACHER_ROLES}
+    action_role_map = {
+        "list": ADMIN_ROLES | {"teacher", "student", "guardian"},
+        "retrieve": ADMIN_ROLES | {"teacher", "student", "guardian"},
+        "submit": {"student"} | ADMIN_ROLES,
+        "grade": TEACHER_ROLES,
+    }
 
     def get_queryset(self):
         school = self.get_school()
-        qs = HomeworkSubmission.objects.filter(school=school, is_archived=False).select_related("homework", "student", "graded_by")
-        if has_school_roles(self.request.user, school, {"student"}) and not is_admin(self.request.user, school):
-            student = user_student_profiles(self.request.user, school).first()
-            qs = qs.filter(student=student) if student else qs.none()
-        elif has_school_roles(self.request.user, school, {"guardian"}) and not is_admin(self.request.user, school):
-            guardian = user_guardian_profiles(self.request.user, school).first()
-            children = guardian.children.all() if guardian else Student.objects.none()
-            qs = qs.filter(student__in=children)
-        elif has_school_roles(self.request.user, school, {"teacher"}) and not is_admin(self.request.user, school):
-            teacher = user_teacher_profiles(self.request.user, school).first()
-            qs = qs.filter(homework__teacher=teacher) if teacher else qs.none()
+        qs = HomeworkSubmission.objects.filter(
+            school=school, is_archived=False,
+        ).select_related("homework", "student", "graded_by")
+        if not is_admin(self.request.user, school):
+            allowed = Q(pk__in=[])
+            if has_school_roles(self.request.user, school, {"student"}):
+                student = user_student_profiles(self.request.user, school).first()
+                if student:
+                    allowed |= Q(student=student)
+            if has_school_roles(self.request.user, school, {"guardian"}):
+                guardian = user_guardian_profiles(self.request.user, school).first()
+                if guardian:
+                    allowed |= Q(student__in=guardian.children.filter(
+                        school=school, is_archived=False,
+                    ))
+            if has_school_roles(self.request.user, school, {"teacher"}):
+                teacher = user_teacher_profiles(self.request.user, school).first()
+                if teacher:
+                    allowed |= Q(homework__teacher=teacher)
+            qs = qs.filter(allowed)
         homework_id = self.request.query_params.get("homework_id")
         student_id = self.request.query_params.get("student_id")
         if homework_id:
@@ -608,35 +634,59 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         return qs.order_by("-submitted_at")
 
     def create(self, request, *args, **kwargs):
-        raise MethodNotAllowed("POST", detail="استخدم POST /homework-submissions/submit/ أو POST /homework-submissions/{id}/grade/.")
+        raise MethodNotAllowed(
+            "POST",
+            detail="استخدم POST /homework-submissions/submit/ لإرسال واجب.",
+        )
 
-    @action(detail=False, methods=["post"], url_path="submit", parser_classes=[MultiPartParser, FormParser, JSONParser])
+    @action(
+        detail=False, methods=["post"], url_path="submit",
+        parser_classes=[MultiPartParser, FormParser, JSONParser],
+    )
     def submit(self, request):
         school = self.get_school()
         student = user_student_profiles(request.user, school).first()
-        if not student:
+        if not student or not has_school_roles(request.user, school, {"student"}):
             raise PermissionDenied("تسليم الواجب متاح لحساب الطالب المرتبط فقط.")
-        homework = get_object_or_404(Homework, pk=request.data.get("homework_id"), school=school, is_archived=False, is_active=True)
+        homework = get_object_or_404(
+            Homework, pk=request.data.get("homework_id"), school=school,
+            is_archived=False, is_active=True,
+        )
         if homework.section_id != student.section_id:
             raise PermissionDenied("الواجب لا يخص الشعبة الحالية للطالب.")
-        if timezone.now() > homework.due_date:
-            late = True
-        else:
-            late = False
-        existing = HomeworkSubmission.objects.filter(homework=homework, student=student, is_archived=False).first()
-        if existing and existing.status in [HomeworkSubmission.Status.GRADED]:
-            raise ValidationError("تم تصحيح هذا الواجب ولا يمكن استبدال التسليم.")
-        if existing is None:
-            existing = HomeworkSubmission(
+        attachment = request.FILES.get("attachment")
+        if attachment:
+            extension = os.path.splitext(attachment.name)[1].lower()
+            if extension not in {".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"}:
+                raise ValidationError({"attachment": "نوع الملف غير مدعوم."})
+            if attachment.size > 15 * 1024 * 1024:
+                raise ValidationError({"attachment": "الحد الأقصى لحجم المرفق 15 ميجابايت."})
+        late = timezone.now() > homework.due_date
+        with transaction.atomic():
+            existing = HomeworkSubmission.objects.select_for_update().filter(
                 school=school, homework=homework, student=student,
+                is_archived=False,
+            ).first()
+            created = existing is None
+            if existing and existing.status == HomeworkSubmission.Status.GRADED:
+                raise ValidationError("تم تصحيح هذا الواجب ولا يمكن استبدال التسليم.")
+            if created:
+                existing = HomeworkSubmission(
+                    school=school, homework=homework, student=student,
+                )
+            existing.submission_text = request.data.get("submission_text", "")
+            if attachment:
+                existing.attachment = attachment
+            existing.status = (
+                HomeworkSubmission.Status.LATE
+                if late else HomeworkSubmission.Status.SUBMITTED
             )
-        existing.submission_text = request.data.get("submission_text", "")
-        if request.FILES.get("attachment"):
-            existing.attachment = request.FILES["attachment"]
-        existing.status = HomeworkSubmission.Status.LATE if late else HomeworkSubmission.Status.SUBMITTED
-        existing.submitted_at = timezone.now()
-        existing.save()
-        return Response(self.get_serializer(existing).data, status=status.HTTP_201_CREATED if not getattr(existing, "_was_existing", False) else status.HTTP_200_OK)
+            existing.submitted_at = timezone.now()
+            existing.save()
+        return Response(
+            self.get_serializer(existing).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="grade")
     def grade(self, request, pk=None):
@@ -644,20 +694,26 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         submission = self.get_object()
         require_school_role_or_permission(request, school, TEACHER_ROLES)
         teacher = user_teacher_profiles(request.user, school).first()
-        if teacher and not is_admin(request.user, school) and submission.homework.teacher_id != teacher.pk:
-            raise PermissionDenied("لا يمكنك تصحيح تسليم واجب لمعلم آخر.")
+        if not is_admin(request.user, school):
+            if not teacher or submission.homework.teacher_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك تصحيح تسليم واجب لمعلم آخر.")
         try:
             score = Decimal(str(request.data.get("score")))
         except Exception:
             raise ValidationError({"score": "الدرجة المدخلة غير صحيحة."})
         if score < 0 or score > submission.homework.max_score:
-            raise ValidationError({"score": f"الدرجة يجب أن تكون بين صفر و {submission.homework.max_score}."})
+            raise ValidationError({
+                "score": f"الدرجة يجب أن تكون بين صفر و {submission.homework.max_score}.",
+            })
         submission.score = score
         submission.teacher_feedback = request.data.get("teacher_feedback", "")
         submission.graded_by = teacher
         submission.graded_at = timezone.now()
         submission.status = HomeworkSubmission.Status.GRADED
-        submission.save(update_fields=["score", "teacher_feedback", "graded_by", "graded_at", "status", "updated_at"])
+        submission.save(update_fields=[
+            "score", "teacher_feedback", "graded_by", "graded_at",
+            "status", "updated_at",
+        ])
         return Response(self.get_serializer(submission).data)
 
 
