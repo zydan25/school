@@ -13,6 +13,9 @@ class BearerOrTokenAuthentication(BaseAuthentication):
 
     keyword_map = {b"token", b"bearer"}
 
+    def authenticate_header(self, request):
+        return "Bearer"
+
     def authenticate(self, request):
         parts = get_authorization_header(request).split()
         if not parts:
