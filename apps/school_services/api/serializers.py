@@ -1,4 +1,6 @@
 """Serializers for the school support-services API."""
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework import serializers
 
 from apps.accounts.models import SchoolMembership
@@ -34,7 +36,9 @@ class SchoolServiceSerializer(serializers.ModelSerializer):
 
         model = self.Meta.model
         for model_field in model._meta.fields:
-            if not model_field.is_relation or not model_field.many_to_one:
+            if not model_field.is_relation or not (
+                model_field.many_to_one or model_field.one_to_one
+            ):
                 continue
             name = model_field.name
             related = attrs.get(name)
@@ -53,6 +57,8 @@ class SchoolServiceSerializer(serializers.ModelSerializer):
             user=driver_user,
             school=school,
             status=SchoolMembership.Status.ACTIVE,
+        ).filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
         ).exists():
             raise serializers.ValidationError({
                 "driver_user": "يجب أن يمتلك حساب السائق عضوية نشطة في المدرسة."

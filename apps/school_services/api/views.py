@@ -245,6 +245,8 @@ class BusFinancialSettlementViewSet(SchoolServiceViewSet):
             settlement = get_object_or_404(
                 self.get_queryset().select_for_update(), pk=pk
             )
+            if settlement.status != BusFinancialSettlement.Status.DRAFT:
+                raise ValidationError("لا يعاد احتساب التسوية بعد اعتمادها.")
             settlement.calculate_due()
             settlement.save()
         return Response(self.get_serializer(settlement).data)
@@ -387,10 +389,6 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
                 raise PermissionDenied("لا يمكنك تعديل طلب مستخدم آخر.")
             if order.status != BookRequisitionOrder.Status.DRAFT:
                 raise ValidationError("لا يمكن تعديل البنود بعد رفع الطلب.")
-            serializer = BookRequisitionOrderSerializer(
-                data={"academic_year": order.academic_year_id},
-                context=self.get_serializer_context(),
-            )
             # Validate each row with the same declared item contract.
             from .serializers import BookRequisitionItemSerializer
             for payload in items_data:
@@ -421,6 +419,9 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
                 if item_id in approved_by_id:
                     raise ValidationError("لا تكرر بنداً في كميات الاعتماد.")
                 approved_by_id[item_id] = entry.get("quantity_approved")
+            unknown_item_ids = set(approved_by_id) - {str(item.pk) for item in order.items.all()}
+            if unknown_item_ids:
+                raise ValidationError("تتضمن كميات الاعتماد بنداً لا يتبع أمر الصرف الحالي.")
             for item in order.items.select_for_update():
                 quantity = approved_by_id.get(str(item.pk), item.quantity_requested)
                 if quantity is None or not isinstance(quantity, int):
@@ -483,8 +484,8 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
                 except Exception as exc:
                     raise ValidationError("كمية الصرف غير صالحة.") from exc
                 remaining = req_item.quantity_approved - req_item.quantity_dispatched
-                if quantity <= 0 or quantity > remaining:
-                    raise ValidationError("كمية الصرف يجب أن تكون موجبة ولا تتجاوز الكمية المعتمدة المتبقية.")
+                if quantity <= 0 or quantity != quantity.to_integral_value() or quantity > remaining:
+                    raise ValidationError("كمية الصرف يجب أن تكون عدداً صحيحاً موجباً ولا تتجاوز الكمية المعتمدة المتبقية.")
                 inventory_item = get_object_or_404(
                     InventoryItem.objects.select_for_update(),
                     pk=allocation.get("inventory_item_id"),
