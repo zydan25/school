@@ -17,8 +17,13 @@ def resolve_school_for_user(*, user, school_code: str) -> School:
         raise PermissionDenied("المدرسة غير متاحة.")
     if is_platform_operator(user):
         return school
-    if not SchoolMembership.objects.filter(user=user, school=school, status=SchoolMembership.Status.ACTIVE).exists():
-        raise PermissionDenied("لا تملك عضوية نشطة في هذه المدرسة.")
+    membership = SchoolMembership.objects.filter(
+        user=user, school=school, status=SchoolMembership.Status.ACTIVE,
+    ).filter(
+        Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
+    ).first()
+    if membership is None:
+        raise PermissionDenied("لا تملك عضوية نشطة وسارية في هذه المدرسة.")
     return school
 
 
