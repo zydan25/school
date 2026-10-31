@@ -16,6 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.api_permissions import (
+    FINANCIAL_ROLES,
     STUDENT_AFFAIRS_ROLES,
     has_school_roles,
     require_school_role_or_permission,
@@ -30,6 +31,7 @@ from apps.students.api.serializers import (
     StudentListSerializer,
     StudentSafeListSerializer,
     StudentSafeDetailSerializer,
+    StudentAdminSafeDetailSerializer,
     StudentMovementSerializer,
     StudentTransferSerializer,
     StudentImportRowSerializer,
@@ -120,9 +122,9 @@ class StudentListAPIView(generics.ListCreateAPIView):
     def get_serializer_class(self):
         if self.request.method == "POST":
             return StudentDetailSerializer
-        if (
-            is_platform_operator(self.request.user)
-            or has_school_roles(self.request.user, self.get_school(), STUDENT_READ_ADMIN_ROLES)
+        school = self.get_school()
+        if is_platform_operator(self.request.user) or has_school_roles(
+            self.request.user, school, FINANCIAL_ROLES,
         ):
             return StudentListSerializer
         return StudentSafeListSerializer
@@ -232,8 +234,15 @@ class StudentDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     lookup_url_kwarg = "pk"
 
     def get_serializer_class(self):
-        if has_school_roles(self.request.user, self.get_school(), STUDENT_READ_ADMIN_ROLES) or is_platform_operator(self.request.user):
+        school = self.get_school()
+        if is_platform_operator(self.request.user) or has_school_roles(
+            self.request.user, school, FINANCIAL_ROLES,
+        ):
             return StudentDetailSerializer
+        if has_school_roles(
+            self.request.user, school, STUDENT_READ_ADMIN_ROLES,
+        ):
+            return StudentAdminSafeDetailSerializer
         return StudentSafeDetailSerializer
 
     def get_school(self):
