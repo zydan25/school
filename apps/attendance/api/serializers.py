@@ -61,8 +61,11 @@ class AttendanceStatusTypeSerializer(serializers.ModelSerializer):
 
 
 class StudentAttendanceRecordSerializer(serializers.ModelSerializer):
-    student_name = serializers.CharField(source="student.__str__", read_only=True)
+    student_name = serializers.SerializerMethodField()
     student_id_number = serializers.CharField(source="student.student_id_number", read_only=True)
+
+    def get_student_name(self, obj):
+        return str(obj.student)
 
     class Meta:
         model = StudentAttendanceRecord
@@ -119,7 +122,7 @@ class OpenRegisterInputSerializer(serializers.Serializer):
 
 
 class BulkRecordItemSerializer(serializers.Serializer):
-    student_id = serializers.IntegerField()
+    student_id = serializers.UUIDField()
     status_category = serializers.ChoiceField(choices=AttendanceStatusType.Category.choices)
     late_minutes = serializers.IntegerField(default=0, min_value=0)
     notes = serializers.CharField(required=False, allow_blank=True, default="")
@@ -130,8 +133,14 @@ class BulkRecordInputSerializer(serializers.Serializer):
 
 
 class AttendanceExcuseRequestSerializer(serializers.ModelSerializer):
-    student_name = serializers.CharField(source="student.__str__", read_only=True)
-    guardian_name = serializers.CharField(source="guardian.__str__", read_only=True)
+    student_name = serializers.SerializerMethodField()
+    guardian_name = serializers.SerializerMethodField()
+
+    def get_student_name(self, obj):
+        return str(obj.student)
+
+    def get_guardian_name(self, obj):
+        return str(obj.guardian)
 
     class Meta:
         model = AttendanceExcuseRequest
@@ -151,7 +160,7 @@ class AttendanceExcuseRequestSerializer(serializers.ModelSerializer):
             "review_notes",
             "created_at",
         ]
-        read_only_fields = ["status", "reviewed_at", "review_notes"]
+        read_only_fields = ["status", "reviewed_at", "review_notes", "guardian"]
 
 
 class ExcuseReviewInputSerializer(serializers.Serializer):
@@ -160,8 +169,14 @@ class ExcuseReviewInputSerializer(serializers.Serializer):
 
 
 class EarlyDepartureRequestSerializer(serializers.ModelSerializer):
-    student_name = serializers.CharField(source="student.__str__", read_only=True)
-    guardian_name = serializers.CharField(source="guardian.__str__", read_only=True)
+    student_name = serializers.SerializerMethodField()
+    guardian_name = serializers.SerializerMethodField()
+
+    def get_student_name(self, obj):
+        return str(obj.student)
+
+    def get_guardian_name(self, obj):
+        return str(obj.guardian)
 
     class Meta:
         model = EarlyDepartureRequest
@@ -184,7 +199,7 @@ class EarlyDepartureRequestSerializer(serializers.ModelSerializer):
             "exit_notes",
             "created_at",
         ]
-        read_only_fields = ["status", "approved_at", "exit_confirmed_at", "exit_notes"]
+        read_only_fields = ["status", "approved_at", "exit_confirmed_at", "exit_notes", "guardian"]
 
 
 class GateExitInputSerializer(serializers.Serializer):
