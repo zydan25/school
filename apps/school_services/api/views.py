@@ -181,7 +181,7 @@ class BusRouteViewSet(SchoolServiceViewSet):
                 raise ValidationError(
                     "لا يمكن خفض سعة الحافلة عن عدد اشتراكاتها النشطة."
                 )
-            serializer.save()
+            self.save_serializer(serializer)
 
 
 class StudentBusSubscriptionViewSet(SchoolServiceViewSet):
