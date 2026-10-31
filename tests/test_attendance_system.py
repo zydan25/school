@@ -323,6 +323,8 @@ class AttendanceSystemTests(TestCase):
             bypass_calendar_check=True,
             user=self.teacher_user,
         )
+        submit_register(register, submitted_by=self.teacher_user)
+        approve_register(register, approved_by=self.owner_a)
         lock_register(register, locked_by=self.owner_a)
 
         reopen_req = request_reopen_register(register, requested_by=self.teacher_user, reason="نسيان رصد طالب معذور")
