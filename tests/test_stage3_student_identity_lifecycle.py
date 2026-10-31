@@ -396,7 +396,7 @@ class StudentIdentityAndLifecycleTests(TestCase):
             },
             format="multipart",
         )
-        self.assertEqual(visible_response.status_code, status.HTTP_201_CREATED, visible_response.data)
+        self.assertEqual(visible_response.status_code, status.HTTP_201_CREATED, getattr(visible_response, "data", visible_response.content))
         visible_document = StudentDocument.objects.get(pk=visible_response.data["id"])
         self.assertIn("/documents/", visible_response.data["download_url"])
         self.assertNotIn("student-documents/", visible_response.data["download_url"])
