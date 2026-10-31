@@ -42,7 +42,6 @@ class AttendancePolicySerializer(serializers.ModelSerializer):
         ]
 
 
-class AttendanceStatusTypeSerializer
     def validate(self, attrs):
         school = self.context.get("school")
         academic_year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
@@ -237,8 +236,6 @@ class SchoolCalendarSerializer(serializers.ModelSerializer):
             "description",
         ]
 
-
-class SchoolCalendarDaySerializer
     def validate(self, attrs):
         school = self.context.get("school")
         academic_year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
@@ -287,7 +284,6 @@ class CalendarEventSerializer(serializers.ModelSerializer):
         ]
 
 
-class AttendanceScoringPolicySerializer
     def validate(self, attrs):
         school = self.context.get("school")
         related_fields = (
