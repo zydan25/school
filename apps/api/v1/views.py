@@ -641,6 +641,8 @@ class TeacherViewSet(TenantModelViewSet):
             User, pk=self.request.data.get("user_id"),
             is_active=True, status=User.Status.ACTIVE,
         )
+        if user.phone_verified_at is None:
+            raise ValidationError("يجب توثيق رقم هاتف المعلم قبل إنشاء ملفه الوظيفي.")
         if active_membership(user=user, school=school) is None:
             raise ValidationError("يجب إنشاء عضوية المدرسة للمستخدم قبل إنشاء ملف المعلم.")
         if Teacher.objects.filter(
