@@ -114,7 +114,6 @@ class PaymentReceiptListSerializer(serializers.ModelSerializer):
             "reference_number",
             "paid_at",
             "is_cancelled",
-            "cancel_reason",
             "created_at",
         ]
 
