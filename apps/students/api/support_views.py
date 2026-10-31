@@ -176,7 +176,7 @@ class StudentIncidentDetailAPIView(generics.RetrieveAPIView):
 class StudentIncidentNotifyParentsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, pk, version=None):
         school = get_school(request)
         with transaction.atomic():
             incident = get_object_or_404(
@@ -239,7 +239,7 @@ class StudentIncidentNotifyParentsAPIView(APIView):
 class StudentIncidentSeenAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, pk, version=None):
         school = get_school(request)
         incident = get_object_or_404(
             StudentIncidentReport.objects.select_related("student"),
@@ -267,7 +267,7 @@ class StudentIncidentSeenAPIView(APIView):
 class StudentIncidentResolveAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, pk, version=None):
         school = get_school(request)
         if not is_manager(request.user, school):
             raise PermissionDenied("معالجة البلاغات متاحة لإدارة شؤون الطلاب فقط.")
@@ -352,7 +352,7 @@ class AdministrativeSummonDetailAPIView(generics.RetrieveAPIView):
 class AdministrativeSummonAttendAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, pk, version=None):
         school = get_school(request)
         if not is_manager(request.user, school):
             raise PermissionDenied("تأكيد حضور المستدعى متاح للإدارة فقط.")
@@ -425,7 +425,7 @@ class SchoolComplaintDetailAPIView(generics.RetrieveAPIView):
 class SchoolComplaintReviewAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, pk, version=None):
         school = get_school(request)
         if not is_manager(request.user, school):
             raise PermissionDenied("معالجة الشكاوى متاحة للإدارة المخولة فقط.")
