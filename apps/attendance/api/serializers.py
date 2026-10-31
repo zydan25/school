@@ -308,12 +308,30 @@ class CalendarEventSerializer(serializers.ModelSerializer):
                     })
 
         academic_year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
-        section = attrs.get("section") or getattr(self.instance, "section", None)
-        grade_level = attrs.get("grade_level") or getattr(self.instance, "grade_level", None)
+        section = attrs.get("section") if "section" in attrs else getattr(self.instance, "section", None)
+        grade_level = attrs.get("grade_level") if "grade_level" in attrs else getattr(self.instance, "grade_level", None)
+        stage = attrs.get("stage") if "stage" in attrs else getattr(self.instance, "stage", None)
+        start_date = attrs.get("start_date") if "start_date" in attrs else getattr(self.instance, "start_date", None)
+        end_date = attrs.get("end_date") if "end_date" in attrs else getattr(self.instance, "end_date", None)
+        start_time = attrs.get("start_time") if "start_time" in attrs else getattr(self.instance, "start_time", None)
+        end_time = attrs.get("end_time") if "end_time" in attrs else getattr(self.instance, "end_time", None)
+
         if section and academic_year and section.academic_year_id != academic_year.pk:
             raise serializers.ValidationError({"section": "الشعبة لا تنتمي إلى السنة الدراسية المحددة."})
         if section and grade_level and section.grade_id != grade_level.pk:
             raise serializers.ValidationError({"section": "الشعبة لا تتبع الصف المحدد."})
+        if grade_level and stage and grade_level.stage_id != stage.pk:
+            raise serializers.ValidationError({"grade_level": "الصف لا يتبع المرحلة المحددة."})
+        if start_date and end_date and end_date < start_date:
+            raise serializers.ValidationError({"end_date": "تاريخ نهاية الفعالية يسبق تاريخ بدايتها."})
+        if academic_year and start_date:
+            if start_date < academic_year.starts_on or start_date > academic_year.ends_on:
+                raise serializers.ValidationError({"start_date": "تاريخ الفعالية خارج حدود السنة الدراسية."})
+        if academic_year and end_date:
+            if end_date < academic_year.starts_on or end_date > academic_year.ends_on:
+                raise serializers.ValidationError({"end_date": "تاريخ نهاية الفعالية خارج حدود السنة الدراسية."})
+        if start_time and end_time and end_time <= start_time:
+            raise serializers.ValidationError({"end_time": "وقت نهاية الفعالية يجب أن يكون بعد وقت بدايتها."})
         return attrs
 
 
