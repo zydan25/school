@@ -6,7 +6,7 @@ from decimal import Decimal
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
-from django.db.models import F, Q
+from django.db.models import F, Q, Sum
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -1660,7 +1660,7 @@ class PurchaseOrderItemViewSet(TenantModelViewSet):
 
     def _recalculate_order_total(self, order):
         total = order.items.filter(is_archived=False).aggregate(
-            total=models.Sum("total_price"),
+            total=Sum("total_price"),
         )["total"] or Decimal("0.00")
         order.total_amount = total
         order.save(update_fields=["total_amount", "updated_at"])
@@ -1852,6 +1852,15 @@ class AssetDepreciationViewSet(TenantModelViewSet):
 
     def get_queryset(self):
         return super().get_queryset().select_related("asset", "fiscal_year").order_by("-date")
+
+    def update(self, request, *args, **kwargs):
+        raise MethodNotAllowed("PUT", detail="سجل الإهلاك قيد مالي تاريخي غير قابل للتعديل.")
+
+    def partial_update(self, request, *args, **kwargs):
+        raise MethodNotAllowed("PATCH", detail="سجل الإهلاك قيد مالي تاريخي غير قابل للتعديل.")
+
+    def perform_destroy(self, instance):
+        raise ValidationError("لا يمكن أرشفة قيد إهلاك مسجل؛ يجب إنشاء قيد تسوية محاسبي.")
 
     def perform_create(self, serializer):
         school = self.get_school()
