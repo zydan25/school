@@ -9,7 +9,14 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import MembershipRole, SchoolMembership, User
 from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section
-from apps.students.models import Guardian, Student, StudentMovement
+from apps.students.models import (
+    Guardian,
+    GuardianConsent,
+    Student,
+    StudentDocument,
+    StudentGuardianRelation,
+    StudentMovement,
+)
 from apps.students.services import (
     graduate_student,
     link_student_account,
@@ -338,6 +345,204 @@ class StudentIdentityAndLifecycleTests(TestCase):
             format="json",
         )
         self.assertEqual(created_staff.status_code, status.HTTP_201_CREATED)
+
+    def create_linked_guardian(self, phone, *, student=None, relationship_type="father"):
+        from apps.students.services import ensure_guardian_membership
+
+        student = student or self.student
+        user = self.create_verified_user(phone)
+        ensure_guardian_membership(user=user, school=self.school, actor=self.owner)
+        guardian = Guardian.objects.create(
+            school=self.school,
+            user=user,
+            relationship_type=relationship_type,
+        )
+        StudentGuardianRelation.objects.create(
+            school=self.school,
+            student=student,
+            guardian=guardian,
+        )
+        return user, guardian
+
+    def test_private_student_documents_are_uploaded_and_downloaded_only_by_linked_family(self):
+        query = self.authenticate_school_admin()
+        guardian_user, guardian = self.create_linked_guardian("+967770008813")
+        other_user, _other_guardian = self.create_linked_guardian(
+            "+967770008814",
+            student=Student.objects.create(
+                school=self.school,
+                student_id_number="STG3-DOC-OTHER",
+                first_name="طالب",
+                last_name="آخر",
+                academic_year=self.year1,
+                grade_level=self.grade1,
+                section=self.section1,
+            ),
+        )
+
+        visible_upload = SimpleUploadedFile(
+            "birth-certificate.pdf",
+            b"%PDF-1.4 private sample",
+            content_type="application/pdf",
+        )
+        visible_response = self.client.post(
+            f"/api/v1/students/documents/{query}",
+            {
+                "student": str(self.student.pk),
+                "title": "شهادة الميلاد",
+                "document_type": "birth_certificate",
+                "file": visible_upload,
+                "visible_to_guardian": "true",
+            },
+            format="multipart",
+        )
+        self.assertEqual(visible_response.status_code, status.HTTP_201_CREATED)
+        visible_document = StudentDocument.objects.get(pk=visible_response.data["id"])
+        self.assertIn("/documents/", visible_response.data["download_url"])
+        self.assertNotIn("student-documents/", visible_response.data["download_url"])
+
+        private_upload = SimpleUploadedFile(
+            "internal-note.pdf",
+            b"%PDF-1.4 internal only",
+            content_type="application/pdf",
+        )
+        private_response = self.client.post(
+            f"/api/v1/students/documents/{query}",
+            {
+                "student": str(self.student.pk),
+                "title": "وثيقة داخلية",
+                "document_type": "other",
+                "file": private_upload,
+                "visible_to_guardian": "false",
+            },
+            format="multipart",
+        )
+        self.assertEqual(private_response.status_code, status.HTTP_201_CREATED)
+        private_document = StudentDocument.objects.get(pk=private_response.data["id"])
+
+        parent_client = APIClient()
+        parent_client.force_authenticate(user=guardian_user)
+        parent_query = f"?school_code={self.school.code}"
+        visible_list = parent_client.get(
+            f"/api/v1/students/documents/{parent_query}"
+        )
+        self.assertEqual(visible_list.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [item["id"] for item in visible_list.data["results"]],
+            [str(visible_document.pk)],
+        )
+        download = parent_client.get(
+            f"/api/v1/students/documents/{visible_document.pk}/download/{parent_query}"
+        )
+        self.assertEqual(download.status_code, status.HTTP_200_OK)
+        self.assertIn(
+            b"%PDF-1.4 private sample",
+            b"".join(download.streaming_content),
+        )
+        self.assertEqual(
+            parent_client.get(
+                f"/api/v1/students/documents/{private_document.pk}/download/{parent_query}"
+            ).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        outsider_client = APIClient()
+        outsider_client.force_authenticate(user=other_user)
+        outsider_list = outsider_client.get(
+            f"/api/v1/students/documents/{parent_query}"
+        )
+        self.assertEqual(outsider_list.status_code, status.HTTP_200_OK)
+        self.assertEqual(outsider_list.data["results"], [])
+        self.assertEqual(
+            outsider_client.get(
+                f"/api/v1/students/documents/{visible_document.pk}/download/{parent_query}"
+            ).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )
+
+        bad_upload = SimpleUploadedFile(
+            "executable.exe",
+            b"not allowed",
+            content_type="application/octet-stream",
+        )
+        rejected = self.client.post(
+            f"/api/v1/students/documents/{query}",
+            {
+                "student": str(self.student.pk),
+                "title": "ملف غير مسموح",
+                "file": bad_upload,
+            },
+            format="multipart",
+        )
+        self.assertEqual(rejected.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_guardian_consent_is_private_and_only_the_addressed_linked_guardian_can_respond(self):
+        query = self.authenticate_school_admin()
+        guardian_user, guardian = self.create_linked_guardian(
+            "+967770008815", relationship_type="father"
+        )
+        other_guardian_user, _other_guardian = self.create_linked_guardian(
+            "+967770008816", relationship_type="mother"
+        )
+
+        created = self.client.post(
+            f"/api/v1/students/consents/{query}",
+            {
+                "student": str(self.student.pk),
+                "guardian": str(guardian.pk),
+                "consent_type": "trip",
+                "title": "الموافقة على الرحلة المدرسية",
+                "details": "يرجى الموافقة على مشاركة الطالب في الرحلة.",
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        consent = GuardianConsent.objects.get(pk=created.data["id"])
+        self.assertEqual(consent.status, GuardianConsent.Status.PENDING)
+        self.assertEqual(consent.requested_by_id, self.owner.pk)
+
+        guardian_client = APIClient()
+        guardian_client.force_authenticate(user=guardian_user)
+        parent_query = f"?school_code={self.school.code}"
+        listed = guardian_client.get(
+            f"/api/v1/students/consents/{parent_query}"
+        )
+        self.assertEqual(listed.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(listed.data["results"]), 1)
+        self.assertEqual(listed.data["results"][0]["id"], str(consent.pk))
+
+        other_client = APIClient()
+        other_client.force_authenticate(user=other_guardian_user)
+        other_listed = other_client.get(
+            f"/api/v1/students/consents/{parent_query}"
+        )
+        self.assertEqual(other_listed.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_listed.data["results"], [])
+        denied = other_client.post(
+            f"/api/v1/students/consents/{consent.pk}/respond/{parent_query}",
+            {"status": "approved", "response_note": "موافق"},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, status.HTTP_404_NOT_FOUND)
+
+        response = guardian_client.post(
+            f"/api/v1/students/consents/{consent.pk}/respond/{parent_query}",
+            {"status": "approved", "response_note": "أوافق على مشاركة الطالب."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        consent.refresh_from_db()
+        self.assertEqual(consent.status, GuardianConsent.Status.APPROVED)
+        self.assertEqual(consent.responded_by_id, guardian_user.pk)
+        self.assertIsNotNone(consent.responded_at)
+        self.assertEqual(consent.response_note, "أوافق على مشاركة الطالب.")
+
+        repeated = guardian_client.post(
+            f"/api/v1/students/consents/{consent.pk}/respond/{parent_query}",
+            {"status": "rejected"},
+            format="json",
+        )
+        self.assertEqual(repeated.status_code, status.HTTP_409_CONFLICT)
 
     def test_transfer_and_promotion_create_append_only_movements(self):
         transferred = transfer_student(
