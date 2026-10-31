@@ -71,7 +71,7 @@ from apps.api.v1.serializers import (
     FixedAssetSerializer, GradeBookSerializer, GradeLevelSerializer,
     GuardianSerializer, HomeworkSerializer, HomeworkSubmissionSerializer,
     InvitationSerializer, InventoryItemSerializer, JournalEntryCreateSerializer,
-    JournalEntrySerializer, LeaveTypeSerializer,
+    JournalEntrySerializer, JournalEntryUpdateSerializer, LeaveTypeSerializer,
     MembershipRoleSerializer, MembershipSerializer, MessageCreateSerializer,
     NotificationPreferenceSerializer, OnlineExamSerializer, PaymentVoucherSerializer,
     PeriodDefinitionSerializer, PushDeviceSerializer, PurchaseOrderItemSerializer,
@@ -1392,36 +1392,96 @@ class JournalEntryViewSet(TenantModelViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         school = self.get_school()
-        period = get_object_or_404(FiscalPeriod, pk=data["fiscal_period_id"], school=school, is_archived=False)
-        if period.is_closed or period.fiscal_year.is_closed or not (period.start_date <= data["date"] <= period.end_date):
+        period = get_object_or_404(
+            FiscalPeriod, pk=data["fiscal_period_id"],
+            school=school, is_archived=False,
+        )
+        if (
+            period.is_closed or period.fiscal_year.is_closed
+            or not (period.start_date <= data["date"] <= period.end_date)
+        ):
             raise ValidationError("الفترة المالية مغلقة أو تاريخ القيد خارج حدودها.")
-        with transaction.atomic():
-            entry_number = request.data.get("entry_number") or f"MAN-{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
-            entry = JournalEntry.objects.create(
-                school=school, fiscal_period=period, entry_number=entry_number,
-                date=data["date"], description=data["description"],
-                status=JournalEntry.Status.DRAFT, source_module="manual_api",
-                source_reference="",
-            )
-            for item in data["lines"]:
-                account = get_object_or_404(Account, pk=item["account_id"], school=school, is_leaf=True)
-                cost_center = None
-                if item.get("cost_center_id"):
-                    cost_center = get_object_or_404(CostCenter, pk=item["cost_center_id"], school=school)
-                JournalEntryLine.objects.create(
-                    school=school, journal_entry=entry, account=account,
-                    cost_center=cost_center,
-                    debit=Decimal(str(item.get("debit", "0"))),
-                    credit=Decimal(str(item.get("credit", "0"))),
-                    description=item.get("description", ""),
+        entry_number = (
+            request.data.get("entry_number")
+            or f"MAN-{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
+        ).strip()
+        if not entry_number or len(entry_number) > 50:
+            raise ValidationError({"entry_number": "رقم القيد مطلوب وبحد أقصى 50 حرفاً."})
+        try:
+            with transaction.atomic():
+                if JournalEntry.objects.filter(
+                    school=school, entry_number=entry_number, is_archived=False,
+                ).exists():
+                    raise ValidationError({"entry_number": "رقم القيد مستخدم مسبقاً في المدرسة."})
+                entry = JournalEntry.objects.create(
+                    school=school, fiscal_period=period, entry_number=entry_number,
+                    date=data["date"], description=data["description"],
+                    status=JournalEntry.Status.DRAFT, source_module="manual_api",
+                    source_reference="",
                 )
+                self._replace_lines(entry, data["lines"], school)
+        except IntegrityError as exc:
+            raise ValidationError({"entry_number": "رقم القيد مستخدم مسبقاً في المدرسة."}) from exc
         return Response(self.get_serializer(entry).data, status=status.HTTP_201_CREATED)
 
+    def _replace_lines(self, entry, lines, school):
+        entry.lines.all().delete()
+        for item in lines:
+            account = get_object_or_404(
+                Account, pk=item["account_id"], school=school, is_leaf=True,
+                is_archived=False,
+            )
+            cost_center = None
+            if item.get("cost_center_id"):
+                cost_center = get_object_or_404(
+                    CostCenter, pk=item["cost_center_id"],
+                    school=school, is_archived=False,
+                )
+            JournalEntryLine.objects.create(
+                school=school, journal_entry=entry, account=account,
+                cost_center=cost_center,
+                debit=Decimal(str(item.get("debit", "0"))),
+                credit=Decimal(str(item.get("credit", "0"))),
+                description=item.get("description", ""),
+            )
+
     def update(self, request, *args, **kwargs):
-        entry = self.get_object()
-        if entry.status != JournalEntry.Status.DRAFT:
-            raise ValidationError("لا يمكن تعديل قيد مرحّل؛ استخدم قيداً عكسياً.")
-        return super().update(request, *args, **kwargs)
+        partial = kwargs.pop("partial", False)
+        serializer = JournalEntryUpdateSerializer(
+            data=request.data, partial=partial,
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        school = self.get_school()
+        with transaction.atomic():
+            entry = get_object_or_404(
+                JournalEntry.objects.select_for_update(),
+                pk=kwargs.get("pk"), school=school, is_archived=False,
+            )
+            if entry.status != JournalEntry.Status.DRAFT:
+                raise ValidationError("لا يمكن تعديل قيد مرحّل؛ استخدم قيداً عكسياً.")
+
+            new_date = data.get("date", entry.date)
+            period_id = data.get("fiscal_period_id", entry.fiscal_period_id)
+            period = get_object_or_404(
+                FiscalPeriod, pk=period_id, school=school, is_archived=False,
+            )
+            if (
+                period.is_closed or period.fiscal_year.is_closed
+                or not (period.start_date <= new_date <= period.end_date)
+            ):
+                raise ValidationError("الفترة المالية مغلقة أو تاريخ القيد خارج حدودها.")
+
+            if "lines" in data:
+                self._replace_lines(entry, data["lines"], school)
+            entry.date = new_date
+            entry.fiscal_period = period
+            if "description" in data:
+                entry.description = data["description"]
+            entry.save(update_fields=[
+                "date", "fiscal_period", "description", "updated_at",
+            ])
+        return Response(self.get_serializer(entry).data)
 
     def perform_destroy(self, instance):
         if instance.status == JournalEntry.Status.POSTED:
