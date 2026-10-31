@@ -11,10 +11,13 @@ from apps.accounts.models import MembershipRole, SchoolMembership, User
 from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section
 from apps.students.models import Guardian, Student, StudentMovement
 from apps.students.services import (
+    graduate_student,
     link_student_account,
     promote_student,
+    retain_student,
     transfer_student,
     unlink_student_account,
+    withdraw_student,
 )
 from apps.tenants.models import School
 from apps.tenants.services import provision_school
@@ -67,6 +70,10 @@ class StudentIdentityAndLifecycleTests(TestCase):
         cls.section_next = Section.objects.create(
             school=cls.school, academic_year=cls.year2, grade=cls.grade2,
             code="2-A", name="الثاني أ", capacity=20,
+        )
+        cls.section_retain_next = Section.objects.create(
+            school=cls.school, academic_year=cls.year2, grade=cls.grade1,
+            code="1-A-NEXT", name="الأول أ - العام التالي", capacity=20,
         )
         cls.student = Student.objects.create(
             school=cls.school,
@@ -367,6 +374,97 @@ class StudentIdentityAndLifecycleTests(TestCase):
             movement.save()
         with self.assertRaises(Exception):
             movement.delete()
+
+    def test_retention_graduation_and_withdrawal_preserve_annual_history(self):
+        from apps.students.models import StudentEnrollment
+
+        retained_candidate = Student.objects.create(
+            school=self.school,
+            student_id_number="STG3-005",
+            first_name="طالب",
+            last_name="إعادة",
+            academic_year=self.year1,
+            grade_level=self.grade1,
+            section=self.section1,
+        )
+        retained, next_enrollment = retain_student(
+            student=retained_candidate,
+            next_academic_year=self.year2,
+            section=self.section_retain_next,
+            user=self.owner,
+            notes="إعادة قيد بعد نتيجة العام",
+        )
+        self.assertEqual(retained.academic_year_id, self.year2.pk)
+        self.assertEqual(next_enrollment.grade_level_id, self.grade1.pk)
+        previous_enrollment = StudentEnrollment.objects.get(
+            student=retained,
+            academic_year=self.year1,
+        )
+        self.assertEqual(previous_enrollment.status, StudentEnrollment.Status.RETAINED)
+        self.assertEqual(
+            previous_enrollment.final_result,
+            StudentEnrollment.FinalResult.FAILED,
+        )
+        self.assertTrue(StudentMovement.objects.filter(
+            student=retained,
+            movement_type=StudentMovement.MovementType.RETAINED,
+        ).exists())
+
+        graduating_candidate = Student.objects.create(
+            school=self.school,
+            student_id_number="STG3-006",
+            first_name="طالب",
+            last_name="متخرج",
+            academic_year=self.year1,
+            grade_level=self.grade1,
+            section=self.section1,
+        )
+        graduated = graduate_student(
+            student=graduating_candidate,
+            user=self.owner,
+            notes="إتمام المرحلة الدراسية",
+        )
+        self.assertEqual(graduated.status, Student.Status.GRADUATED)
+        graduation_enrollment = StudentEnrollment.objects.get(
+            student=graduated,
+            academic_year=self.year1,
+        )
+        self.assertEqual(
+            graduation_enrollment.status,
+            StudentEnrollment.Status.GRADUATED,
+        )
+        self.assertEqual(
+            graduation_enrollment.final_result,
+            StudentEnrollment.FinalResult.PASSED,
+        )
+
+        withdrawing_candidate = Student.objects.create(
+            school=self.school,
+            student_id_number="STG3-007",
+            first_name="طالب",
+            last_name="منسحب",
+            academic_year=self.year1,
+            grade_level=self.grade1,
+            section=self.section1,
+        )
+        withdrawn = withdraw_student(
+            student=withdrawing_candidate,
+            user=self.owner,
+            reason="انتقال الأسرة إلى منطقة أخرى",
+        )
+        self.assertEqual(withdrawn.status, Student.Status.WITHDRAWN)
+        withdrawal_enrollment = StudentEnrollment.objects.get(
+            student=withdrawn,
+            academic_year=self.year1,
+        )
+        self.assertEqual(
+            withdrawal_enrollment.status,
+            StudentEnrollment.Status.WITHDRAWN,
+        )
+        self.assertTrue(StudentMovement.objects.filter(
+            student=withdrawn,
+            movement_type=StudentMovement.MovementType.WITHDRAWN,
+        ).exists())
 
     def test_student_csv_preview_commit_export_and_atomic_duplicate_protection(self):
         query = self.authenticate_school_admin()
