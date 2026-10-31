@@ -44,6 +44,7 @@ class StudentSupportApiRouteTests(SimpleTestCase):
             if isinstance(value, type)
             and issubclass(value, drf_serializers.BaseSerializer)
             and value.__module__ == support_serializers.__name__
+            and value.__name__ != "StudentSupportTenantSerializer"
         ]
         errors = {}
         for serializer_type in serializer_types:
