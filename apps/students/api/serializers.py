@@ -89,6 +89,18 @@ class StudentSafeDetailSerializer(StudentSafeListSerializer):
         read_only_fields = fields
 
 
+class StudentAdminSafeDetailSerializer(StudentSafeListSerializer):
+    national_id = serializers.CharField(read_only=True)
+    birth_date = serializers.DateField(read_only=True, allow_null=True)
+    enrollment_history = StudentEnrollmentSerializer(many=True, read_only=True)
+
+    class Meta(StudentSafeListSerializer.Meta):
+        fields = StudentSafeListSerializer.Meta.fields + [
+            "national_id", "birth_date", "enrollment_history",
+        ]
+        read_only_fields = fields
+
+
 class StudentDetailSerializer(StudentListSerializer):
     enrollment_history = StudentEnrollmentSerializer(many=True, read_only=True)
 
