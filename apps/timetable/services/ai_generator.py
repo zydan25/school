@@ -6,13 +6,13 @@ apps/timetable/services/ai_generator.py
 from __future__ import annotations
 
 import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from django.db import transaction
 
 from apps.academics.models import AcademicYear, Classroom, Section
 from apps.staff.models import TeacherAssignment
 from apps.timetable.models import ClassSchedule
-
 
 DEFAULT_PERIOD_TIMES = [
     (1, datetime.time(8, 0), datetime.time(8, 45)),
@@ -39,7 +39,7 @@ def generate_school_timetable(
     branch=None,
     dry_run: bool = True,
     clear_existing: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     توليد جدول الحصص الأسبوعي الذكي لكافة شعب المدرسة مع حل القيود برمجياً.
     """

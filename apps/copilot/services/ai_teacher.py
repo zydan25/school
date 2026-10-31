@@ -8,9 +8,10 @@ from __future__ import annotations
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from django.conf import settings
+
 from apps.academics.models import GradeLevel, Subject
 
 
@@ -36,7 +37,7 @@ def generate_lesson_plan(
     grade_level_id: str,
     duration_minutes: int = 45,
     additional_notes: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     توليد خطة درس نموذجية مطابقة للمعايير التربوية الوزارية.
     """
@@ -97,7 +98,7 @@ def generate_quiz(
     num_questions: int = 5,
     question_type: str = "mcq",
     difficulty: str = "medium",
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     توليد بنك أسئلة واختبار قصير بصيغة JSON مهيكلة مع الإجابة النموذجية وتفسيرها.
     question_type: 'mcq' (اختيار من متعدد), 'true_false' (صح وخطأ), 'essay' (مقالي).
@@ -167,7 +168,7 @@ def auto_grade_essay(
     grading_rubric: str,
     max_score: float = 10.0,
     model_answer: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     تصحيح آلي للمقالات وإجابات الطلاب الإنشائية استناداً لمعايير التقييم والروبرك.
     """

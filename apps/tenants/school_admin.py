@@ -1,4 +1,5 @@
 from apps.core.admin import AuditedAdminMixin
+
 """Dedicated per-school admin site with mandatory tenant scoping at queryset level."""
 from django.contrib import admin
 from django.contrib.admin.forms import AdminAuthenticationForm
@@ -8,12 +9,25 @@ from django.utils import timezone
 from unfold.admin import ModelAdmin
 from unfold.sites import UnfoldAdminSite
 
-from apps.accounts.models import MembershipRole, SchoolInvitation, SchoolMembership, SchoolRole, User
-from apps.accounts.services import has_school_permission, is_platform_operator
 from apps.academics.models import (
-    AcademicTerm, AcademicYear, Classroom, EducationalStage, GradeLevel,
-    PeriodDefinition, SchoolWorkingDay, Section, Subject,
+    AcademicTerm,
+    AcademicYear,
+    Classroom,
+    EducationalStage,
+    GradeLevel,
+    PeriodDefinition,
+    SchoolWorkingDay,
+    Section,
+    Subject,
 )
+from apps.accounts.models import (
+    MembershipRole,
+    SchoolInvitation,
+    SchoolMembership,
+    SchoolRole,
+    User,
+)
+from apps.accounts.services import has_school_permission, is_platform_operator
 from apps.notifications.models import Notification, NotificationPreference, NotificationTemplate
 from apps.tenants.models import Branch, School
 
@@ -307,23 +321,29 @@ class SchoolInvitationAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # New Operational Modules Registered in School Admin
 # -----------------------------------------------------------------------------
+from apps.assessments.models import AssessmentType, GradeBook
+from apps.assignments.models import Homework, HomeworkSubmission
+from apps.copilot.models import AIChatSession, CurriculumDocument
 from apps.staff.models import (
-    StaffMember, Teacher, TeacherAssignment,
-    Department, WorkShift, LeaveType, LeaveRequest, StaffAttendance,
+    Department,
+    LeaveRequest,
+    LeaveType,
+    StaffAttendance,
+    StaffMember,
+    Teacher,
+    TeacherAssignment,
+    WorkShift,
 )
 from apps.students.models import (
     AdministrativeSummon,
     Guardian,
     SchoolComplaint,
     Student,
+    StudentEnrollment,
     StudentGuardianRelation,
     StudentIncidentReport,
-    StudentEnrollment,
 )
 from apps.timetable.models import ClassSchedule, DailyLessonLog
-from apps.assignments.models import Homework, HomeworkSubmission
-from apps.assessments.models import AssessmentType, GradeBook
-from apps.copilot.models import CurriculumDocument, AIChatSession
 
 
 @admin.register(StaffMember, site=school_admin_site)
@@ -539,9 +559,9 @@ class SchoolAIChatSessionAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # Attendance, Student Fees & Accounting in School Admin
 # -----------------------------------------------------------------------------
+from apps.accounting.models import Account, CostCenter, FiscalYear, JournalEntry
 from apps.attendance.models import DailyAttendance, PeriodAttendance
-from apps.student_fees.models import FeeCategory, FeeStructure, StudentInvoice, PaymentReceipt
-from apps.accounting.models import FiscalYear, Account, CostCenter, JournalEntry
+from apps.student_fees.models import FeeCategory, FeeStructure, PaymentReceipt, StudentInvoice
 
 
 @admin.register(DailyAttendance, site=school_admin_site)
@@ -709,7 +729,7 @@ class SchoolPayslipAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # Fixed Assets in School Admin
 # -----------------------------------------------------------------------------
-from apps.assets.models import AssetCategory, FixedAsset, AssetDepreciationEntry
+from apps.assets.models import AssetCategory, AssetDepreciationEntry, FixedAsset
 
 
 @admin.register(AssetCategory, site=school_admin_site)
@@ -740,7 +760,7 @@ class SchoolAssetDepreciationEntryAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # Procurement & Inventory in School Admin
 # -----------------------------------------------------------------------------
-from apps.inventory.models import Supplier, Warehouse, InventoryItem, StockMovement, PurchaseOrder
+from apps.inventory.models import InventoryItem, PurchaseOrder, StockMovement, Supplier, Warehouse
 
 
 @admin.register(Supplier, site=school_admin_site)
@@ -903,8 +923,8 @@ class SchoolBookRequisitionItemAdmin(SchoolScopedAdmin):
 # Fee Installment Plans in School Admin
 # -----------------------------------------------------------------------------
 from apps.student_fees.models import (
-    FeeInstallmentPlan,
     FeeInstallment,
+    FeeInstallmentPlan,
     PaymentAllocation,
     StudentCreditTransaction,
 )

@@ -1,7 +1,6 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
-from apps.core.admin import AuditedAdminMixin
 from apps.assessments.models import (
     AssessmentType,
     ExamCommittee,
@@ -11,6 +10,7 @@ from apps.assessments.models import (
     QuestionBank,
     StudentOnlineExamSubmission,
 )
+from apps.core.admin import AuditedAdminMixin
 
 
 @admin.register(AssessmentType)

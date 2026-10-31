@@ -1,7 +1,6 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
-from apps.core.admin import AuditedAdminMixin
 from apps.accounting.models import (
     Account,
     CostCenter,
@@ -13,6 +12,7 @@ from apps.accounting.models import (
     PaymentVoucher,
     ReceiptVoucher,
 )
+from apps.core.admin import AuditedAdminMixin
 
 
 class FiscalPeriodInline(TabularInline):

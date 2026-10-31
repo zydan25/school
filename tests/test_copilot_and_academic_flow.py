@@ -1,20 +1,18 @@
 from datetime import date, time
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
-from apps.accounts.models import SchoolMembership, User
 from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section, Subject
-from apps.staff.models import Teacher, TeacherAssignment
-from apps.students.models import Student
-from apps.tenants.models import School
-from apps.timetable.models import ClassSchedule
-from apps.assignments.models import Homework
+from apps.accounts.models import User
 from apps.assessments.models import GradeBook
 from apps.copilot.services.ai_student import (
     fetch_academic_grades,
-    fetch_pending_homework,
-    fetch_today_lessons,
 )
+from apps.staff.models import Teacher
+from apps.students.models import Student
+from apps.tenants.models import School
+from apps.timetable.models import ClassSchedule
 
 
 class CopilotAndAcademicFlowTests(TestCase):

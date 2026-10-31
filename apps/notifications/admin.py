@@ -1,8 +1,9 @@
-from apps.core.admin import AuditedAdminMixin
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
+from apps.core.admin import AuditedAdminMixin
 from apps.notifications.models import (
+    InboundWebhookMessage,
     Notification,
     NotificationPreference,
     NotificationTemplate,
@@ -48,6 +49,15 @@ class SchoolMessagingGatewayAdmin(AuditedAdminMixin, ModelAdmin):
     list_display = ("name", "school", "channel", "provider", "sender_id", "auto_ai_reply", "is_active")
     list_filter = ("channel", "provider", "auto_ai_reply", "is_active", "school")
     search_fields = ("name", "sender_id", "api_endpoint_url", "school__name")
+    autocomplete_fields = ("school",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(InboundWebhookMessage)
+class InboundWebhookMessageAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("provider_msg_id", "school", "sender_phone", "processed", "received_at", "created_at")
+    list_filter = ("processed", "school", "created_at")
+    search_fields = ("provider_msg_id", "sender_phone", "school__name")
     autocomplete_fields = ("school",)
     readonly_fields = ("id", "created_at", "updated_at")
 

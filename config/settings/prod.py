@@ -1,5 +1,6 @@
 """Production settings. All secrets and hosts must come from the environment."""
 import os
+
 from .base import *  # noqa: F403
 
 DEBUG = False

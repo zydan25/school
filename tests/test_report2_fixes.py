@@ -10,47 +10,49 @@ Comprehensive verification tests for all phases of chatgptreport2.txt:
 7. User In-App Notifications API
 8. Strict Multi-Tenant Isolation in Reports (No arbitrary platform fallback)
 """
-from datetime import date, time
+from datetime import date
 from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
 from rest_framework import status
 from rest_framework.authtoken.models import Token
+from rest_framework.test import APIClient
 
-from apps.accounts.models import User, SchoolRole, SchoolMembership
-from apps.academics.models import AcademicYear, AcademicTerm, EducationalStage, GradeLevel, Section, Subject
-from apps.staff.models import Teacher, StaffMember, Department, WorkShift, LeaveType, LeaveRequest, StaffAttendance
+from apps.academics.models import AcademicTerm, AcademicYear, EducationalStage, GradeLevel, Section
+from apps.accounting.models import (
+    Account,
+    FiscalPeriod,
+    FiscalYear,
+    JournalEntry,
+    JournalEntryLine,
+    PaymentVoucher,
+)
+from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
+from apps.accounts.models import User
+from apps.inventory.models import InventoryItem, Warehouse
+from apps.notifications.models import Notification
+from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRun
+from apps.payroll.services import (
+    approve_payroll_run,
+    disburse_payroll_run,
+    generate_monthly_payroll,
+    post_payroll_to_accounting,
+)
+from apps.school_services.models import StudentBookDistribution
+from apps.staff.models import StaffMember
+from apps.student_fees.models import (
+    FeeCategory,
+    PaymentReceipt,
+    StudentCreditTransaction,
+    StudentInvoice,
+    StudentInvoiceItem,
+    apply_credit_balance_to_invoice,
+)
 from apps.students.models import Student, StudentEnrollment
 from apps.tenants.models import School
 from apps.tenants.services import provision_school
-
-from apps.accounting.models import Account, FiscalYear, FiscalPeriod, JournalEntry, JournalEntryLine, PaymentVoucher
-from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
-from apps.accounting.services.auto_posting import (
-    post_student_invoice_to_journal,
-    post_student_receipt_to_journal,
-)
-from apps.student_fees.models import (
-    FeeCategory,
-    StudentInvoice,
-    StudentInvoiceItem,
-    PaymentReceipt,
-    PaymentAllocation,
-    StudentCreditTransaction,
-    apply_credit_balance_to_invoice,
-)
-from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRun, Payslip
-from apps.payroll.services import (
-    generate_monthly_payroll,
-    approve_payroll_run,
-    post_payroll_to_accounting,
-    disburse_payroll_run,
-)
-from apps.inventory.models import Warehouse, InventoryItem
-from apps.school_services.models import StudentBookDistribution
-from apps.notifications.models import Notification
 
 
 class Report2AuditFixesTests(TestCase):

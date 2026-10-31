@@ -7,9 +7,9 @@ from apps.students.models import (
     Guardian,
     SchoolComplaint,
     Student,
+    StudentEnrollment,
     StudentGuardianRelation,
     StudentIncidentReport,
-    StudentEnrollment,
 )
 
 

@@ -201,3 +201,32 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
     def __str__(self):
         owner = self.school.name if self.school else "المنصة المركزية"
         return f"{self.name} ({self.get_channel_display()}) - {owner}"
+
+
+class InboundWebhookMessage(UUIDTimestampedModel):
+    """سجل وتوثيق دائم للرسائل الواردة عبر Webhook لمنع التكرار وضمان عدم المعالجة المزدوجة."""
+    school = models.ForeignKey(
+        "tenants.School",
+        verbose_name="المدرسة",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="inbound_webhook_messages",
+    )
+    provider_msg_id = models.CharField("معرف الرسالة من المزود", max_length=255, db_index=True)
+    sender_phone = models.CharField("رقم المرسل", max_length=50)
+    received_at = models.DateTimeField("تاريخ ووقت الاستقبال", default=timezone.now)
+    processed = models.BooleanField("تمت المعالجة", default=True)
+
+    class Meta:
+        verbose_name = "رسالة ويب هوك واردة"
+        verbose_name_plural = "سجل رسائل الويب هوك الواردة"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "provider_msg_id"],
+                name="notifications_inbound_msg_school_uniq",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.sender_phone}: {self.provider_msg_id}"

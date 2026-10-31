@@ -9,31 +9,61 @@
 """
 from datetime import date
 from decimal import Decimal
+
 from django.test import TestCase
 
+from apps.academics.models import (
+    AcademicTerm,
+    AcademicYear,
+    EducationalStage,
+    GradeLevel,
+    Section,
+    Subject,
+)
+from apps.accounting.models import (
+    Account,
+    PaymentVoucher,
+    ReceiptVoucher,
+)
+from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
+from apps.accounting.services.financial_reports import (
+    get_balance_sheet,
+    get_income_statement,
+)
 from apps.accounts.models import User
-from apps.academics.models import AcademicTerm, AcademicYear, EducationalStage, GradeLevel, Section, Subject
+from apps.assessments.models import ExamCommittee, ExamSeating, GradeBook
+from apps.assets.models import AssetCategory, FixedAsset
+from apps.inventory.models import InventoryItem, StockMovement, Supplier, Warehouse
+from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance
+from apps.payroll.services import generate_monthly_payroll
+from apps.reports.selectors.academic_reports import (
+    get_class_ranking_report,
+    get_student_report_card,
+)
+from apps.reports.selectors.financial_reports import (
+    get_aging_receivables_report,
+    get_student_statement_of_account,
+)
+from apps.reports.selectors.hr_reports import (
+    get_teacher_workload_report,
+)
+from apps.school_services.models import (
+    BookLoan,
+    BusRoute,
+    ClinicVisit,
+    LibraryBook,
+    StudentBusSubscription,
+    StudentHealthProfile,
+)
 from apps.staff.models import Teacher
+from apps.student_fees.models import (
+    FeeInstallment,
+    FeeInstallmentPlan,
+    PaymentReceipt,
+    StudentInvoice,
+)
 from apps.students.models import Student
 from apps.tenants.models import School
-
-from apps.accounting.models import Account, FiscalYear, PaymentVoucher, ReceiptVoucher, ExpenseCategory
-from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
-from apps.accounting.services.financial_reports import get_income_statement, get_balance_sheet, get_trial_balance
-
-from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRun, Payslip
-from apps.payroll.services import generate_monthly_payroll, post_payroll_to_accounting
-
-from apps.assets.models import AssetCategory, FixedAsset, AssetDepreciationEntry
-from apps.inventory.models import Supplier, Warehouse, InventoryItem, StockMovement, PurchaseOrder
-from apps.school_services.models import BusRoute, StudentBusSubscription, LibraryBook, BookLoan, StudentHealthProfile, ClinicVisit
-from apps.student_fees.models import FeeCategory, StudentInvoice, PaymentReceipt, FeeInstallmentPlan, FeeInstallment
-from apps.assessments.models import AssessmentType, GradeBook, ExamCommittee, ExamSeating
-
-from apps.reports.selectors.financial_reports import get_student_statement_of_account, get_aging_receivables_report, get_daily_cash_register_report
-from apps.reports.selectors.academic_reports import get_student_report_card, get_class_ranking_report, get_subject_grade_distribution
-from apps.reports.selectors.attendance_reports import get_section_attendance_summary, get_chronic_absenteeism_report
-from apps.reports.selectors.hr_reports import get_teacher_workload_report, get_payroll_summary_report
 
 
 class ExtendedModulesTests(TestCase):
@@ -393,9 +423,11 @@ class ExtendedModulesTests(TestCase):
 
     def test_auto_posting_double_entry_integration(self):
         """التحقق من الترحيل الآلي المزدوج الشامل (Onyx Pro Integration)."""
-        from apps.accounting.services.auto_posting import post_student_receipt_to_journal, post_payment_voucher_to_journal
-        from apps.student_fees.models import PaymentReceipt
         from apps.accounting.models import Account, PaymentVoucher
+        from apps.accounting.services.auto_posting import (
+            post_payment_voucher_to_journal,
+            post_student_receipt_to_journal,
+        )
 
         seed_default_chart_of_accounts(self.school)
 
@@ -433,8 +465,8 @@ class ExtendedModulesTests(TestCase):
 
     def test_whatsapp_gateway_and_ai_auto_reply(self):
         """التحقق من بوابة الواتساب والرد الآلي الذكي لكل مدرسة."""
-        from apps.notifications.models import SchoolMessagingGateway
         from apps.notifications.api.views import _generate_school_ai_reply
+        from apps.notifications.models import SchoolMessagingGateway
 
         gateway = SchoolMessagingGateway.objects.create(
             school=self.school,
@@ -481,7 +513,12 @@ class ExtendedModulesTests(TestCase):
 
     def test_bus_financial_settlement_and_book_distribution(self):
         """التحقق من التسوية المالية للباصات ومستحقات السائق وتوزيع الكتب المدرسية."""
-        from apps.school_services.models import BusRoute, StudentBusSubscription, BusFinancialSettlement, StudentBookDistribution
+        from apps.school_services.models import (
+            BusFinancialSettlement,
+            BusRoute,
+            StudentBookDistribution,
+            StudentBusSubscription,
+        )
 
         bus = BusRoute.objects.create(
             school=self.school,
@@ -534,9 +571,9 @@ class ExtendedModulesTests(TestCase):
 
     def test_journal_reversal_and_auto_allocation(self):
         """التحقق من عكس القيود المحاسبية وتخصيص الدفعات التلقائي على الفواتير."""
-        from apps.accounting.services.auto_posting import reverse_journal_entry
         from apps.accounting.models import JournalEntry
-        from apps.student_fees.models import StudentInvoice, PaymentReceipt
+        from apps.accounting.services.auto_posting import reverse_journal_entry
+        from apps.student_fees.models import StudentInvoice
 
         # 1. Test Journal Reversal
         entry = JournalEntry.objects.filter(school=self.school, status=JournalEntry.Status.POSTED).first()
@@ -573,7 +610,8 @@ class ExtendedModulesTests(TestCase):
     def test_security_copilot_and_reports_access_control(self):
         """التحقق الأمني من منع تسريب بيانات الطلاب ومنع غير المصرح لهم من رؤية التقارير المالية."""
         from rest_framework.test import APIClient
-        from apps.accounts.models import User, SchoolMembership
+
+        from apps.accounts.models import SchoolMembership, User
 
         unauth_user = User.objects.create_user(
             phone="770000002",
@@ -629,7 +667,14 @@ class ExtendedModulesTests(TestCase):
     def test_incident_summon_complaint_workflow(self):
         """التحقق من تقارير الوقائع السلوكية والاستدعاء الإداري وصندوق الشكاوى."""
         from django.utils import timezone
-        from apps.students.models import AdministrativeSummon, Guardian, SchoolComplaint, StudentGuardianRelation, StudentIncidentReport
+
+        from apps.students.models import (
+            AdministrativeSummon,
+            Guardian,
+            SchoolComplaint,
+            StudentGuardianRelation,
+            StudentIncidentReport,
+        )
 
         guardian_user = User.objects.create_user(
             phone="+967777444102",
@@ -712,6 +757,7 @@ class ExtendedModulesTests(TestCase):
     def test_question_bank_and_online_exam_auto_grading(self):
         """التحقق من بنك الأسئلة، وإنشاء الاختبار الإلكتروني والتصحيح التلقائي."""
         from django.utils import timezone
+
         from apps.assessments.models import OnlineExam, QuestionBank, StudentOnlineExamSubmission
 
         q1 = QuestionBank.objects.create(

@@ -1,8 +1,16 @@
-from apps.core.admin import AuditedAdminMixin
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
-from apps.platform.models import Feature, Plan, PlanFeature, PlatformInvoice, PlatformPayment, SchoolFeatureOverride, Subscription
+from apps.core.admin import AuditedAdminMixin
+from apps.platform.models import (
+    Feature,
+    Plan,
+    PlanFeature,
+    PlatformInvoice,
+    PlatformPayment,
+    SchoolFeatureOverride,
+    Subscription,
+)
 
 
 class PlanFeatureInline(TabularInline):

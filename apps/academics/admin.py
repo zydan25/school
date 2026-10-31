@@ -1,11 +1,18 @@
-from apps.core.admin import AuditedAdminMixin
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
 from apps.academics.models import (
-    AcademicTerm, AcademicYear, Classroom, EducationalStage, GradeLevel,
-    PeriodDefinition, SchoolWorkingDay, Section, Subject,
+    AcademicTerm,
+    AcademicYear,
+    Classroom,
+    EducationalStage,
+    GradeLevel,
+    PeriodDefinition,
+    SchoolWorkingDay,
+    Section,
+    Subject,
 )
+from apps.core.admin import AuditedAdminMixin
 
 
 class AcademicTermInline(TabularInline):

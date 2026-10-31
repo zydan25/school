@@ -2,19 +2,29 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any, Dict, List
-from django.db.models import Sum, Q
+from typing import Any
+
+from django.db.models import Sum
 from django.utils import timezone
 
-from apps.students.models import Student
-from apps.student_fees.models import StudentInvoice, PaymentReceipt, FeeInstallment
 from apps.accounting.models import PaymentVoucher, ReceiptVoucher
+from apps.student_fees.models import FeeInstallment, PaymentReceipt, StudentInvoice
+from apps.students.models import Student
 
 
-def get_student_statement_of_account(student: Student) -> Dict[str, Any]:
-    """توليد كشف حساب تفصيلي للطالب يوضح كافة المطالبات، الأقساط، والسندات المسددة."""
-    invoices = StudentInvoice.objects.filter(student=student, is_archived=False).order_by("issue_date")
-    receipts = PaymentReceipt.objects.filter(student=student, is_archived=False).order_by("paid_at")
+def get_student_statement_of_account(student: Student) -> dict[str, Any]:
+    """توليد كشف حساب تفصيلي للطالب يوضح كافة المطالبات، الأقساط، والسندات المسددة باستبعاد السندات والفواتير الملغاة."""
+    invoices = StudentInvoice.objects.filter(
+        student=student,
+        is_archived=False,
+    ).exclude(status=StudentInvoice.Status.CANCELLED).order_by("issue_date")
+
+    receipts = PaymentReceipt.objects.filter(
+        student=student,
+        is_archived=False,
+        is_cancelled=False,
+    ).order_by("paid_at")
+
     installments = FeeInstallment.objects.filter(plan__student=student, is_archived=False).order_by("due_date")
 
     invoice_list = []
@@ -81,6 +91,8 @@ def get_student_statement_of_account(student: Student) -> Dict[str, Any]:
             "net_payable": float(net_payable),
             "total_paid": float(total_paid),
             "outstanding_balance": float(outstanding_balance),
+            "credit_balance": float(student.credit_balance),
+            "net_balance_due": float(max(Decimal("0.00"), outstanding_balance - student.credit_balance)),
             "has_overdue": any(inv.status != StudentInvoice.Status.PAID and inv.due_date < timezone.localdate() for inv in invoices),
         },
         "invoices": invoice_list,
@@ -89,13 +101,13 @@ def get_student_statement_of_account(student: Student) -> Dict[str, Any]:
     }
 
 
-def get_aging_receivables_report(school) -> Dict[str, Any]:
+def get_aging_receivables_report(school) -> dict[str, Any]:
     """تقرير أعمار الديون والذمم المدينة للرسوم المدرسية (Aging of Receivables)."""
     today = timezone.localdate()
     invoices = StudentInvoice.objects.filter(
         school=school,
         is_archived=False,
-    ).exclude(status=StudentInvoice.Status.PAID).select_related("student")
+    ).exclude(status__in=[StudentInvoice.Status.PAID, StudentInvoice.Status.CANCELLED]).select_related("student")
 
     buckets = {
         "current": Decimal("0.00"),     # لم تستحق بعد
@@ -105,7 +117,7 @@ def get_aging_receivables_report(school) -> Dict[str, Any]:
         "over_90": Decimal("0.00"),     # متأخرة أكثر من 90 يوماً
     }
 
-    student_aging: Dict[str, Dict[str, Any]] = {}
+    student_aging: dict[str, dict[str, Any]] = {}
 
     for inv in invoices:
         balance = inv.remaining_amount
@@ -170,7 +182,7 @@ def get_aging_receivables_report(school) -> Dict[str, Any]:
     }
 
 
-def get_daily_cash_register_report(school, target_date=None) -> Dict[str, Any]:
+def get_daily_cash_register_report(school, target_date=None) -> dict[str, Any]:
     """تقرير اليومية وحركة الصناديق والمقبوضات والمصروفات النقدية والبنكية."""
     if target_date is None:
         target_date = timezone.localdate()
@@ -178,6 +190,7 @@ def get_daily_cash_register_report(school, target_date=None) -> Dict[str, Any]:
     student_receipts = PaymentReceipt.objects.filter(
         school=school,
         is_archived=False,
+        is_cancelled=False,
         paid_at__date=target_date,
     ).select_related("student")
 
@@ -246,7 +259,7 @@ def get_daily_cash_register_report(school, target_date=None) -> Dict[str, Any]:
     }
 
 
-def get_billing_ledger_reconciliation_report(school) -> Dict[str, Any]:
+def get_billing_ledger_reconciliation_report(school) -> dict[str, Any]:
     """
     تقرير المطابقة الدورية الشامل بين سجلات الفواتير والتحصيل التشغيلية ودفتر الأستاذ العام (حساب 1104).
     """

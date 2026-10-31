@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -228,6 +229,41 @@ class JournalEntry(TenantOwnedModel):
             raise ValidationError("لا يمكن حذف قيد محاسبي مرحّل نهائياً؛ يرجى إنشاء قيد عكسي لإلغاء أثره المالي.")
         return super().delete(*args, **kwargs)
 
+    def post(self, user=None):
+        """
+        التحقق الصارم وترحيل القيد اليومي نهائياً إلى دفتر الأستاذ العام.
+        يتحقق من توازن المدين والدائن، وتطابق المدرسة مع أسطر القيد وحسابات الدليل،
+        وحالة الفترة المحاسبية.
+        """
+        if self.status == self.Status.POSTED:
+            raise ValidationError("القيد مرحّل مسبقاً.")
+        if self.fiscal_period and self.fiscal_period.is_closed:
+            raise ValidationError("لا يمكن ترحيل القيد على فترة محاسبية مقفلة.")
+        if self.fiscal_period and self.fiscal_period.fiscal_year.is_closed:
+            raise ValidationError("السنة المالية التابعة لها هذه الفترة مقفلة.")
+
+        lines = list(self.lines.all())
+        if not lines:
+            raise ValidationError("لا يمكن ترحيل قيد محاسبي بدون أسطر تفصيلية.")
+        total_debit = sum(line.debit for line in lines)
+        total_credit = sum(line.credit for line in lines)
+        if total_debit != total_credit:
+            raise ValidationError(f"القيد غير متوازن: إجمالي المدين ({total_debit}) لا يساوي إجمالي الدائن ({total_credit}).")
+        if total_debit <= Decimal("0.00"):
+            raise ValidationError("يجب أن يحتوي القيد على مبالغ محاسبية أكبر من الصفر.")
+        for line in lines:
+            if line.school_id != self.school_id or line.account.school_id != self.school_id:
+                raise ValidationError("عدم تطابق المدرسة: يجب أن تتبع كافة أسطر القيد وحساباتها نفس مدرسة القيد.")
+            if line.cost_center and line.cost_center.school_id != self.school_id:
+                raise ValidationError("مركز التكلفة المحدد في سطر القيد لا يتبع نفس المدرسة.")
+
+        self.status = self.Status.POSTED
+        self.posted_at = timezone.now()
+        if user:
+            self.posted_by = user
+        self.save(update_fields=["status", "posted_at", "posted_by", "updated_at"])
+        return self
+
 
 class JournalEntryLine(TenantOwnedModel):
     """أسطر وأطراف القيد اليومي (المدين والدائن)."""
@@ -264,10 +300,13 @@ class JournalEntryLine(TenantOwnedModel):
 
     def clean(self):
         super().clean()
-        if not self.account.is_leaf:
-            raise ValidationError({"account": "لا يمكن الترحيل على حساب رئيسي تجميعي؛ يرجى اختيار حساب تفصيلي."})
-        if self.account.school_id != self.school_id:
-            raise ValidationError({"account": "الحساب المالي لا يتبع نفس المدرسة."})
+        if self.journal_entry_id and self.journal_entry.school_id != self.school_id:
+            raise ValidationError({"journal_entry": "القيد المحاسبي لا يتبع نفس المدرسة."})
+        if self.account_id:
+            if not self.account.is_leaf:
+                raise ValidationError({"account": "لا يمكن الترحيل على حساب رئيسي تجميعي؛ يرجى اختيار حساب تفصيلي."})
+            if self.account.school_id != self.school_id:
+                raise ValidationError({"account": "الحساب المالي لا يتبع نفس المدرسة."})
         if self.cost_center_id and self.cost_center.school_id != self.school_id:
             raise ValidationError({"cost_center": "مركز التكلفة لا يتبع نفس المدرسة."})
         if self.debit < 0 or self.credit < 0:
@@ -278,21 +317,35 @@ class JournalEntryLine(TenantOwnedModel):
             raise ValidationError("يجب إدخال مبلغ مدين أو دائن أكبر من الصفر في سطر القيد.")
 
     def save(self, *args, **kwargs):
-        if self.pk:
-            orig = JournalEntryLine.objects.filter(pk=self.pk).select_related("journal_entry").first()
-            if orig and orig.journal_entry and orig.journal_entry.status == JournalEntry.Status.POSTED:
-                if (
-                    orig.account_id != self.account_id or
-                    orig.debit != self.debit or
-                    orig.credit != self.credit or
-                    orig.cost_center_id != self.cost_center_id or
-                    orig.journal_entry_id != self.journal_entry_id
-                ):
-                    raise ValidationError("لا يمكن تعديل المبالغ أو الحسابات في سطر تابع لقيد محاسبي مرحّل.")
+        entry = self.journal_entry if hasattr(self, "journal_entry") else JournalEntry.objects.filter(pk=self.journal_entry_id).first()
+        is_new = self._state.adding or not JournalEntryLine.objects.filter(pk=self.pk).exists()
+        if entry:
+            if is_new and entry.status == JournalEntry.Status.POSTED:
+                raise ValidationError("لا يمكن إضافة سطر جديد إلى قيد محاسبي مرحّل نهائياً؛ التعديل يتم عبر قيد عكسي فقط.")
+            if not is_new:
+                orig = JournalEntryLine.objects.filter(pk=self.pk).select_related("journal_entry").first()
+                if orig and orig.journal_entry and orig.journal_entry.status == JournalEntry.Status.POSTED:
+                    if (
+                        orig.account_id != self.account_id or
+                        orig.debit != self.debit or
+                        orig.credit != self.credit or
+                        orig.cost_center_id != self.cost_center_id or
+                        orig.journal_entry_id != self.journal_entry_id
+                    ):
+                        raise ValidationError("لا يمكن تعديل المبالغ أو الحسابات في سطر تابع لقيد محاسبي مرحّل.")
+            if entry.school_id != self.school_id:
+                raise ValidationError("القيد المحاسبي لا يتبع نفس مدرسة السطر المحاسبي.")
+
+        if self.account_id and self.account.school_id != self.school_id:
+            raise ValidationError("الحساب المالي لا يتبع نفس مدرسة السطر المحاسبي.")
+        if self.cost_center_id and self.cost_center.school_id != self.school_id:
+            raise ValidationError("مركز التكلفة لا يتبع نفس مدرسة السطر المحاسبي.")
+
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        if self.journal_entry and self.journal_entry.status == JournalEntry.Status.POSTED:
+        entry = self.journal_entry if hasattr(self, "journal_entry") else JournalEntry.objects.filter(pk=self.journal_entry_id).first()
+        if entry and entry.status == JournalEntry.Status.POSTED:
             raise ValidationError("لا يمكن حذف سطر من قيد محاسبي مرحّل.")
         return super().delete(*args, **kwargs)
 

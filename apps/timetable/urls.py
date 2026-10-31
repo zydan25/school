@@ -1,5 +1,6 @@
 """Timetable URL configuration."""
 from django.urls import path
+
 from apps.timetable.views import AITimetableGeneratorAPIView
 
 app_name = "timetable"

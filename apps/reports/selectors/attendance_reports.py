@@ -1,16 +1,16 @@
 """Attendance rates, section statistics, and chronic absence alert selectors."""
 from __future__ import annotations
 
-from typing import Any, Dict, List
-from django.db.models import Count, Q
-from django.utils import timezone
+from typing import Any
 
-from apps.students.models import Student
+from django.db.models import Count, Q
+
 from apps.academics.models import Section
 from apps.attendance.models import DailyAttendance
+from apps.students.models import Student
 
 
-def get_section_attendance_summary(section: Section, start_date=None, end_date=None) -> Dict[str, Any]:
+def get_section_attendance_summary(section: Section, start_date=None, end_date=None) -> dict[str, Any]:
     """ملخص نسب الحضور والغياب والتأخير لشعبة دراسية خلال فترة زمنية."""
     query = DailyAttendance.objects.filter(
         student__section=section,
@@ -62,7 +62,7 @@ def get_section_attendance_summary(section: Section, start_date=None, end_date=N
     }
 
 
-def get_chronic_absenteeism_report(school, threshold: int = 5) -> Dict[str, Any]:
+def get_chronic_absenteeism_report(school, threshold: int = 5) -> dict[str, Any]:
     """تقرير الطلاب المتغيبين غياباً متكرراً يعرضهم للإنذار أو الحرمان الأكاديمي."""
     students = Student.objects.filter(
         school=school,

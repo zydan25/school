@@ -12,51 +12,47 @@ Phase 4: Permissions hardening (cashier excluded from general ledger & statement
 Phase 5: DRF Bearer or Token Authentication & OpenAPI Schema endpoint.
 Phase 6: Subsystem hardening (book distribution quantity, bus financial settlement strict account 5205, library concurrency).
 """
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.utils import timezone
-from rest_framework.test import APIClient
 from rest_framework import status
 from rest_framework.authtoken.models import Token
+from rest_framework.test import APIClient
 
-from apps.accounts.models import User, SchoolRole, SchoolMembership, MembershipRole
-from apps.academics.models import AcademicYear, AcademicTerm, EducationalStage, GradeLevel, Section, Subject
-from apps.staff.models import Teacher, StaffMember, StaffAttendance
-from apps.students.models import Student
-from apps.tenants.models import School
-from apps.tenants.services import provision_school
-
-from apps.accounting.models import Account, FiscalYear, FiscalPeriod, JournalEntry, JournalEntryLine
+from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section
+from apps.accounting.models import Account, FiscalPeriod, FiscalYear, JournalEntry, JournalEntryLine
 from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
-from apps.accounting.services.auto_posting import (
-    post_student_invoice_to_journal,
-    post_student_receipt_to_journal,
-    post_credit_settlement_to_journal,
+from apps.accounts.models import MembershipRole, SchoolMembership, SchoolRole, User
+from apps.inventory.models import InventoryItem, Warehouse
+from apps.payroll.models import (
+    EmployeeContract,
+    EmployeeLoanAdvance,
+    EmployeeLoanRepayment,
+    PayrollRun,
+)
+from apps.payroll.services import (
+    approve_payroll_run,
+    generate_monthly_payroll,
+    post_payroll_to_accounting,
 )
 from apps.reports.selectors.financial_reports import get_billing_ledger_reconciliation_report
+from apps.school_services.models import StudentBookDistribution
+from apps.staff.models import StaffAttendance, Teacher
 from apps.student_fees.models import (
     FeeCategory,
-    StudentInvoice,
-    StudentInvoiceItem,
-    FeeInstallmentPlan,
     FeeInstallment,
+    FeeInstallmentPlan,
     PaymentReceipt,
-    PaymentAllocation,
-    StudentCreditTransaction,
+    StudentInvoice,
     apply_credit_balance_to_invoice,
     reverse_payment_receipt,
 )
-from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, EmployeeLoanRepayment, PayrollRun, Payslip
-from apps.payroll.services import (
-    generate_monthly_payroll,
-    approve_payroll_run,
-    post_payroll_to_accounting,
-    disburse_payroll_run,
-)
-from apps.inventory.models import Warehouse, InventoryItem
-from apps.school_services.models import StudentBookDistribution, BusRoute, BusFinancialSettlement, LibraryBook, BookLoan
+from apps.students.models import Student
+from apps.tenants.models import School
+from apps.tenants.services import provision_school
 
 
 class TaqrerrFixesVerificationTests(TestCase):
@@ -400,7 +396,7 @@ class TaqrerrFixesVerificationTests(TestCase):
             fiscal_period=self.fiscal_period,
             entry_number="JV-LOCK-01",
             date=date(2026, 10, 15),
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             description="قيد اختباري مقفل",
         )
         line = JournalEntryLine.objects.create(
@@ -411,6 +407,16 @@ class TaqrerrFixesVerificationTests(TestCase):
             credit=Decimal("0.00"),
             description="سطر مقفل",
         )
+        JournalEntryLine.objects.create(
+            school=self.school,
+            journal_entry=entry,
+            account=Account.objects.filter(school=self.school, code="4101", is_leaf=True).first(),
+            debit=Decimal("0.00"),
+            credit=Decimal("500.00"),
+            description="سطر دائن موازن",
+        )
+        entry.post()
+        line.refresh_from_db()
 
         # محاولة تعديل المبلغ بعد الترحيل
         line.debit = Decimal("999.00")
@@ -476,6 +482,7 @@ class TaqrerrFixesVerificationTests(TestCase):
 
         # 4. الترحيل المحاسبي الآن ينجح وينشئ القيد بتاريخ نهاية شهر أكتوبر
         entry = post_payroll_to_accounting(payroll_run)
+        payroll_run.refresh_from_db()
         self.assertEqual(payroll_run.status, PayrollRun.Status.POSTED)
         self.assertEqual(entry.date, date(2026, 10, 31))
 

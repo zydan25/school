@@ -2,7 +2,7 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
-from apps.assets.models import AssetCategory, FixedAsset, AssetDepreciationEntry
+from apps.assets.models import AssetCategory, AssetDepreciationEntry, FixedAsset
 
 
 @admin.register(AssetCategory)

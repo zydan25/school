@@ -246,6 +246,8 @@ def provision_school(school: School, *, actor=None):
         if changed_fields:
             membership.save(update_fields=[*changed_fields, "updated_at"])
         _create_default_roles(school, membership)
+        from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
+        seed_default_chart_of_accounts(school)
         record_event(
             action="school.provisioned", description="تهيئة المدرسة وإنشاء الهيكل الأساسي والصلاحيات الافتراضية",
             actor=actor, school=school, obj=school,

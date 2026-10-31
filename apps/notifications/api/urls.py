@@ -1,10 +1,11 @@
 """URLs for notifications and WhatsApp webhooks."""
 from django.urls import path
+
 from apps.notifications.api.views import (
-    WhatsAppWebhookAPIView,
+    MarkNotificationReadAPIView,
     SchoolWhatsAppWebhookAPIView,
     UserNotificationsAPIView,
-    MarkNotificationReadAPIView,
+    WhatsAppWebhookAPIView,
 )
 
 app_name = "notifications_api"

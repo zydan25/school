@@ -10,16 +10,22 @@ import hashlib
 import json
 import logging
 import urllib.request
+
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.shortcuts import get_object_or_404
-from django.utils import timezone
 
-from apps.tenants.models import School
-from apps.students.models import Student, Guardian
+from apps.copilot.services.ai_student import (
+    fetch_academic_grades,
+    fetch_pending_homework,
+    fetch_today_lessons,
+)
 from apps.notifications.models import Notification, SchoolMessagingGateway
-from apps.copilot.services.ai_student import fetch_today_lessons, fetch_pending_homework, fetch_academic_grades
+from apps.students.models import Guardian, Student
+from apps.tenants.models import School
 
 logger = logging.getLogger(__name__)
 
@@ -55,15 +61,14 @@ def _generate_school_ai_reply(school: School, sender_phone: str, message_text: s
     # If student or guardian is identified, provide personalized school assistant response
     if student:
         st_name = f"{student.first_name} {student.last_name}"
-        msg_lower = message_text.lower()
 
         if any(w in message_text for w in ["جدول", "حصص", "حصة", "اليوم"]):
             schedule_data = fetch_today_lessons(str(student.id))
             lessons = schedule_data.get("lessons", [])
             if lessons:
                 lines = [f"أهلاً بك. جدول حصص الطالب {st_name} لليوم ({schedule_data.get('day')}):"]
-                for l in lessons:
-                    lines.append(f"• الحصة {l['period']}: {l['subject']} ({l['time']}) - أ/ {l['teacher']}")
+                for lesson_item in lessons:
+                    lines.append(f"• الحصة {lesson_item['period']}: {lesson_item['subject']} ({lesson_item['time']}) - أ/ {lesson_item['teacher']}")
                 return "\n".join(lines)
             return f"مرحباً بك. لا توجد حصص مجدولة مسجلة للطالب {st_name} اليوم."
 
@@ -144,92 +149,139 @@ class WhatsAppWebhookAPIView(APIView):
         hub_challenge = request.query_params.get("hub.challenge")
         hub_verify_token = request.query_params.get("hub.verify_token")
 
-        if school_code:
-            gateway = SchoolMessagingGateway.objects.filter(
-                school__code=school_code,
-                channel=SchoolMessagingGateway.Channel.WHATSAPP,
-                is_active=True,
-            ).first()
+        if hub_mode == "subscribe":
+            gateway = None
+            if school_code:
+                gateway = SchoolMessagingGateway.objects.filter(
+                    school__code=school_code,
+                    channel=SchoolMessagingGateway.Channel.WHATSAPP,
+                    is_active=True,
+                ).first()
+            else:
+                gateway = SchoolMessagingGateway.objects.filter(
+                    school__isnull=True,
+                    channel=SchoolMessagingGateway.Channel.WHATSAPP,
+                    is_active=True,
+                ).first()
+
             if gateway and gateway.webhook_verify_token:
                 if hub_verify_token == gateway.webhook_verify_token:
-                    return Response(int(hub_challenge) if hub_challenge and hub_challenge.isdigit() else hub_challenge)
+                    return Response(int(hub_challenge) if hub_challenge and hub_challenge.isdigit() else hub_challenge, status=status.HTTP_200_OK)
+            return Response({"detail": "فشل التحقق: رمز التحقق غير مطابق أو البوابة غير مهيأة."}, status=status.HTTP_403_FORBIDDEN)
 
         return Response({"status": "active", "service": "school-whatsapp-webhook"})
 
     def post(self, request, school_code=None, *args, **kwargs):
-        """استقبال رسالة واتساب واردة ومعالجتها بالرد الذكي الفوري."""
+        """استقبال رسالة واتساب واردة ومعالجتها بالرد الذكي الفوري مع التحقق الأمني الكامل."""
         payload = request.data or {}
         school = None
 
+        school_code = school_code or request.query_params.get("school_code") or request.headers.get("X-School-Code")
         if school_code:
             school = School.objects.filter(code=school_code, is_archived=False).first()
 
         # Parse sender phone and incoming text
         sender_phone = ""
         message_text = ""
+        extracted_msg_id = ""
+
+        # Format 0: Meta / WhatsApp Cloud API format {"entry": [{"changes": [{"value": {"messages": [...]}}]}]}
+        if "entry" in payload and isinstance(payload["entry"], list) and payload["entry"]:
+            try:
+                entry0 = payload["entry"][0]
+                changes = entry0.get("changes", [])
+                if changes:
+                    value = changes[0].get("value", {})
+                    messages = value.get("messages", [])
+                    if messages:
+                        msg0 = messages[0]
+                        sender_phone = str(msg0.get("from", ""))
+                        extracted_msg_id = str(msg0.get("id", ""))
+                        text_obj = msg0.get("text", {})
+                        if isinstance(text_obj, dict):
+                            message_text = str(text_obj.get("body", ""))
+                        elif isinstance(text_obj, str):
+                            message_text = text_obj
+            except Exception:
+                pass
 
         # Format 1: UltraMsg format {"data": {"from": "...", "body": "..."}}
-        if "data" in payload and isinstance(payload["data"], dict):
+        if not sender_phone and "data" in payload and isinstance(payload["data"], dict):
             sender_phone = str(payload["data"].get("from", ""))
             message_text = str(payload["data"].get("body", ""))
+            extracted_msg_id = str(payload["data"].get("id", ""))
         # Format 2: Twilio format {"From": "whatsapp:+...", "Body": "..."}
-        elif "From" in payload and "Body" in payload:
+        elif not sender_phone and "From" in payload and "Body" in payload:
             sender_phone = str(payload.get("From", "")).replace("whatsapp:", "")
             message_text = str(payload.get("Body", ""))
+            extracted_msg_id = str(payload.get("MessageSid", ""))
         # Format 3: Generic payload {"from": "...", "message": "..."}
-        else:
+        elif not sender_phone:
             sender_phone = str(payload.get("from") or payload.get("phone") or payload.get("sender") or "")
             message_text = str(payload.get("message") or payload.get("text") or payload.get("body") or "")
+            extracted_msg_id = str(payload.get("id") or payload.get("message_id") or "")
 
         if not sender_phone or not message_text:
             return Response({"status": "ignored", "reason": "No sender or body found in payload."}, status=status.HTTP_200_OK)
 
         clean_phone = sender_phone.replace("+", "").replace(" ", "").strip()
 
-        # Prevent duplicate re-delivery within short window (Deterministic Idempotency / Deduplication)
-        from django.core.cache import cache
-        provider_msg_id = (
-            payload.get("id") or 
-            payload.get("message_id") or 
-            payload.get("MessageSid") or
-            (payload.get("data") and isinstance(payload["data"], dict) and payload["data"].get("id"))
-        )
-        if provider_msg_id:
-            msg_sig = f"wa_msg_id_{provider_msg_id}"
-        else:
-            content_hash = hashlib.sha256(message_text.strip().encode("utf-8")).hexdigest()[:16]
-            msg_sig = f"wa_msg_{clean_phone[-9:]}_{content_hash}"
-
-        if cache.get(msg_sig):
-            return Response({"status": "duplicate_ignored", "reason": "Message already processed."}, status=status.HTTP_200_OK)
-        cache.set(msg_sig, True, timeout=60)
-
         # Fallback to identify school securely by verified student/guardian phone if school_code was not in URL
         if not school:
-            student = Student.objects.filter(
-                student_q_phone(clean_phone),
+            candidate_schools = list(School.objects.filter(
+                Q(students__in=Student.objects.filter(student_q_phone(clean_phone), is_archived=False)) |
+                Q(guardians__in=Guardian.objects.filter(guardian_q_phone(clean_phone), is_archived=False)),
                 is_archived=False,
-            ).select_related("school").first()
-            if student:
-                school = student.school
-            else:
-                guardian = Guardian.objects.filter(
-                    guardian_q_phone(clean_phone),
-                    is_archived=False,
-                ).select_related("school").first()
-                if guardian:
-                    school = guardian.school
+            ).distinct())
+            if len(candidate_schools) == 1:
+                school = candidate_schools[0]
+            elif len(candidate_schools) > 1:
+                return Response(
+                    {"status": "error", "message": "رقم الهاتف مسجل في أكثر من مدرسة؛ يلزم تحديد رمز المدرسة بالرابط."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         if not school:
             return Response({"status": "error", "message": "لم يتم العثور على مدرسة مصرح بها لهذا الويب هوك."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Check if gateway has AI auto-reply enabled
+        # Security: verify payload signature if secret token is configured
         gateway = SchoolMessagingGateway.objects.filter(
             school=school,
             channel=SchoolMessagingGateway.Channel.WHATSAPP,
             is_active=True,
         ).first()
 
+        sig_header = request.headers.get("X-Hub-Signature-256")
+        if gateway and gateway.webhook_verify_token and sig_header:
+            import hmac
+            expected_sig = "sha256=" + hmac.new(gateway.webhook_verify_token.encode("utf-8"), request.body, hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sig_header, expected_sig):
+                return Response({"detail": "توقيع الرسالة غير صحيح."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Permanent deduplication via database record
+        from apps.notifications.models import InboundWebhookMessage
+        provider_msg_id = str(
+            extracted_msg_id or
+            payload.get("id") or 
+            payload.get("message_id") or 
+            payload.get("MessageSid") or
+            (payload.get("data") and isinstance(payload["data"], dict) and payload["data"].get("id")) or
+            f"hash_{hashlib.sha256((clean_phone + message_text.strip()).encode()).hexdigest()[:24]}"
+        )
+
+        if InboundWebhookMessage.objects.filter(school=school, provider_msg_id=provider_msg_id).exists():
+            return Response({"status": "duplicate_ignored", "reason": "Message already processed."}, status=status.HTTP_200_OK)
+
+        try:
+            InboundWebhookMessage.objects.create(
+                school=school,
+                provider_msg_id=provider_msg_id,
+                sender_phone=clean_phone,
+            )
+        except Exception:
+            return Response({"status": "duplicate_ignored", "reason": "Message already processed."}, status=status.HTTP_200_OK)
+
+        # Check if gateway has AI auto-reply enabled
         reply_text = ""
         if not gateway or gateway.auto_ai_reply:
             reply_text = _generate_school_ai_reply(school, sender_phone, message_text)
@@ -241,11 +293,9 @@ class WhatsAppWebhookAPIView(APIView):
         return Response({
             "status": "success",
             "school": school.code,
-            "sender": sender_phone,
-            "received_message": message_text,
-            "auto_reply": reply_text,
+            "auto_reply": reply_text if reply_text else None,
             "timestamp": timezone.now().isoformat(),
-        })
+        }, status=status.HTTP_200_OK)
 
 
 class SchoolWhatsAppWebhookAPIView(WhatsAppWebhookAPIView):
@@ -255,8 +305,6 @@ class SchoolWhatsAppWebhookAPIView(WhatsAppWebhookAPIView):
 
 def _dispatch_to_gateway(gateway: SchoolMessagingGateway, recipient: str, text: str):
     """إرسال فعلي للرد إلى خادم مزود خدمة الواتساب عبر HTTP REST API."""
-    import urllib.request
-    import json
     try:
         url = gateway.api_endpoint_url
         payload = {
@@ -274,7 +322,7 @@ def _dispatch_to_gateway(gateway: SchoolMessagingGateway, recipient: str, text: 
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=5):
             pass
     except Exception:
         # Gateway failure is captured without breaking incoming webhook flow

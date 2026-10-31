@@ -9,14 +9,34 @@ from __future__ import annotations
 import datetime
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
-from django.db.models import Sum
 from django.utils import timezone
 
-from apps.accounting.models import Account, FiscalPeriod, FiscalYear, JournalEntry, JournalEntryLine, PaymentVoucher, ReceiptVoucher
-from apps.student_fees.models import PaymentReceipt
+from apps.accounting.models import (
+    Account,
+    FiscalPeriod,
+    FiscalYear,
+    JournalEntry,
+    JournalEntryLine,
+    PaymentVoucher,
+    ReceiptVoucher,
+)
 from apps.assets.models import AssetDepreciationEntry
+from apps.student_fees.models import PaymentReceipt
+
+
+def _get_account_or_seed(school, code: str, name: str = "") -> Account:
+    """استرجاع الحساب المالي من الدليل مع تهيئة الدليل الافتراضي تلقائياً إن لم تكن حسابات المدرسة مهيأة."""
+    acc = Account.objects.filter(school=school, code=code, is_leaf=True).first()
+    if not acc:
+        from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
+        seed_default_chart_of_accounts(school)
+        acc = Account.objects.filter(school=school, code=code, is_leaf=True).first()
+    if not acc:
+        raise ValidationError(f"الحساب المالي المطلوب ({code} - {name}) غير مهيأ في دليل الحسابات للمدرسة.")
+    return acc
 
 
 def _get_active_fiscal_period(school, target_date=None) -> FiscalPeriod:
@@ -88,33 +108,33 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
         raise ValueError("لا يمكن ترحيل سند قبض بمبلغ صفر أو سالب.")
 
     school = receipt.school
+    if getattr(receipt, "journal_entry_id", None):
+        return receipt.journal_entry
+
+    existing = JournalEntry.objects.filter(
+        school=school,
+        source_module="student_fees",
+        source_reference=receipt.receipt_number,
+        is_archived=False,
+    ).first()
+    if existing:
+        if not getattr(receipt, "journal_entry_id", None):
+            receipt.journal_entry = existing
+            receipt.save(update_fields=["journal_entry", "updated_at"])
+        return existing
+
     tx_date = receipt.paid_at
     if isinstance(tx_date, datetime.datetime):
         tx_date = tx_date.date()
     period = _get_active_fiscal_period(school, tx_date)
 
     with transaction.atomic():
-        if not Account.objects.filter(school=school).exists():
-            return None
-
-        existing = JournalEntry.objects.filter(
-            school=school,
-            source_module="student_fees",
-            source_reference=receipt.receipt_number,
-            is_archived=False,
-        ).first()
-        if existing:
-            return existing
-
         if receipt.payment_method == PaymentReceipt.PaymentMethod.BANK_TRANSFER:
-            debit_acc = Account.objects.filter(school=school, code="1102", is_leaf=True).first()
+            debit_acc = _get_account_or_seed(school, "1102", "البنك")
         elif receipt.payment_method == PaymentReceipt.PaymentMethod.POS:
-            debit_acc = Account.objects.filter(school=school, code="1103", is_leaf=True).first()
+            debit_acc = _get_account_or_seed(school, "1103", "نقاط البيع - شبكة")
         else:
-            debit_acc = Account.objects.filter(school=school, code="1101", is_leaf=True).first()
-
-        if not debit_acc:
-            raise ValueError("حساب الصندوق أو البنك غير مهيأ في شجرة الحسابات.")
+            debit_acc = _get_account_or_seed(school, "1101", "الصندوق / الخزينة")
 
         from apps.student_fees.models import PaymentAllocation
         alloc_agg = receipt.allocations.filter(
@@ -130,23 +150,13 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
 
         excess_amount = max(Decimal("0.00"), receipt.amount - allocated_amount)
 
-        acc_receivable = Account.objects.filter(school=school, code="1104", is_leaf=True).first()
-        if allocated_amount > Decimal("0.00") and not acc_receivable:
-            raise ValueError("حساب ذمم ورسوم الطلاب (1104) غير موجود في دليل الحسابات للمدرسة.")
+        acc_receivable = None
+        if allocated_amount > Decimal("0.00"):
+            acc_receivable = _get_account_or_seed(school, "1104", "ذمم ورسوم الطلاب")
 
         acc_advance = None
         if excess_amount > Decimal("0.00") or allocated_amount == Decimal("0.00"):
-            acc_advance = Account.objects.filter(school=school, code="2102", is_leaf=True).first()
-            if not acc_advance:
-                parent_liab = Account.objects.filter(school=school, code="21").first()
-                acc_advance = Account.objects.create(
-                    school=school,
-                    code="2102",
-                    name="أرصدة وأمانات الطلاب الدائنة (دفعات مقدمة)",
-                    account_type=Account.AccountType.LIABILITY,
-                    parent=parent_liab,
-                    is_leaf=True,
-                )
+            acc_advance = _get_account_or_seed(school, "2102", "أرصدة وأمانات الطلاب الدائنة")
 
         entry_number = f"JV-REC-{receipt.receipt_number}"
         entry = JournalEntry.objects.create(
@@ -154,12 +164,10 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
             fiscal_period=period,
             entry_number=entry_number,
             date=receipt.paid_at.date(),
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             source_module="student_fees",
             source_reference=receipt.receipt_number,
             description=f"تحصيل رسوم دراسية بسند قبض #{receipt.receipt_number} - الطالب: {receipt.student}",
-            posted_at=receipt.paid_at,
-            posted_by=receipt.received_by,
         )
 
         # 1. Debit: Cash/Bank/POS
@@ -203,11 +211,11 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
                 credit=receipt.amount,
             )
 
-        validate_and_balance_journal_entry(entry)
+        entry.post(user=receipt.received_by)
         return entry
 
 
-def post_credit_settlement_to_journal(credit_tx) -> Optional[JournalEntry]:
+def post_credit_settlement_to_journal(credit_tx) -> JournalEntry | None:
     """
     قيد تسوية استخدام الرصيد الدائن للطالب لسداد فاتورة:
     مدين: أرصدة وأمانات الطلاب الدائنة (2102)
@@ -219,27 +227,11 @@ def post_credit_settlement_to_journal(credit_tx) -> Optional[JournalEntry]:
     tx_date = credit_tx.created_at.date()
     period = _get_active_fiscal_period(school, tx_date)
 
-    acc_liability = Account.objects.filter(school=school, code="2102", is_leaf=True).first()
-    if not acc_liability:
-        parent_liab = Account.objects.filter(school=school, code="21").first()
-        acc_liability = Account.objects.create(
-            school=school,
-            code="2102",
-            name="أرصدة وأمانات الطلاب الدائنة (دفعات مقدمة)",
-            account_type=Account.AccountType.LIABILITY,
-            parent=parent_liab,
-            is_leaf=True,
-        )
-
-    acc_receivable = Account.objects.filter(school=school, code="1104", is_leaf=True).first()
-    if not acc_receivable:
-        raise ValueError("حساب ذمم ورسوم الطلاب (1104) غير موجود في شجرة الحسابات.")
+    acc_liability = _get_account_or_seed(school, "2102", "أرصدة وأمانات الطلاب الدائنة")
+    acc_receivable = _get_account_or_seed(school, "1104", "ذمم ورسوم الطلاب")
 
     entry_num = f"JV-SETTLE-{credit_tx.id.hex[:8].upper()}"
     with transaction.atomic():
-        if not Account.objects.filter(school=school).exists():
-            return None
-
         existing = JournalEntry.objects.filter(
             school=school,
             source_module="student_fees_credit",
@@ -254,12 +246,10 @@ def post_credit_settlement_to_journal(credit_tx) -> Optional[JournalEntry]:
             fiscal_period=period,
             entry_number=entry_num,
             date=tx_date,
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             source_module="student_fees_credit",
             source_reference=str(credit_tx.id),
             description=f"تسوية سداد من الرصيد الدائن للطالب {credit_tx.student}",
-            posted_at=credit_tx.created_at,
-            posted_by=credit_tx.created_by,
         )
 
         # Debit: 2102 (Reduce liability)
@@ -282,7 +272,7 @@ def post_credit_settlement_to_journal(credit_tx) -> Optional[JournalEntry]:
             description=f"إثبات سداد الفاتورة #{credit_tx.invoice.invoice_number if credit_tx.invoice else ''}",
         )
 
-        validate_and_balance_journal_entry(entry)
+        entry.post(user=credit_tx.created_by)
         return entry
 
 
@@ -304,9 +294,6 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
     period = _get_active_fiscal_period(school, voucher.date)
 
     with transaction.atomic():
-        if not Account.objects.filter(school=school).exists():
-            return None
-
         existing = JournalEntry.objects.filter(
             school=school,
             source_module="accounting_payment",
@@ -326,11 +313,10 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
             fiscal_period=period,
             entry_number=entry_number,
             date=voucher.date,
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             source_module="accounting_payment",
             source_reference=voucher.voucher_number,
             description=f"صرف مالي بسند #{voucher.voucher_number} إلى: {voucher.paid_to} - {voucher.description}",
-            posted_at=timezone.now(),
         )
 
         JournalEntryLine.objects.create(
@@ -352,7 +338,7 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
             credit=voucher.amount,
         )
 
-        validate_and_balance_journal_entry(entry)
+        entry.post(user=voucher.created_by if hasattr(voucher, "created_by") else None)
         voucher.status = PaymentVoucher.Status.POSTED
         voucher.journal_entry = entry
         voucher.save(update_fields=["status", "journal_entry", "updated_at"])
@@ -378,9 +364,6 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
     period = _get_active_fiscal_period(school, voucher.date)
 
     with transaction.atomic():
-        if not Account.objects.filter(school=school).exists():
-            return None
-
         existing = JournalEntry.objects.filter(
             school=school,
             source_module="accounting_receipt",
@@ -400,11 +383,10 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
             fiscal_period=period,
             entry_number=entry_number,
             date=voucher.date,
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             source_module="accounting_receipt",
             source_reference=voucher.voucher_number,
             description=f"قبض إيراد عام بسند #{voucher.voucher_number} من: {voucher.received_from} - {voucher.description}",
-            posted_at=timezone.now(),
         )
 
         JournalEntryLine.objects.create(
@@ -426,7 +408,7 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
             credit=voucher.amount,
         )
 
-        validate_and_balance_journal_entry(entry)
+        entry.post(user=voucher.created_by if hasattr(voucher, "created_by") else None)
         voucher.status = ReceiptVoucher.Status.POSTED
         voucher.journal_entry = entry
         voucher.save(update_fields=["status", "journal_entry", "updated_at"])
@@ -447,9 +429,6 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
     period = _get_active_fiscal_period(school, entry.date)
 
     with transaction.atomic():
-        if not Account.objects.filter(school=school).exists():
-            return None
-
         existing = JournalEntry.objects.filter(
             school=school,
             source_module="assets_depreciation",
@@ -459,22 +438,18 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
         if existing:
             return existing
 
-        depreciation_expense = Account.objects.filter(school=school, code="5209", is_leaf=True).first()
-        accumulated_depreciation = Account.objects.filter(school=school, code="1209", is_leaf=True).first()
-
-        if not depreciation_expense or not accumulated_depreciation:
-            raise ValueError("حسابات إهلاك الأصول (5209 أو 1209) غير موجودة في دليل حسابات المدرسة.")
+        depreciation_expense = _get_account_or_seed(school, "5209", "مصروف إهلاك الأصول")
+        accumulated_depreciation = _get_account_or_seed(school, "1209", "مجمع إهلاك الأصول المتراكم")
 
         journal_entry = JournalEntry.objects.create(
             school=school,
             fiscal_period=period,
             entry_number=f"JV-DEP-{entry.asset.code}-{entry.fiscal_year.name}",
             date=entry.date,
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             source_module="assets_depreciation",
             source_reference=f"{entry.asset.code}-{entry.fiscal_year.id}",
             description=f"قيد إهلاك أصل ثابت: {entry.asset.name} عن السنة المالية {entry.fiscal_year.name}",
-            posted_at=timezone.now(),
         )
 
         JournalEntryLine.objects.create(
@@ -495,7 +470,7 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
             credit=entry.depreciation_amount,
         )
 
-        validate_and_balance_journal_entry(journal_entry)
+        journal_entry.post()
         entry.asset.accumulated_depreciation += entry.depreciation_amount
         entry.asset.save(update_fields=["accumulated_depreciation"])
 
@@ -513,9 +488,6 @@ def post_student_invoice_to_journal(invoice) -> JournalEntry:
     period = _get_active_fiscal_period(school, post_date)
 
     with transaction.atomic():
-        if not Account.objects.filter(school=school).exists():
-            return None
-
         existing = JournalEntry.objects.filter(
             school=school,
             source_module="student_invoice",
@@ -532,11 +504,8 @@ def post_student_invoice_to_journal(invoice) -> JournalEntry:
         if net_amount <= Decimal("0.00"):
             raise ValueError(f"صافي قيمة الفاتورة ({net_amount}) يجب أن يكون أكبر من الصفر لترحيلها.")
 
-        debit_acc = Account.objects.filter(school=school, code="1104", is_leaf=True).first()
-        credit_acc = Account.objects.filter(school=school, code="4101", is_leaf=True).first()
-
-        if not debit_acc or not credit_acc:
-            raise ValueError("شجرة الحسابات للمدرسة غير مهيأة (حساب ذمم الطلاب 1104 أو إيرادات الرسوم 4101 غير موجود).")
+        debit_acc = _get_account_or_seed(school, "1104", "ذمم ورسوم الطلاب")
+        credit_acc = _get_account_or_seed(school, "4101", "إيرادات الرسوم الدراسية")
 
         entry_number = f"JV-INV-{invoice.invoice_number}"
         entry = JournalEntry.objects.create(
@@ -544,11 +513,10 @@ def post_student_invoice_to_journal(invoice) -> JournalEntry:
             fiscal_period=period,
             entry_number=entry_number,
             date=post_date,
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             source_module="student_invoice",
             source_reference=invoice.invoice_number,
             description=f"إثبات استحقاق فاتورة رسوم #{invoice.invoice_number} للطالب {invoice.student}",
-            posted_at=timezone.now(),
         )
 
         JournalEntryLine.objects.create(
@@ -569,7 +537,7 @@ def post_student_invoice_to_journal(invoice) -> JournalEntry:
             credit=net_amount,
         )
 
-        validate_and_balance_journal_entry(entry)
+        entry.post(user=getattr(invoice, "created_by", None))
         if hasattr(invoice, "journal_entry"):
             invoice.journal_entry = entry
             invoice.save(update_fields=["journal_entry", "updated_at"])
@@ -610,12 +578,10 @@ def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by
             fiscal_period=period,
             entry_number=reversal_num,
             date=timezone.localdate(),
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             source_module="reversal",
             source_reference=original_entry.entry_number,
             description=f"قيد عكسي للقيد #{original_entry.entry_number} - السبب: {reason}",
-            posted_at=timezone.now(),
-            posted_by=reversed_by,
         )
 
         for line in original_entry.lines.all():
@@ -629,10 +595,164 @@ def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by
                 credit=line.debit,  # swap
             )
 
-        validate_and_balance_journal_entry(rev_entry)
+        rev_entry.post(user=reversed_by)
         original_entry.is_reversed = True
         original_entry.reversed_by_entry = rev_entry
         original_entry.reversal_reason = reason
         original_entry.save(update_fields=["is_reversed", "reversed_by_entry", "reversal_reason", "updated_at"])
 
         return rev_entry
+
+
+def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
+    """
+    الترحيل الآلي لفاتورة المشتريات والموردين لإثبات استحقاق الذمم الدائنة والمخزون.
+    الطرف المدين: مخزون الكتب والقرطاسية والزي (1106).
+    الطرف الدائن: ذمم الموردين والشركات الدائنة (2101).
+    """
+    school = vendor_invoice.school
+    post_date = getattr(vendor_invoice, "invoice_date", None) or timezone.localdate()
+    period = _get_active_fiscal_period(school, post_date)
+
+    with transaction.atomic():
+        if vendor_invoice.journal_entry:
+            return vendor_invoice.journal_entry
+
+        if vendor_invoice.total_amount <= Decimal("0.00"):
+            raise ValidationError(f"إجمالي فاتورة المورد ({vendor_invoice.total_amount}) يجب أن يكون أكبر من الصفر.")
+
+        debit_acc = _get_account_or_seed(school, "1106", "مخزون الكتب والقرطاسية والزي")
+        credit_acc = _get_account_or_seed(school, "2101", "ذمم الموردين والشركات الدائنة")
+
+        entry_number = f"JV-VINV-{vendor_invoice.invoice_number}"
+        entry = JournalEntry.objects.create(
+            school=school,
+            fiscal_period=period,
+            entry_number=entry_number,
+            date=post_date,
+            status=JournalEntry.Status.DRAFT,
+            source_module="vendor_invoice",
+            source_reference=str(vendor_invoice.invoice_number),
+            description=f"إثبات فاتورة مورد #{vendor_invoice.invoice_number} - {vendor_invoice.supplier.name}",
+        )
+
+        JournalEntryLine.objects.create(
+            school=school,
+            journal_entry=entry,
+            account=debit_acc,
+            description=f"إثبات بضاعة / مخزون مورد: {vendor_invoice.supplier.name}",
+            debit=vendor_invoice.total_amount,
+            credit=Decimal("0.00"),
+        )
+
+        JournalEntryLine.objects.create(
+            school=school,
+            journal_entry=entry,
+            account=credit_acc,
+            description=f"استحقاق ذمة المورد: {vendor_invoice.supplier.name} - فاتورة #{vendor_invoice.invoice_number}",
+            debit=Decimal("0.00"),
+            credit=vendor_invoice.total_amount,
+        )
+
+        entry.post(user=user)
+        vendor_invoice.journal_entry = entry
+        if vendor_invoice.status == vendor_invoice.Status.DRAFT:
+            vendor_invoice.status = vendor_invoice.Status.APPROVED
+        vendor_invoice.save(update_fields=["journal_entry", "status", "updated_at"])
+        return entry
+
+
+def disburse_vendor_payment(
+    vendor_invoice,
+    payment_account: Account,
+    amount: Decimal,
+    reference_number: str = "",
+    payment_method: str = "bank_transfer",
+    user=None,
+) -> tuple[JournalEntry, PaymentVoucher]:
+    """
+    سداد دفعة نقدية أو بنكية لفاتورة مورد وتخفيض رصيد الذمم الدائنة.
+    الطرف المدين: ذمم الموردين والشركات الدائنة (2101).
+    الطرف الدائن: الصندوق أو الحساب البنكي المسدد منه.
+    """
+    from apps.inventory.models import VendorInvoice
+
+    if amount <= Decimal("0.00"):
+        raise ValidationError("مبلغ السداد يجب أن يكون أكبر من الصفر.")
+
+    school = vendor_invoice.school
+    if payment_account.school_id != school.pk:
+        raise ValidationError("حساب السداد لا يتبع نفس المدرسة الخاصة بالفاتورة.")
+    if payment_account.account_type != Account.AccountType.ASSET:
+        raise ValidationError("حساب السداد يجب أن يكون حساب أصول (صندوق أو بنك).")
+
+    with transaction.atomic():
+        locked_invoice = VendorInvoice.objects.select_for_update().get(pk=vendor_invoice.pk)
+        if amount > locked_invoice.remaining_amount:
+            raise ValidationError(
+                f"المبلغ المراد سداده ({amount}) أكبر من المبلغ المتبقي على الفاتورة ({locked_invoice.remaining_amount})."
+            )
+
+        post_date = timezone.localdate()
+        period = _get_active_fiscal_period(school, post_date)
+        vendor_payable_acc = _get_account_or_seed(school, "2101", "ذمم الموردين والشركات الدائنة")
+
+        voucher_number = f"PV-VINV-{locked_invoice.invoice_number}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
+        payment_voucher = PaymentVoucher.objects.create(
+            school=school,
+            voucher_number=voucher_number,
+            date=post_date,
+            paid_to=locked_invoice.supplier.name,
+            amount=amount,
+            credit_account=payment_account,
+            debit_account=vendor_payable_acc,
+            payment_method=payment_method,
+            reference_number=reference_number,
+            description=f"سداد دفعة من فاتورة المورد #{locked_invoice.invoice_number}",
+            status=PaymentVoucher.Status.POSTED,
+        )
+
+        entry_number = f"JV-VPAY-{voucher_number}"
+        entry = JournalEntry.objects.create(
+            school=school,
+            fiscal_period=period,
+            entry_number=entry_number,
+            date=post_date,
+            status=JournalEntry.Status.DRAFT,
+            source_module="vendor_payment",
+            source_reference=voucher_number,
+            description=f"سند صرف سداد فاتورة المورد #{locked_invoice.invoice_number} ({locked_invoice.supplier.name})",
+        )
+
+        # Debit: Accounts payable
+        JournalEntryLine.objects.create(
+            school=school,
+            journal_entry=entry,
+            account=vendor_payable_acc,
+            description=f"سداد ذمة المورد: {locked_invoice.supplier.name} - فاتورة #{locked_invoice.invoice_number}",
+            debit=amount,
+            credit=Decimal("0.00"),
+        )
+
+        # Credit: Bank / Cash
+        JournalEntryLine.objects.create(
+            school=school,
+            journal_entry=entry,
+            account=payment_account,
+            description=f"صرف سداد من حساب {payment_account.name} للمورد {locked_invoice.supplier.name}",
+            debit=Decimal("0.00"),
+            credit=amount,
+        )
+
+        entry.post(user=user)
+        payment_voucher.journal_entry = entry
+        payment_voucher.save(update_fields=["journal_entry", "updated_at"])
+
+        locked_invoice.paid_amount += amount
+        if locked_invoice.paid_amount >= locked_invoice.total_amount:
+            locked_invoice.status = VendorInvoice.Status.PAID
+        else:
+            locked_invoice.status = VendorInvoice.Status.PARTIAL
+        locked_invoice.save(update_fields=["paid_amount", "status", "updated_at"])
+
+        return entry, payment_voucher

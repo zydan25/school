@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
 from apps.core.models import TenantOwnedModel
-
 
 # -----------------------------------------------------------------------------
 # 1. School Transportation (النقل المدرسي والحافلات)
@@ -342,6 +342,7 @@ class BusFinancialSettlement(TenantOwnedModel):
             return self.payment_voucher
 
         from django.db import transaction
+
         from apps.accounting.models import Account, PaymentVoucher
 
         with transaction.atomic():
@@ -370,7 +371,9 @@ class BusFinancialSettlement(TenantOwnedModel):
                         },
                     )
                     self.payment_voucher = pv
-                    from apps.accounting.services.auto_posting import post_payment_voucher_to_journal
+                    from apps.accounting.services.auto_posting import (
+                        post_payment_voucher_to_journal,
+                    )
                     if not pv.journal_entry_id:
                         post_payment_voucher_to_journal(pv)
 
@@ -425,6 +428,15 @@ class StudentBookDistribution(TenantOwnedModel):
         on_delete=models.SET_NULL,
         related_name="delivered_books",
     )
+    returned_at = models.DateTimeField("تاريخ ووقت الاسترجاع", null=True, blank=True)
+    returned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="الموظف المستلم للاسترجاع",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="returned_books",
+    )
     invoice = models.ForeignKey(
         "student_fees.StudentInvoice",
         verbose_name="الفاتورة المقيد عليها الرسم",
@@ -443,51 +455,62 @@ class StudentBookDistribution(TenantOwnedModel):
         return f"{self.student.first_name}: {self.book_title} (كمية: {self.quantity}) [{self.get_delivery_status_display()}]"
 
     def deliver_book(self, user=None):
-        """تسليم الكتاب للطالب وخصم الكمية من المخزون وتوثيق العملية."""
-        if self.delivery_status == self.DeliveryStatus.DELIVERED:
-            return
+        """تسليم الكتاب للطالب وخصم الكمية من المخزون وتوثيق العملية مع قفل تشاؤمي."""
         from django.db import transaction
         with transaction.atomic():
-            if self.inventory_item:
-                from apps.inventory.models import StockMovement, InventoryItem
-                item = InventoryItem.objects.select_for_update().get(pk=self.inventory_item_id)
-                if item.current_stock < self.quantity:
-                    raise ValidationError(f"رصيد الكتاب المخزني ({item.current_stock}) غير كافٍ لصرف كمية ({self.quantity}).")
+            locked_dist = StudentBookDistribution.objects.select_for_update().get(pk=self.pk)
+            if locked_dist.delivery_status == self.DeliveryStatus.DELIVERED:
+                return
+            if locked_dist.inventory_item:
+                from apps.inventory.models import InventoryItem, StockMovement
+                item = InventoryItem.objects.select_for_update().get(pk=locked_dist.inventory_item_id)
+                if item.current_stock < locked_dist.quantity:
+                    raise ValidationError(f"رصيد الكتاب المخزني ({item.current_stock}) غير كافٍ لصرف كمية ({locked_dist.quantity}).")
                 StockMovement.objects.create(
-                    school=self.school,
+                    school=locked_dist.school,
                     item=item,
                     movement_type=StockMovement.MovementType.ISSUE,
-                    quantity=self.quantity,
+                    quantity=locked_dist.quantity,
                     unit_cost=item.unit_cost,
-                    recipient_name=f"الطالب: {self.student}",
-                    reference=f"تسليم كتاب للطالب {self.student.student_id_number}",
+                    recipient_name=f"الطالب: {locked_dist.student}",
+                    reference=f"تسليم كتاب للطالب {locked_dist.student.student_id_number}",
                 )
-            self.delivery_status = self.DeliveryStatus.DELIVERED
-            self.delivered_at = timezone.now()
+            locked_dist.delivery_status = self.DeliveryStatus.DELIVERED
+            locked_dist.delivered_at = timezone.now()
             if user:
-                self.delivered_by = user
-            self.save(update_fields=["delivery_status", "delivered_at", "delivered_by", "updated_at"])
+                locked_dist.delivered_by = user
+            locked_dist.save(update_fields=["delivery_status", "delivered_at", "delivered_by", "updated_at"])
+            self.delivery_status = locked_dist.delivery_status
+            self.delivered_at = locked_dist.delivered_at
+            self.delivered_by = locked_dist.delivered_by
 
     def return_book(self, user=None):
-        """استرجاع الكتاب إلى المخزون وتحديث حالته."""
-        if self.delivery_status != self.DeliveryStatus.DELIVERED:
-            return
+        """استرجاع الكتاب إلى المخزون وتحديث حالته مع قفل تشاؤمي."""
         from django.db import transaction
         with transaction.atomic():
-            if self.inventory_item:
-                from apps.inventory.models import StockMovement, InventoryItem
-                item = InventoryItem.objects.select_for_update().get(pk=self.inventory_item_id)
+            locked_dist = StudentBookDistribution.objects.select_for_update().get(pk=self.pk)
+            if locked_dist.delivery_status != self.DeliveryStatus.DELIVERED:
+                return
+            if locked_dist.inventory_item:
+                from apps.inventory.models import InventoryItem, StockMovement
+                item = InventoryItem.objects.select_for_update().get(pk=locked_dist.inventory_item_id)
                 StockMovement.objects.create(
-                    school=self.school,
+                    school=locked_dist.school,
                     item=item,
                     movement_type=StockMovement.MovementType.RECEIPT,
-                    quantity=self.quantity,
+                    quantity=locked_dist.quantity,
                     unit_cost=item.unit_cost,
-                    recipient_name=f"استرجاع من الطالب: {self.student}",
-                    reference=f"استرجاع كتاب من الطالب {self.student.student_id_number}",
+                    recipient_name=f"استرجاع من الطالب: {locked_dist.student}",
+                    reference=f"استرجاع كتاب من الطالب {locked_dist.student.student_id_number}",
                 )
-            self.delivery_status = self.DeliveryStatus.RETURNED
-            self.save(update_fields=["delivery_status", "updated_at"])
+            locked_dist.delivery_status = self.DeliveryStatus.RETURNED
+            locked_dist.returned_at = timezone.now()
+            if user:
+                locked_dist.returned_by = user
+            locked_dist.save(update_fields=["delivery_status", "returned_at", "returned_by", "updated_at"])
+            self.delivery_status = locked_dist.delivery_status
+            self.returned_at = locked_dist.returned_at
+            self.returned_by = locked_dist.returned_by
 
 
 class BookRequisitionOrder(TenantOwnedModel):

@@ -1,8 +1,8 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
-from apps.core.admin import AuditedAdminMixin
 from apps.copilot.models import AIChatMessage, AIChatSession, CurriculumDocument
+from apps.core.admin import AuditedAdminMixin
 
 
 class AIChatMessageInline(TabularInline):

@@ -20,9 +20,9 @@ def dashboard_callback(request, context):
         context.update({"school_metrics": metrics, "dashboard_title": "لوحة المدرسة", "dashboard_subtitle": school.name if school else "اختر مدرسة للمتابعة"})
         return context
 
-    from apps.tenants.models import School
-    from apps.accounts.models import User, SchoolMembership
+    from apps.accounts.models import SchoolMembership, User
     from apps.platform.models import Subscription
+    from apps.tenants.models import School
     metrics = {"schools": 0, "active_schools": 0, "users": 0, "memberships": 0, "subscriptions": 0}
     try:
         metrics["schools"] = School.objects.count()

@@ -9,9 +9,9 @@ from apps.student_fees.models import (
     FeeStructure,
     PaymentAllocation,
     PaymentReceipt,
+    StudentCreditTransaction,
     StudentInvoice,
     StudentInvoiceItem,
-    StudentCreditTransaction,
 )
 
 

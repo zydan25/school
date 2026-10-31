@@ -1,9 +1,9 @@
-from apps.core.admin import AuditedAdminMixin
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 
 from apps.auditlog.services import record_event
+from apps.core.admin import AuditedAdminMixin
 from apps.tenants.models import Branch, School, SchoolDomain, SchoolSettings
 
 
@@ -58,6 +58,7 @@ class SchoolAdmin(AuditedAdminMixin, ModelAdmin):
     @admin.action(description="تفعيل المدارس المحددة")
     def activate_schools(self, request, queryset):
         from django.core.exceptions import ValidationError
+
         from apps.tenants.services import activate_school
         count = 0
         errors = []

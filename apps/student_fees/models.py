@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -492,7 +493,7 @@ class StudentCreditTransaction(TenantOwnedModel):
         return f"{self.student} - {self.get_transaction_type_display()}: {self.amount} (الرصيد: {self.balance_after})"
 
 
-def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: Optional[Decimal] = None, user=None) -> StudentCreditTransaction:
+def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: Decimal | None = None, user=None) -> StudentCreditTransaction:
     """استخدام الرصيد الدائن للطالب لسداد فاتورة مستحقة وتوثيق العملية في دفتر الأرصدة الدائنة وإثبات قيد التسوية."""
     from django.db import transaction
     if invoice.school_id != student.school_id:
@@ -542,10 +543,73 @@ def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: Op
         return tx
 
 
+def reverse_credit_usage(usage_tx: StudentCreditTransaction, reason: str, reversed_by=None) -> StudentCreditTransaction:
+    """
+    عكس حركة استخدام رصيد دائن لسداد فاتورة:
+    إلغاء السداد من الفاتورة، إعادة الرصيد للطالب، وعكس قيد التسوية المحاسبي.
+    """
+    if usage_tx.transaction_type != StudentCreditTransaction.TransactionType.USAGE:
+        raise ValidationError("الحركة المحددة ليست حركة استخدام رصيد دائن.")
+    
+    from django.db import transaction
+    with transaction.atomic():
+        locked_tx = StudentCreditTransaction.objects.select_for_update().get(pk=usage_tx.pk)
+        locked_student = type(locked_tx.student).objects.select_for_update().get(pk=locked_tx.student_id)
+        
+        # Restore invoice balance
+        if locked_tx.invoice:
+            inv = StudentInvoice.objects.select_for_update().get(pk=locked_tx.invoice_id)
+            inv.paid_amount = max(Decimal("0.00"), inv.paid_amount - locked_tx.amount)
+            if inv.paid_amount == Decimal("0.00"):
+                inv.status = StudentInvoice.Status.UNPAID
+            else:
+                inv.status = StudentInvoice.Status.PARTIAL
+            inv.save(update_fields=["paid_amount", "status", "updated_at"])
+
+        # Restore student credit balance
+        bal_before = locked_student.credit_balance
+        bal_after = bal_before + locked_tx.amount
+        locked_student.credit_balance = bal_after
+        locked_student.save(update_fields=["credit_balance"])
+
+        # Create offsetting transaction in credit transactions
+        reversal_tx = StudentCreditTransaction.objects.create(
+            school=locked_student.school,
+            student=locked_student,
+            transaction_type=StudentCreditTransaction.TransactionType.ADJUSTMENT,
+            amount=locked_tx.amount,
+            balance_before=bal_before,
+            balance_after=bal_after,
+            invoice=locked_tx.invoice,
+            created_by=reversed_by,
+            notes=f"عكس حركة استخدام رصيد دائن #{locked_tx.id}: {reason}",
+        )
+
+        # Reverse the journal entry for this settlement
+        from apps.accounting.models import JournalEntry
+        from apps.accounting.services.auto_posting import reverse_journal_entry
+        settle_entry = JournalEntry.objects.filter(
+            school=locked_student.school,
+            source_module="student_fees_credit",
+            source_reference=str(locked_tx.id),
+            is_reversed=False,
+            is_archived=False,
+        ).first()
+        if settle_entry:
+            reverse_journal_entry(
+                settle_entry,
+                reason=f"عكس قيد تسوية رصيد دائن #{locked_tx.id}: {reason}",
+                reversed_by=reversed_by,
+            )
+
+        return reversal_tx
+
+
 def reverse_payment_receipt(receipt: PaymentReceipt, reason: str, reversed_by=None) -> PaymentReceipt:
     """
     العكس المحاسبي والتشغيلي الموحد لسند القبض المالي.
-    يعكس التخصيصات، ويعيد الرصيد للفواتير والأقساط، ويخصم الفائض من رصيد الطالب،
+    يعكس التخصيصات، ويعيد الرصيد للفواتير والأقساط، ويخصم الفائض من رصيد الطالب
+    مع معالجة أي استخدامات تابعة للرصيد الدائن وعكس قيود التسوية،
     وينشئ قيداً عكسياً مرتبطاً بالقيد الأصلي.
     """
     if receipt.is_cancelled:
@@ -593,6 +657,32 @@ def reverse_payment_receipt(receipt: PaymentReceipt, reason: str, reversed_by=No
         total_excess = sum(t.amount for t in deposit_txs)
         if total_excess > Decimal("0.00"):
             student = type(locked_receipt.student).objects.select_for_update().get(pk=locked_receipt.student_id)
+            
+            # If part of this deposit was already used to pay other invoices:
+            if student.credit_balance < total_excess:
+                used_amount = total_excess - student.credit_balance
+                # Find the usage transactions after this receipt's deposit to unwind them
+                usage_txs = list(StudentCreditTransaction.objects.filter(
+                    student=student,
+                    transaction_type=StudentCreditTransaction.TransactionType.USAGE,
+                    created_at__gte=locked_receipt.paid_at,
+                ).order_by("-created_at"))
+                
+                # Unwind usages automatically until student.credit_balance >= total_excess
+                for u_tx in usage_txs:
+                    if student.credit_balance >= total_excess:
+                        break
+                    reverse_credit_usage(u_tx, reason=f"عكس تتابعي بسبب إلغاء سند القبض #{locked_receipt.receipt_number}", reversed_by=reversed_by)
+                    student.refresh_from_db()
+
+                # If still insufficient:
+                if student.credit_balance < total_excess:
+                    raise ValidationError(
+                        f"لا يمكن عكس سند القبض #{locked_receipt.receipt_number}: تم استخدام مبلغ ({used_amount}) "
+                        f"من فائض السند في تسديد فواتير أخرى ورصيد الطالب المتبقي ({student.credit_balance}) "
+                        f"أقل من فائض السند المطلوب عكسه ({total_excess}). يرجى إلغاء تسويات الفواتير التابعة أولاً."
+                    )
+
             bal_before = student.credit_balance
             bal_after = max(Decimal("0.00"), bal_before - total_excess)
             student.credit_balance = bal_after

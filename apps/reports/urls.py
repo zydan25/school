@@ -2,20 +2,20 @@
 from django.urls import path
 
 from apps.reports.views import (
-    StudentStatementOfAccountAPIView,
     AgingReceivablesAPIView,
-    DailyCashRegisterAPIView,
-    TrialBalanceAPIView,
-    IncomeStatementAPIView,
     BalanceSheetAPIView,
     BillingLedgerReconciliationAPIView,
-    StudentReportCardAPIView,
-    ClassRankingAPIView,
-    SubjectGradeDistributionAPIView,
-    SectionAttendanceSummaryAPIView,
     ChronicAbsenteeismAPIView,
-    TeacherWorkloadAPIView,
+    ClassRankingAPIView,
+    DailyCashRegisterAPIView,
+    IncomeStatementAPIView,
     PayrollSummaryAPIView,
+    SectionAttendanceSummaryAPIView,
+    StudentReportCardAPIView,
+    StudentStatementOfAccountAPIView,
+    SubjectGradeDistributionAPIView,
+    TeacherWorkloadAPIView,
+    TrialBalanceAPIView,
 )
 
 app_name = "reports"

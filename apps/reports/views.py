@@ -2,39 +2,40 @@
 from __future__ import annotations
 
 import datetime
+
 from django.db import models
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.shortcuts import get_object_or_404
 
-from apps.students.models import Student
-from apps.academics.models import Section, Subject, AcademicTerm
-from apps.reports.selectors.financial_reports import (
-    get_student_statement_of_account,
-    get_aging_receivables_report,
-    get_daily_cash_register_report,
-    get_billing_ledger_reconciliation_report,
+from apps.academics.models import AcademicTerm, Section, Subject
+from apps.accounting.services.financial_reports import (
+    get_balance_sheet,
+    get_income_statement,
+    get_trial_balance,
 )
 from apps.reports.selectors.academic_reports import (
-    get_student_report_card,
     get_class_ranking_report,
+    get_student_report_card,
     get_subject_grade_distribution,
 )
 from apps.reports.selectors.attendance_reports import (
-    get_section_attendance_summary,
     get_chronic_absenteeism_report,
+    get_section_attendance_summary,
+)
+from apps.reports.selectors.financial_reports import (
+    get_aging_receivables_report,
+    get_billing_ledger_reconciliation_report,
+    get_daily_cash_register_report,
+    get_student_statement_of_account,
 )
 from apps.reports.selectors.hr_reports import (
-    get_teacher_workload_report,
     get_payroll_summary_report,
+    get_teacher_workload_report,
 )
-from apps.accounting.services.financial_reports import (
-    get_trial_balance,
-    get_income_statement,
-    get_balance_sheet,
-)
+from apps.students.models import Student
 
 
 class BaseSchoolReportView(APIView):
@@ -43,8 +44,17 @@ class BaseSchoolReportView(APIView):
 
     def get_school(self, request):
         school = getattr(request, "school", None)
-        now = timezone.now()
+        if school:
+            return school
+        school_code = request.query_params.get("school_code") or request.headers.get("X-School-Code")
+        school_id = request.query_params.get("school_id") or request.headers.get("X-School-ID")
+        from apps.tenants.models import School
+        if school_id:
+            school = School.objects.filter(id=school_id, is_archived=False).first()
+        elif school_code:
+            school = School.objects.filter(code=school_code, is_archived=False).first()
         if not school:
+            now = timezone.now()
             membership = request.user.school_memberships.filter(
                 status="active"
             ).filter(
@@ -52,19 +62,11 @@ class BaseSchoolReportView(APIView):
             ).select_related("school").first()
             if membership:
                 school = membership.school
-        if not school and (request.user.is_superuser or request.user.is_platform_admin):
-            school_code = request.query_params.get("school_code") or request.headers.get("X-School-Code")
-            school_id = request.query_params.get("school_id") or request.headers.get("X-School-ID")
-            from apps.tenants.models import School
-            if school_id:
-                school = School.objects.filter(id=school_id, is_archived=False).first()
-            elif school_code:
-                school = School.objects.filter(code=school_code, is_archived=False).first()
         return school
 
     def check_financial_access(self, request, school) -> bool:
         """التحقق من أن المستخدم يمتلك صلاحية مالية أو إدارية أو تحصيل في المدرسة (تشمل الكاشير)."""
-        if request.user.is_superuser or request.user.is_platform_admin or request.user.is_staff:
+        if request.user.is_superuser or getattr(request.user, "is_platform_admin", False):
             return True
         now = timezone.now()
         membership = request.user.school_memberships.filter(
@@ -83,7 +85,7 @@ class BaseSchoolReportView(APIView):
 
     def check_general_ledger_access(self, request, school) -> bool:
         """التحقق من صلاحية الاطلاع على القوائم المالية العامة ودفتر الأستاذ (تستثني الكاشير)."""
-        if request.user.is_superuser or request.user.is_platform_admin or request.user.is_staff:
+        if request.user.is_superuser or getattr(request.user, "is_platform_admin", False):
             return True
         now = timezone.now()
         membership = request.user.school_memberships.filter(
@@ -102,7 +104,7 @@ class BaseSchoolReportView(APIView):
 
     def check_hr_access(self, request, school) -> bool:
         """التحقق من صلاحية الموارد البشرية والرواتب."""
-        if request.user.is_superuser or request.user.is_platform_admin or request.user.is_staff:
+        if request.user.is_superuser or getattr(request.user, "is_platform_admin", False):
             return True
         now = timezone.now()
         membership = request.user.school_memberships.filter(
@@ -121,7 +123,7 @@ class BaseSchoolReportView(APIView):
 
     def check_academic_access(self, request, school, section=None, subject=None) -> bool:
         """التحقق من صلاحية الوصول للتقارير الأكاديمية والدرجات."""
-        if request.user.is_superuser or request.user.is_platform_admin or request.user.is_staff:
+        if request.user.is_superuser or getattr(request.user, "is_platform_admin", False):
             return True
         now = timezone.now()
         membership = request.user.school_memberships.filter(

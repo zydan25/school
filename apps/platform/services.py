@@ -7,7 +7,12 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.auditlog.services import record_event
-from apps.platform.models import PlatformInvoice, PlatformPayment, SchoolFeatureOverride, Subscription
+from apps.platform.models import (
+    PlatformInvoice,
+    PlatformPayment,
+    SchoolFeatureOverride,
+    Subscription,
+)
 
 
 def active_subscription_for(school, *, at=None):

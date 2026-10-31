@@ -1,13 +1,19 @@
 from datetime import date
 from decimal import Decimal
-from django.core.exceptions import ValidationError
+
 from django.test import TestCase
 
-from apps.accounts.models import User
-from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section, Subject
-from apps.attendance.models import DailyAttendance
-from apps.student_fees.models import FeeCategory, FeeStructure, PaymentReceipt, StudentInvoice, StudentInvoiceItem
+from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section
 from apps.accounting.models import Account, FiscalYear, JournalEntry, JournalEntryLine
+from apps.accounts.models import User
+from apps.attendance.models import DailyAttendance
+from apps.student_fees.models import (
+    FeeCategory,
+    FeeStructure,
+    PaymentReceipt,
+    StudentInvoice,
+    StudentInvoiceItem,
+)
 from apps.students.models import Student
 from apps.tenants.models import School
 
@@ -115,7 +121,7 @@ class FinanceAndAttendanceTests(TestCase):
             entry_number="JE-2026-001",
             date=date(2026, 10, 30),
             description="إثبات تحصيل قسط دراسي نقداً",
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             source_module="student_fees",
         )
 
@@ -137,6 +143,7 @@ class FinanceAndAttendanceTests(TestCase):
             credit=Decimal("50000.00"),
             description="إيراد رسوم",
         )
+        entry.post()
 
         total_debit = sum(line.debit for line in entry.lines.all())
         total_credit = sum(line.credit for line in entry.lines.all())

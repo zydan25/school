@@ -1,8 +1,8 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
-from apps.core.admin import AuditedAdminMixin
 from apps.attendance.models import DailyAttendance, PeriodAttendance
+from apps.core.admin import AuditedAdminMixin
 
 
 @admin.register(DailyAttendance)

@@ -4,7 +4,8 @@ Permission classes for plan-based feature entitlement enforcement in DRF.
 Prevents schools from using features/modules (WhatsApp, AI, HR, Accounting)
 if the feature is not included in their subscription plan or has been disabled.
 """
-from rest_framework import permissions, exceptions
+from rest_framework import exceptions, permissions
+
 from apps.platform.services import school_has_feature
 
 

@@ -8,20 +8,19 @@ from __future__ import annotations
 import datetime
 import json
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from apps.assignments.models import Homework, HomeworkSubmission
 from apps.assessments.models import GradeBook
+from apps.assignments.models import Homework, HomeworkSubmission
 from apps.copilot.models import AIChatMessage, AIChatSession, CurriculumDocument
 from apps.students.models import Student
 from apps.timetable.models import ClassSchedule
 
 
-def get_weekday_number(d: Optional[datetime.date] = None) -> int:
+def get_weekday_number(d: datetime.date | None = None) -> int:
     """
     يحول تاريخ اليوم إلى رقم اليوم المعتمد في ClassSchedule:
     1: الأحد, 2: الاثنين, 3: الثلاثاء, 4: الأربعاء, 5: الخميس, 6: الجمعة, 7: السبت.
@@ -37,7 +36,7 @@ def get_weekday_number(d: Optional[datetime.date] = None) -> int:
 # System-Aware Database Grounding Tools
 # -----------------------------------------------------------------------------
 
-def fetch_today_lessons(student_id: str) -> Dict[str, Any]:
+def fetch_today_lessons(student_id: str) -> dict[str, Any]:
     """
     أداة استعلام جدول وحصص الطالب لليوم الحالي.
     """
@@ -77,7 +76,7 @@ def fetch_today_lessons(student_id: str) -> Dict[str, Any]:
     }
 
 
-def fetch_pending_homework(student_id: str) -> Dict[str, Any]:
+def fetch_pending_homework(student_id: str) -> dict[str, Any]:
     """
     أداة استخراج الواجبات المدرسية والتكليفات المعلقة للطالب ومواعيد تسليمها.
     """
@@ -130,7 +129,7 @@ def fetch_pending_homework(student_id: str) -> Dict[str, Any]:
     }
 
 
-def fetch_academic_grades(student_id: str) -> Dict[str, Any]:
+def fetch_academic_grades(student_id: str) -> dict[str, Any]:
     """
     أداة استعراض الدرجات والنتائج المنشورة للطالب بأمان تام وعزل تام عن بقية الطلاب.
     """
@@ -174,7 +173,7 @@ def fetch_academic_grades(student_id: str) -> Dict[str, Any]:
     }
 
 
-def curriculum_rag_search(student_id: str, query: str) -> Dict[str, Any]:
+def curriculum_rag_search(student_id: str, query: str) -> dict[str, Any]:
     """
     أداة البحث الدلالي في المناهج والكتب المرفوعة لشرح وتبسيط الدروس للطالب.
     """

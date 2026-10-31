@@ -1,7 +1,7 @@
 """Resolve a requested school only after checking the authenticated user's access."""
-from django.utils.deprecation import MiddlewareMixin
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.deprecation import MiddlewareMixin
 
 
 class SchoolContextMiddleware(MiddlewareMixin):

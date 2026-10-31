@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Any, Dict, List
-from django.db.models import Avg, Max, Min, Sum, Q
+from typing import Any
 
-from apps.students.models import Student
-from apps.academics.models import Subject, Section, AcademicTerm
+from django.db.models import Sum
+
+from apps.academics.models import AcademicTerm, Section, Subject
 from apps.assessments.models import GradeBook
+from apps.students.models import Student
 
 
 def _calculate_letter_grade(percentage: float) -> str:
@@ -23,7 +24,7 @@ def _calculate_letter_grade(percentage: float) -> str:
         return "راسب (F)"
 
 
-def get_student_report_card(student: Student, term: AcademicTerm = None) -> Dict[str, Any]:
+def get_student_report_card(student: Student, term: AcademicTerm = None) -> dict[str, Any]:
     """توليد الشهادة الأكاديمية الرسمية وبطاقة الدرجات للطالب متضمنة التقديرات والترتيب."""
     grade_query = GradeBook.objects.filter(
         student=student,
@@ -34,7 +35,7 @@ def get_student_report_card(student: Student, term: AcademicTerm = None) -> Dict
         grade_query = grade_query.filter(academic_term=term)
 
     # Group by subject
-    subjects_dict: Dict[str, Dict[str, Any]] = {}
+    subjects_dict: dict[str, dict[str, Any]] = {}
     for grade in grade_query.select_related("subject"):
         sub_id = str(grade.subject_id)
         if sub_id not in subjects_dict:
@@ -100,7 +101,7 @@ def get_student_report_card(student: Student, term: AcademicTerm = None) -> Dict
     }
 
 
-def get_class_ranking_report(section: Section, term: AcademicTerm = None) -> Dict[str, Any]:
+def get_class_ranking_report(section: Section, term: AcademicTerm = None) -> dict[str, Any]:
     """لوحة الشرف وترتيب الطلاب داخل الشعبة الدراسية حسب المعدل التراكمي."""
     students = Student.objects.filter(
         section=section,
@@ -155,7 +156,7 @@ def get_class_ranking_report(section: Section, term: AcademicTerm = None) -> Dic
     }
 
 
-def get_subject_grade_distribution(subject: Subject, term: AcademicTerm = None) -> Dict[str, Any]:
+def get_subject_grade_distribution(subject: Subject, term: AcademicTerm = None) -> dict[str, Any]:
     """توزيع الدرجات ونسب النجاح والرسوب لمادة دراسية محددة."""
     grades = GradeBook.objects.filter(
         subject=subject,

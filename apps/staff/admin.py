@@ -3,14 +3,14 @@ from unfold.admin import ModelAdmin
 
 from apps.core.admin import AuditedAdminMixin
 from apps.staff.models import (
+    Department,
+    LeaveRequest,
+    LeaveType,
+    StaffAttendance,
     StaffMember,
     Teacher,
     TeacherAssignment,
-    Department,
     WorkShift,
-    LeaveType,
-    LeaveRequest,
-    StaffAttendance,
 )
 
 

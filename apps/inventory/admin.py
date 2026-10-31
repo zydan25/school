@@ -3,12 +3,13 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
 from apps.inventory.models import (
-    Supplier,
-    Warehouse,
     InventoryItem,
-    StockMovement,
     PurchaseOrder,
     PurchaseOrderItem,
+    StockMovement,
+    Supplier,
+    VendorInvoice,
+    Warehouse,
 )
 
 
@@ -56,3 +57,38 @@ class PurchaseOrderAdmin(ModelAdmin):
     search_fields = ("order_number", "supplier__name")
     raw_id_fields = ("supplier", "warehouse", "approved_by")
     inlines = [PurchaseOrderItemInline]
+
+
+@admin.register(VendorInvoice)
+class VendorInvoiceAdmin(ModelAdmin):
+    list_display = (
+        "invoice_number",
+        "supplier",
+        "purchase_order",
+        "invoice_date",
+        "due_date",
+        "total_amount",
+        "paid_amount",
+        "remaining_amount_display",
+        "status",
+        "journal_entry",
+        "school",
+    )
+    list_filter = ("school", "status", "invoice_date")
+    search_fields = ("invoice_number", "supplier__name", "supplier__code")
+    raw_id_fields = ("supplier", "purchase_order", "journal_entry")
+    actions = ["post_selected_invoices_to_journal"]
+
+    @admin.display(description="المبلغ المتبقي")
+    def remaining_amount_display(self, obj):
+        return obj.remaining_amount
+
+    @admin.action(description="ترحيل الفواتير المحددة إلى قيود استحقاق محاسبية")
+    def post_selected_invoices_to_journal(self, request, queryset):
+        from apps.accounting.services.auto_posting import post_vendor_invoice_to_journal
+        posted_count = 0
+        for inv in queryset:
+            if not inv.journal_entry:
+                post_vendor_invoice_to_journal(inv, user=request.user)
+                posted_count += 1
+        self.message_user(request, f"تم ترحيل {posted_count} فاتورة مورد بنجاح.")

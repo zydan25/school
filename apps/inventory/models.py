@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -158,17 +159,37 @@ class StockMovement(TenantOwnedModel):
         is_new = self._state.adding
         from django.db import transaction
         with transaction.atomic():
+            locked_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
+            if not is_new and self.pk:
+                old = StockMovement.objects.filter(pk=self.pk).first()
+                if old:
+                    # Unwind previous movement from item stock
+                    if old.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
+                        locked_item.current_stock -= old.quantity
+                    else:
+                        locked_item.current_stock += old.quantity
+
+            # Apply current movement
+            if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
+                locked_item.current_stock += self.quantity
+            else:
+                if locked_item.current_stock < self.quantity:
+                    raise ValidationError(f"الكمية المطلوبة ({self.quantity}) تتجاوز الرصيد المتاح بالمستودع ({locked_item.current_stock}).")
+                locked_item.current_stock -= self.quantity
+
+            locked_item.save(update_fields=["current_stock"])
             super().save(*args, **kwargs)
-            if is_new:
-                # Lock item row to prevent race conditions
-                locked_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
-                if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
-                    locked_item.current_stock += self.quantity
-                else:
-                    if locked_item.current_stock < self.quantity:
-                        raise ValidationError(f"الكمية المطلوبة تتجاوز الرصيد المتاح.")
-                    locked_item.current_stock -= self.quantity
-                locked_item.save(update_fields=["current_stock"])
+
+    def delete(self, *args, **kwargs):
+        from django.db import transaction
+        with transaction.atomic():
+            locked_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
+            if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
+                locked_item.current_stock = max(Decimal("0.00"), locked_item.current_stock - self.quantity)
+            else:
+                locked_item.current_stock += self.quantity
+            locked_item.save(update_fields=["current_stock"])
+            return super().delete(*args, **kwargs)
 
 
 class PurchaseOrder(TenantOwnedModel):
@@ -223,6 +244,8 @@ class PurchaseOrder(TenantOwnedModel):
         """تحويل أمر الشراء إلى حركات توريد مخزنية فعلية وتحديث رصيد المستودع."""
         if self.status == self.Status.RECEIVED:
             return []
+        if self.status != self.Status.APPROVED:
+            raise ValidationError("لا يمكن استلام أمر الشراء في المخزن إلا بعد اعتماده رسمياً (APPROVED).")
         from django.db import transaction
         created_movements = []
         with transaction.atomic():
@@ -272,3 +295,54 @@ class PurchaseOrderItem(TenantOwnedModel):
     def clean(self):
         super().clean()
         self.total_price = self.quantity * self.unit_price
+
+
+class VendorInvoice(TenantOwnedModel):
+    """فاتورة مورد مستلزمات وكتب ومطابقتها مع أمر الشراء لإثبات الذمم الدائنة."""
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة"
+        APPROVED = "approved", "معتمدة"
+        PAID = "paid", "مسددة بالكامل"
+        PARTIAL = "partial", "مسددة جزئياً"
+        CANCELLED = "cancelled", "ملغاة"
+
+    invoice_number = models.CharField("رقم فاتورة المورد", max_length=100)
+    supplier = models.ForeignKey(
+        Supplier,
+        verbose_name="المورد",
+        on_delete=models.PROTECT,
+        related_name="vendor_invoices",
+    )
+    purchase_order = models.ForeignKey(
+        PurchaseOrder,
+        verbose_name="أمر الشراء المرتبط",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="vendor_invoices",
+    )
+    invoice_date = models.DateField("تاريخ الفاتورة", default=timezone.localdate)
+    due_date = models.DateField("تاريخ الاستحقاق", default=timezone.localdate)
+    total_amount = models.DecimalField("إجمالي الفاتورة", max_digits=14, decimal_places=2)
+    paid_amount = models.DecimalField("المبلغ المسدد", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    status = models.CharField("حالة الفاتورة", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    journal_entry = models.ForeignKey(
+        "accounting.JournalEntry",
+        verbose_name="قيد الاستحقاق اليومي",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="vendor_invoices",
+    )
+    notes = models.TextField("ملاحظات", blank=True)
+
+    class Meta:
+        verbose_name = "فاتورة مورد"
+        verbose_name_plural = "فواتير الموردين والذمم الدائنة"
+
+    def __str__(self) -> str:
+        return f"فاتورة مورد #{self.invoice_number} - {self.supplier.name} ({self.total_amount})"
+
+    @property
+    def remaining_amount(self) -> Decimal:
+        return max(Decimal("0.00"), self.total_amount - self.paid_amount)

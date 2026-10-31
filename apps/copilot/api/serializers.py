@@ -1,7 +1,7 @@
 """Serializers for Copilot API endpoints."""
 from rest_framework import serializers
 
-from apps.copilot.models import AIChatMessage, AIChatSession, CurriculumDocument
+from apps.copilot.models import AIChatMessage, AIChatSession
 
 
 class LessonPlanRequestSerializer(serializers.Serializer):

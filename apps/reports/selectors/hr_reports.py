@@ -1,16 +1,14 @@
 """Human resources, teacher workload quotas, and payroll reporting selectors."""
 from __future__ import annotations
 
-from decimal import Decimal
-from typing import Any, Dict, List
-from django.db.models import Count, Sum, Q
+from typing import Any
 
+from apps.payroll.models import PayrollRun, Payslip
 from apps.staff.models import Teacher
 from apps.timetable.models import ClassSchedule
-from apps.payroll.models import PayrollRun, Payslip, EmployeeContract
 
 
-def get_teacher_workload_report(school) -> Dict[str, Any]:
+def get_teacher_workload_report(school) -> dict[str, Any]:
     """تقرير أنصبة المعلمين الأسبوعية وتحليل الفائض والعجز في ساعات التدريس."""
     teachers = Teacher.objects.filter(
         school=school,
@@ -61,7 +59,7 @@ def get_teacher_workload_report(school) -> Dict[str, Any]:
     }
 
 
-def get_payroll_summary_report(school, year: int, month: int) -> Dict[str, Any]:
+def get_payroll_summary_report(school, year: int, month: int) -> dict[str, Any]:
     """تقرير مسير الرواتب الشهري المعتمد والتفاصيل المالية للاستحقاقات والاستقطاعات."""
     payroll_run = PayrollRun.objects.filter(
         school=school,

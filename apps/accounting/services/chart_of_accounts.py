@@ -5,14 +5,12 @@ apps/accounting/services/chart_of_accounts.py
 """
 from __future__ import annotations
 
-from typing import List, Tuple
 from django.db import transaction
 
 from apps.accounting.models import Account
 from apps.tenants.models import School
 
-
-DEFAULT_ACCOUNTS: List[Tuple[str, str, str, str | None, bool]] = [
+DEFAULT_ACCOUNTS: list[tuple[str, str, str, str | None, bool]] = [
     # (code, name, account_type, parent_code, is_leaf)
     # ---------------- 1. الأصول (Assets) ----------------
     ("1", "الأصول", Account.AccountType.ASSET, None, False),
@@ -58,6 +56,8 @@ DEFAULT_ACCOUNTS: List[Tuple[str, str, str, str | None, bool]] = [
     ("4106", "إيرادات الأنشطة والرحلات الطلابية", Account.AccountType.REVENUE, "41", True),
     ("4107", "إيرادات إيجارات المقاصف والمرافق المدرسية", Account.AccountType.REVENUE, "41", True),
     ("4108", "إيرادات متنوعة وتبرعات", Account.AccountType.REVENUE, "41", True),
+    ("42", "إيرادات أخرى وجزاءات", Account.AccountType.REVENUE, "4", False),
+    ("4201", "إيرادات جزاءات واستقطاعات غياب الموظفين", Account.AccountType.REVENUE, "42", True),
 
     # ---------------- 5. المصروفات (Expenses) ----------------
     ("5", "المصروفات", Account.AccountType.EXPENSE, None, False),

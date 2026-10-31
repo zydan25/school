@@ -1,6 +1,6 @@
 """School support services administration with Unfold RTL support."""
 from django.contrib import admin
-from unfold.admin import ModelAdmin
+from unfold.admin import ModelAdmin, TabularInline
 
 from apps.core.admin import AuditedAdminMixin
 from apps.school_services.models import (
@@ -34,10 +34,40 @@ class BusFinancialSettlementAdmin(AuditedAdminMixin, ModelAdmin):
 
 @admin.register(StudentBookDistribution)
 class StudentBookDistributionAdmin(AuditedAdminMixin, ModelAdmin):
-    list_display = ("student", "book_title", "fee_amount", "delivery_status", "delivered_at", "delivered_by", "school")
+    list_display = (
+        "student",
+        "book_title",
+        "quantity",
+        "fee_amount",
+        "delivery_status",
+        "delivered_at",
+        "delivered_by",
+        "returned_at",
+        "returned_by",
+        "school",
+    )
     list_filter = ("school", "delivery_status", "academic_year")
     search_fields = ("student__first_name", "student__last_name", "book_title")
-    raw_id_fields = ("student", "academic_year", "delivered_by", "invoice", "school", "branch")
+    raw_id_fields = ("student", "academic_year", "delivered_by", "returned_by", "invoice", "inventory_item", "school", "branch")
+    actions = ["deliver_selected_books", "return_selected_books"]
+
+    @admin.action(description="تسليم الكتب المحددة للطلاب وخصمها من المستودع")
+    def deliver_selected_books(self, request, queryset):
+        success = 0
+        for dist in queryset:
+            if dist.delivery_status != dist.DeliveryStatus.DELIVERED:
+                dist.deliver_book(user=request.user)
+                success += 1
+        self.message_user(request, f"تم تسليم {success} سجل كتاب بنجاح وتحديث أرصدة المخزون.")
+
+    @admin.action(description="استرجاع الكتب المحددة إلى المستودع")
+    def return_selected_books(self, request, queryset):
+        success = 0
+        for dist in queryset:
+            if dist.delivery_status == dist.DeliveryStatus.DELIVERED:
+                dist.return_book(user=request.user)
+                success += 1
+        self.message_user(request, f"تم استرجاع {success} سجل كتاب بنجاح وإعادتها للمستودع.")
 
 
 @admin.register(StudentBusSubscription)
@@ -77,9 +107,6 @@ class ClinicVisitAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("school", "sent_home", "parent_notified", "visit_date")
     search_fields = ("student__user__first_name", "student__user__last_name", "diagnosis", "symptoms")
     raw_id_fields = ("student", "school", "branch")
-
-
-from unfold.admin import TabularInline
 
 
 class BookRequisitionItemInline(TabularInline):

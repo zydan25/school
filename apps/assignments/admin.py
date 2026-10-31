@@ -1,8 +1,8 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
-from apps.core.admin import AuditedAdminMixin
 from apps.assignments.models import Homework, HomeworkSubmission
+from apps.core.admin import AuditedAdminMixin
 
 
 class HomeworkSubmissionInline(TabularInline):

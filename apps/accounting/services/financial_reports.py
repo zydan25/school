@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from django.db.models import Q, Sum
+from django.db.models import Sum
 from django.utils import timezone
 
 from apps.accounting.models import Account, JournalEntry, JournalEntryLine
@@ -17,8 +17,8 @@ from apps.tenants.models import School
 
 def get_trial_balance(
     school: School,
-    as_of_date: Optional[datetime.date] = None,
-) -> Dict[str, Any]:
+    as_of_date: datetime.date | None = None,
+) -> dict[str, Any]:
     """
     ميزان المراجعة بالأرصدة والمجاميع لمدرسة محددة.
     """
@@ -72,9 +72,9 @@ def get_trial_balance(
 
 def get_income_statement(
     school: School,
-    start_date: Optional[datetime.date] = None,
-    end_date: Optional[datetime.date] = None,
-) -> Dict[str, Any]:
+    start_date: datetime.date | None = None,
+    end_date: datetime.date | None = None,
+) -> dict[str, Any]:
     """
     قائمة الدخل وتقرير الأرباح والخسائر: الإيرادات - المصروفات = صافي الدخل / الخسارة.
     """
@@ -92,8 +92,8 @@ def get_income_statement(
         is_archived=False,
     ).select_related("account")
 
-    revenues: Dict[str, Decimal] = {}
-    expenses: Dict[str, Decimal] = {}
+    revenues: dict[str, Decimal] = {}
+    expenses: dict[str, Decimal] = {}
 
     total_revenues = Decimal("0.00")
     total_expenses = Decimal("0.00")
@@ -128,8 +128,8 @@ def get_income_statement(
 
 def get_balance_sheet(
     school: School,
-    as_of_date: Optional[datetime.date] = None,
-) -> Dict[str, Any]:
+    as_of_date: datetime.date | None = None,
+) -> dict[str, Any]:
     """
     الميزانية العمومية وقائمة المركز المالي: الأصول = الالتزامات + حقوق الملكية.
     """

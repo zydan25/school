@@ -1,12 +1,19 @@
-from apps.core.admin import AuditedAdminMixin
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 from django.utils.translation import gettext_lazy as _
 from unfold.admin import ModelAdmin, TabularInline
 
-from apps.accounts.models import MembershipRole, PlatformAccess, SchoolInvitation, SchoolMembership, SchoolRole, User
+from apps.accounts.models import (
+    MembershipRole,
+    PlatformAccess,
+    SchoolInvitation,
+    SchoolMembership,
+    SchoolRole,
+    User,
+)
 from apps.auditlog.services import record_event
+from apps.core.admin import AuditedAdminMixin
 
 
 class PlatformUserCreationForm(UserCreationForm):

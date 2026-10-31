@@ -1,8 +1,8 @@
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.db.models import Q
-from django.utils import timezone
 
 
 class HealthView(APIView):
@@ -73,6 +73,7 @@ class APILoginView(APIView):
     def post(self, request, *args, **kwargs):
         from django.contrib.auth import authenticate
         from rest_framework.authtoken.models import Token
+
         from apps.accounts.models import SchoolMembership
 
         phone = (request.data.get("phone") or "").strip()

@@ -14,33 +14,57 @@ tests/test_audit_fixes.py
 """
 from datetime import date, time
 from decimal import Decimal
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
-from rest_framework.test import APIClient
 from rest_framework import status
+from rest_framework.test import APIClient
 
-from apps.accounts.models import User, SchoolRole
-from apps.academics.models import AcademicYear, AcademicTerm, EducationalStage, GradeLevel, Section, Subject
-from apps.staff.models import Teacher, StaffMember
-from apps.students.models import Student
-from apps.tenants.models import School
-from apps.tenants.services import provision_school
-
-from apps.accounting.models import Account, FiscalYear, FiscalPeriod, JournalEntry, JournalEntryLine, PaymentVoucher, ReceiptVoucher
-from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
+from apps.academics.models import (
+    AcademicTerm,
+    AcademicYear,
+    EducationalStage,
+    GradeLevel,
+    Section,
+    Subject,
+)
+from apps.accounting.models import (
+    Account,
+    FiscalPeriod,
+    FiscalYear,
+    JournalEntry,
+    JournalEntryLine,
+    PaymentVoucher,
+)
 from apps.accounting.services.auto_posting import (
     post_student_invoice_to_journal,
     reverse_journal_entry,
 )
-from apps.student_fees.models import FeeCategory, StudentInvoice, StudentInvoiceItem, PaymentReceipt, PaymentAllocation
-from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRun, Payslip
-from apps.payroll.services import generate_monthly_payroll
-
-from apps.timetable.models import ClassSchedule
+from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
+from apps.accounts.models import SchoolRole, User
 from apps.attendance.models import PeriodAttendance
-from apps.inventory.models import Warehouse, InventoryItem, PurchaseOrder, PurchaseOrderItem, StockMovement
-from apps.school_services.models import BusRoute, BusFinancialSettlement
+from apps.inventory.models import (
+    InventoryItem,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    Warehouse,
+)
+from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance
+from apps.payroll.services import generate_monthly_payroll
 from apps.reports.selectors.financial_reports import get_daily_cash_register_report
+from apps.school_services.models import BusFinancialSettlement, BusRoute
+from apps.staff.models import StaffMember, Teacher
+from apps.student_fees.models import (
+    FeeCategory,
+    PaymentAllocation,
+    PaymentReceipt,
+    StudentInvoice,
+    StudentInvoiceItem,
+)
+from apps.students.models import Student
+from apps.tenants.models import School
+from apps.tenants.services import provision_school
+from apps.timetable.models import ClassSchedule
 
 
 class AuditFixesVerificationTests(TestCase):
@@ -269,7 +293,7 @@ class AuditFixesVerificationTests(TestCase):
             fiscal_period=self.fiscal_period,
             entry_number="JV-TEST-REV-01",
             date=date(2026, 10, 1),
-            status=JournalEntry.Status.POSTED,
+            status=JournalEntry.Status.DRAFT,
             description="قيد أصلي للتجربة",
         )
         JournalEntryLine.objects.create(
@@ -288,6 +312,7 @@ class AuditFixesVerificationTests(TestCase):
             credit=Decimal("1500.00"),
             description="إيراد",
         )
+        orig_entry.post()
 
         rev_entry = reverse_journal_entry(orig_entry, reason="خطأ في تسجيل الإيراد", reversed_by=self.user)
         self.assertIsNotNone(rev_entry)
@@ -422,6 +447,9 @@ class AuditFixesVerificationTests(TestCase):
             unit_price=Decimal("20.00"),
             total_price=Decimal("1000.00"),
         )
+
+        po.status = PurchaseOrder.Status.APPROVED
+        po.save(update_fields=["status"])
 
         movements = po.receive_into_warehouse(user=self.user)
         self.assertEqual(len(movements), 1)

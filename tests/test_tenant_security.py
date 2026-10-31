@@ -1,13 +1,13 @@
 from datetime import date
 
 from django.contrib.auth.models import Permission
+from django.contrib.sessions.middleware import SessionMiddleware
 from django.core.exceptions import ValidationError
 from django.test import RequestFactory, TestCase
-from django.contrib.sessions.middleware import SessionMiddleware
 
+from apps.academics.models import AcademicYear
 from apps.accounts.models import MembershipRole, SchoolMembership, SchoolRole, User
 from apps.accounts.services import has_school_permission
-from apps.academics.models import AcademicYear
 from apps.tenants.middleware import SchoolContextMiddleware
 from apps.tenants.models import Branch, School
 

@@ -1,6 +1,6 @@
 from django.urls import include, path
-from rest_framework.schemas import get_schema_view
 from rest_framework import permissions
+from rest_framework.schemas import get_schema_view
 
 from apps.api.views import (
     APILoginView,
@@ -31,4 +31,8 @@ urlpatterns = [
     path("<str:version>/reports/", include("apps.reports.urls")),
     path("<str:version>/notifications/", include("apps.notifications.api.urls")),
     path("<str:version>/timetable/", include("apps.timetable.urls")),
+    path("<str:version>/students/", include("apps.students.api.urls")),
+    path("<str:version>/fees/", include("apps.student_fees.api.urls")),
+    path("<str:version>/staff/", include("apps.staff.api.urls")),
+    path("<str:version>/payroll/", include("apps.payroll.api.urls")),
 ]
