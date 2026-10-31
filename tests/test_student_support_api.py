@@ -9,6 +9,10 @@ from apps.students.api import support_serializers
 class StudentSupportApiRouteTests(SimpleTestCase):
     def test_missing_student_support_endpoints_are_added_to_the_existing_students_api(self):
         routes = {
+            "/api/v1/students/documents/": "student-document-list-create",
+            "/api/v1/students/documents/00000000-0000-0000-0000-000000000001/download/": "student-document-download",
+            "/api/v1/students/consents/": "guardian-consent-list-create",
+            "/api/v1/students/consents/00000000-0000-0000-0000-000000000001/respond/": "guardian-consent-respond",
             "/api/v1/students/incidents/": "student-incident-list-create",
             "/api/v1/students/incidents/00000000-0000-0000-0000-000000000001/": "student-incident-detail",
             "/api/v1/students/incidents/00000000-0000-0000-0000-000000000001/notify-parents/": "student-incident-notify-parents",
