@@ -28,6 +28,7 @@ from apps.students.api.serializers import (
     RetainStudentSerializer,
     StudentDetailSerializer,
     StudentListSerializer,
+    StudentSafeListSerializer,
     StudentSafeDetailSerializer,
     StudentMovementSerializer,
     StudentTransferSerializer,
@@ -119,7 +120,12 @@ class StudentListAPIView(generics.ListCreateAPIView):
     def get_serializer_class(self):
         if self.request.method == "POST":
             return StudentDetailSerializer
-        return StudentListSerializer
+        if (
+            is_platform_operator(self.request.user)
+            or has_school_roles(self.request.user, self.get_school(), STUDENT_READ_ADMIN_ROLES)
+        ):
+            return StudentListSerializer
+        return StudentSafeListSerializer
 
     def get_queryset(self):
         school = self.get_school()
@@ -384,3 +390,362 @@ class StudentWithdrawAPIView(APIView):
             "student_id": str(student.pk),
             "status": student.status,
         }, status=status.HTTP_200_OK)
+
+
+class StudentAccountBindingAPIView(APIView):
+    """Bind/unbind a verified phone account to exactly one student profile."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get_student(self, request, pk):
+        school = _resolve_school(request)
+        if not school:
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(
+            request, school, STUDENT_MANAGE_ROLES, "students.change_student",
+        )
+        return get_object_or_404(
+            Student.objects.select_related("school", "branch"),
+            pk=pk, school=school, is_archived=False,
+        )
+
+    def post(self, request, pk):
+        student = self.get_student(request, pk)
+        phone = normalize_phone(request.data.get("phone") or "")
+        if not phone:
+            raise ValidationError({"phone": "أدخل رقم هاتف الحساب المراد ربطه."})
+        user = User.objects.filter(phone=phone).first()
+        if user is None:
+            raise ValidationError({"phone": "لا يوجد حساب مسجل بهذا الرقم؛ أنشئ الحساب ووثق الهاتف أولاً."})
+        linked = link_student_account(
+            student=student, user=user, actor=request.user,
+        )
+        return Response({
+            "message": "تم ربط الحساب بملف الطالب بنجاح.",
+            "student_id": str(linked.pk),
+            "user_id": str(user.pk),
+            "phone": user.phone,
+        }, status=status.HTTP_200_OK)
+
+    def delete(self, request, pk):
+        student = self.get_student(request, pk)
+        unlinked = unlink_student_account(student=student, actor=request.user)
+        return Response({
+            "message": "تم فصل الحساب عن ملف الطالب دون حذف الحساب أو سجلاته.",
+            "student_id": str(unlinked.pk),
+        }, status=status.HTTP_200_OK)
+
+
+class StudentTransferAPIView(APIView):
+    """Move a student between sections within the same school and academic year."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        school = _resolve_school(request)
+        if not school:
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(
+            request, school, STUDENT_AFFAIRS_ROLES, "students.change_student",
+        )
+        student = get_object_or_404(
+            Student.objects.select_related(
+                "school", "branch", "academic_year", "grade_level", "section",
+            ),
+            pk=pk, school=school, is_archived=False,
+        )
+        serializer = StudentTransferSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target = get_object_or_404(
+            Section,
+            pk=serializer.validated_data["target_section_id"],
+            school=school,
+            is_archived=False,
+            is_active=True,
+        )
+        student = transfer_student(
+            student=student,
+            target_section=target,
+            user=request.user,
+            reason=serializer.validated_data.get("reason", ""),
+        )
+        return Response({
+            "message": f"تم نقل الطالب إلى الشعبة {student.section.name} بنجاح.",
+            "student_id": str(student.pk),
+            "academic_year_id": str(student.academic_year_id),
+            "grade_level_id": str(student.grade_level_id),
+            "section_id": str(student.section_id),
+        })
+
+
+class StudentMovementListAPIView(generics.ListAPIView):
+    """Read-only chronological audit of student admission and lifecycle movements."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = StudentMovementSerializer
+
+    def get_queryset(self):
+        school = _resolve_school(self.request)
+        if not school:
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(
+            self.request, school, STUDENT_READ_ADMIN_ROLES,
+            "students.view_student",
+        )
+        return StudentMovement.objects.filter(
+            school=school,
+            student_id=self.kwargs["pk"],
+            student__is_archived=False,
+            is_archived=False,
+        ).select_related(
+            "previous_academic_year", "previous_grade_level", "previous_section",
+            "next_academic_year", "next_grade_level", "next_section", "recorded_by",
+        ).order_by("-effective_date", "-created_at")
+
+
+def _read_student_import_csv(request):
+    upload = request.FILES.get("file")
+    if upload is None:
+        raise ValidationError({"file": "ارفق ملف CSV في الحقل file."})
+    if upload.size > 2 * 1024 * 1024:
+        raise ValidationError({"file": "الحد الأقصى لحجم ملف الاستيراد 2 ميجابايت."})
+    try:
+        content = upload.read().decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise ValidationError({"file": "يجب حفظ الملف بترميز UTF-8."}) from exc
+
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames:
+        raise ValidationError({"file": "ملف CSV فارغ أو بلا عناوين أعمدة."})
+    normalized_headers = {
+        (header or "").strip().lower()
+        for header in reader.fieldnames
+    }
+    required = {
+        "student_id_number", "first_name", "last_name",
+        "academic_year_id", "grade_level_id", "section_id",
+    }
+    missing = sorted(required - normalized_headers)
+    if missing:
+        raise ValidationError({
+            "file": "الأعمدة الإلزامية مفقودة.",
+            "missing_columns": missing,
+        })
+
+    rows = []
+    for row_number, raw in enumerate(reader, start=2):
+        if not raw or not any((value or "").strip() for value in raw.values()):
+            continue
+        rows.append((row_number, {
+            (key or "").strip().lower(): (value or "").strip()
+            for key, value in raw.items() if key is not None
+        }))
+        if len(rows) > 500:
+            raise ValidationError({"file": "الحد الأقصى 500 طالب في عملية الاستيراد الواحدة."})
+    if not rows:
+        raise ValidationError({"file": "لا يحتوي الملف على سجلات طلاب."})
+    return rows
+
+
+def _validate_student_import_rows(rows, school):
+    validated = []
+    errors = []
+    seen_ids = set()
+    for row_number, raw in rows:
+        serializer = StudentImportRowSerializer(
+            data=raw, context={"school": school},
+        )
+        if not serializer.is_valid():
+            errors.append({
+                "row": row_number,
+                "student_id_number": raw.get("student_id_number", ""),
+                "errors": serializer.errors,
+            })
+            continue
+        data = serializer.validated_data
+        student_number = data["student_id_number"].strip()
+        normalized = student_number.casefold()
+        if normalized in seen_ids:
+            errors.append({
+                "row": row_number,
+                "student_id_number": student_number,
+                "errors": {"student_id_number": ["رقم الطالب مكرر داخل ملف الاستيراد."]},
+            })
+            continue
+        seen_ids.add(normalized)
+        validated.append((row_number, data))
+
+    existing_ids = {
+        value.casefold()
+        for value in Student.objects.filter(
+            school=school, is_archived=False,
+            student_id_number__in=[
+                data["student_id_number"] for _row, data in validated
+            ],
+        ).values_list("student_id_number", flat=True)
+    }
+    filtered = []
+    for row_number, data in validated:
+        if data["student_id_number"].casefold() in existing_ids:
+            errors.append({
+                "row": row_number,
+                "student_id_number": data["student_id_number"],
+                "errors": {"student_id_number": ["رقم الطالب مسجل مسبقاً في هذه المدرسة."]},
+            })
+        else:
+            filtered.append((row_number, data))
+    return filtered, errors
+
+
+class StudentImportPreviewAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        school = _resolve_school(request)
+        if not school:
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(
+            request, school, STUDENT_MANAGE_ROLES, "students.add_student",
+        )
+        rows = _read_student_import_csv(request)
+        valid, errors = _validate_student_import_rows(rows, school)
+        return Response({
+            "total_rows": len(rows),
+            "valid_rows": len(valid),
+            "invalid_rows": len(errors),
+            "errors": errors,
+            "preview": [{
+                "row": row_number,
+                "student_id_number": data["student_id_number"],
+                "full_name": " ".join(filter(None, [
+                    data["first_name"], data.get("middle_name", ""), data["last_name"],
+                ])),
+                "academic_year": data["academic_year"].name,
+                "grade_level": data["grade_level"].name,
+                "section": data["section"].name,
+            } for row_number, data in valid[:50]],
+            "requires_confirmation": not errors,
+        })
+
+
+class StudentImportCommitAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        school = _resolve_school(request)
+        if not school:
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(
+            request, school, STUDENT_MANAGE_ROLES, "students.add_student",
+        )
+        rows = _read_student_import_csv(request)
+        valid, errors = _validate_student_import_rows(rows, school)
+        if errors:
+            return Response({
+                "message": "لم يتم استيراد أي سجل؛ أصلح أخطاء الملف ثم أعد المعاينة.",
+                "total_rows": len(rows),
+                "valid_rows": len(valid),
+                "invalid_rows": len(errors),
+                "errors": errors,
+                "imported": 0,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        imported = []
+        with transaction.atomic():
+            section_ids = sorted({data["section"].pk for _row, data in valid}, key=str)
+            locked_sections = {
+                section.pk: section
+                for section in Section.objects.select_for_update().filter(
+                    school=school, pk__in=section_ids,
+                    is_archived=False, is_active=True,
+                ).order_by("pk")
+            }
+            if len(locked_sections) != len(section_ids):
+                raise ValidationError("تغيرت بيانات إحدى الشعب؛ أعد معاينة الملف.")
+            for row_number, data in valid:
+                section = locked_sections[data["section"].pk]
+                if section.is_full:
+                    raise ValidationError({
+                        "row": row_number,
+                        "student_id_number": data["student_id_number"],
+                        "detail": f"الشعبة {section.name} ممتلئة؛ لم يتم استيراد أي سجل.",
+                    })
+                student = Student(
+                    school=school,
+                    student_id_number=data["student_id_number"],
+                    first_name=data["first_name"],
+                    middle_name=data.get("middle_name", ""),
+                    last_name=data["last_name"],
+                    gender=data["gender"],
+                    academic_year=data["academic_year"],
+                    grade_level=data["grade_level"],
+                    section=section,
+                    enrollment_date=data.get("enrollment_date") or timezone.localdate(),
+                    birth_date=data.get("birth_date"),
+                    national_id=data.get("national_id", ""),
+                    status=Student.Status.ACTIVE,
+                )
+                student.full_clean()
+                student.save()
+                record_student_movement(
+                    student=student,
+                    movement_type=StudentMovement.MovementType.ADMITTED,
+                    recorded_by=request.user,
+                    next_academic_year=student.academic_year,
+                    next_grade_level=student.grade_level,
+                    next_section=student.section,
+                    reason="استيراد جماعي من ملف CSV",
+                    effective_date=student.enrollment_date,
+                )
+                imported.append({
+                    "id": str(student.pk),
+                    "student_id_number": student.student_id_number,
+                })
+        return Response({
+            "message": "اكتمل استيراد الطلاب بنجاح.",
+            "imported": len(imported),
+            "results": imported,
+        }, status=status.HTTP_201_CREATED)
+
+
+class StudentExportAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        school = _resolve_school(request)
+        if not school:
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        require_school_role_or_permission(
+            request, school, STUDENT_MANAGE_ROLES, "students.view_student",
+        )
+        qs = Student.objects.filter(
+            school=school, is_archived=False,
+        ).select_related("academic_year", "grade_level", "section").order_by(
+            "student_id_number",
+        )
+        writer_buffer = io.StringIO()
+        writer = csv.writer(writer_buffer)
+        writer.writerow([
+            "student_id_number", "first_name", "middle_name", "last_name",
+            "gender", "academic_year_id", "grade_level_id", "section_id",
+            "enrollment_date", "birth_date", "national_id",
+            "academic_year", "grade_level", "section",
+        ])
+        for student in qs.iterator(chunk_size=500):
+            writer.writerow([
+                student.student_id_number, student.first_name, student.middle_name,
+                student.last_name, student.gender, str(student.academic_year_id),
+                str(student.grade_level_id), str(student.section_id),
+                student.enrollment_date.isoformat() if student.enrollment_date else "",
+                student.birth_date.isoformat() if student.birth_date else "",
+                student.national_id, student.academic_year.name,
+                student.grade_level.name, student.section.name,
+            ])
+        response = HttpResponse(
+            "\ufeff" + writer_buffer.getvalue(),
+            content_type="text/csv; charset=utf-8",
+        )
+        response["Content-Disposition"] = 'attachment; filename="students-export.csv"'
+        return response
