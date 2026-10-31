@@ -152,6 +152,13 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 30,
     "DEFAULT_SCHEMA_CLASS": "rest_framework.schemas.openapi.AutoSchema",
+    "DEFAULT_THROTTLE_RATES": {
+        "login": "10/minute",
+        "registration": "3/hour",
+        "otp_request": "3/hour",
+        "otp_verify": "8/minute",
+        "password_reset": "3/hour",
+    },
 }
 
 UNFOLD = {
