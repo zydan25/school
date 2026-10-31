@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import csv
+import io
+
 from django.db import transaction
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -23,13 +28,22 @@ from apps.students.api.serializers import (
     RetainStudentSerializer,
     StudentDetailSerializer,
     StudentListSerializer,
+    StudentSafeDetailSerializer,
+    StudentMovementSerializer,
+    StudentTransferSerializer,
+    StudentImportRowSerializer,
     WithdrawStudentSerializer,
 )
-from apps.students.models import Student
+from apps.students.models import Student, StudentMovement
+from apps.accounts.models import User, normalize_phone
 from apps.students.services import (
     graduate_student,
+    link_student_account,
     promote_student,
+    record_student_movement,
     retain_student,
+    transfer_student,
+    unlink_student_account,
     withdraw_student,
 )
 
@@ -61,14 +75,17 @@ def _student_read_queryset(request, school):
 
     if has_school_roles(request.user, school, {"teacher"}):
         teacher = request.user.teacher_profiles.filter(
-            school=school, is_archived=False,
+            school=school, is_archived=False, is_active_teaching=True,
         ).first()
         if teacher:
-            found_profile = True
             section_ids = teacher.assignments.filter(
+                school=school,
                 is_archived=False,
+                academic_year__status=AcademicYear.Status.ACTIVE,
             ).values_list("section_id", flat=True)
-            scope |= Q(section_id__in=section_ids)
+            if section_ids.exists():
+                found_profile = True
+                scope |= Q(section_id__in=section_ids)
 
     if has_school_roles(request.user, school, {"guardian"}):
         guardian = request.user.guardian_profiles.filter(
@@ -189,14 +206,29 @@ class StudentListAPIView(generics.ListCreateAPIView):
             )
             student.full_clean()
             student.save()
+            record_student_movement(
+                student=student,
+                movement_type=StudentMovement.MovementType.ADMITTED,
+                recorded_by=self.request.user,
+                next_academic_year=year,
+                next_grade_level=grade,
+                next_section=section,
+                reason="تسجيل طالب جديد",
+                effective_date=student.enrollment_date,
+            )
             serializer.instance = student
 
 
 
 class StudentDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = StudentDetailSerializer
+    serializer_class = StudentSafeDetailSerializer
     lookup_url_kwarg = "pk"
+
+    def get_serializer_class(self):
+        if has_school_roles(self.request.user, self.get_school(), STUDENT_READ_ADMIN_ROLES) or is_platform_operator(self.request.user):
+            return StudentDetailSerializer
+        return StudentSafeDetailSerializer
 
     def get_school(self):
         school = _resolve_school(self.request)
