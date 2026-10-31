@@ -138,7 +138,7 @@ def issue_phone_challenge(*, user, purpose: str, request_ip=None):
 
     # Only one unconsumed challenge per purpose remains usable.
     PhoneVerificationChallenge.objects.filter(
-        user=user, purpose=purpose, consumed_at__isnull=True,
+        user=locked_user, purpose=purpose, consumed_at__isnull=True,
     ).update(consumed_at=now, updated_at=now)
 
     code = f"{secrets.randbelow(1_000_000):06d}"
