@@ -527,7 +527,14 @@ class HomeworkViewSet(TenantModelViewSet):
             ).exists()
             if not assigned:
                 raise PermissionDenied("لا يمكنك إسناد واجب لمادة أو شعبة غير مسندة إليك.")
-        serializer.save(school=school, teacher=teacher or serializer.validated_data["teacher"])
+        assigned_teacher = teacher
+        if assigned_teacher is None:
+            teacher_id = self.request.data.get("teacher_id")
+            assigned_teacher = get_object_or_404(
+                Teacher, pk=teacher_id, school=school, is_archived=False,
+                is_active_teaching=True,
+            )
+        serializer.save(school=school, teacher=assigned_teacher)
 
 
 class HomeworkSubmissionViewSet(TenantModelViewSet):
@@ -651,15 +658,23 @@ class GradeBookViewSet(TenantModelViewSet):
         school = self.get_school()
         teacher = user_teacher_profiles(self.request.user, school).first()
         data = serializer.validated_data
+        academic_year = (
+            data["academic_term"].academic_year
+            if data.get("academic_term") else data["student"].academic_year
+        )
         if teacher and not is_admin(self.request.user, school):
             assignment = TeacherAssignment.objects.filter(
                 school=school, teacher=teacher, subject=data["subject"],
-                section=data["student"].section, academic_year=data["academic_term"].academic_year,
+                section=data["student"].section, academic_year=academic_year,
                 is_archived=False,
             ).exists()
             if not assignment:
                 raise PermissionDenied("المادة أو شعبة الطالب غير مسندة إليك.")
-        serializer.save(school=school, graded_by=self.request.user, graded_at=timezone.now())
+        serializer.save(
+            school=school,
+            graded_by=teacher,
+            graded_at=timezone.now(),
+        )
 
     @action(detail=True, methods=["post"], url_path="publish")
     def publish(self, request, pk=None):
@@ -702,10 +717,29 @@ class OnlineExamViewSet(TenantModelViewSet):
 
     def get_queryset(self):
         school = self.get_school()
-        qs = OnlineExam.objects.filter(school=school, is_archived=False).select_related("subject", "academic_term", "grade_level", "section")
+        qs = OnlineExam.objects.filter(
+            school=school, is_archived=False,
+        ).select_related("subject", "academic_term", "grade_level", "section")
         if has_school_roles(self.request.user, school, {"student"}) and not is_admin(self.request.user, school):
             student = user_student_profiles(self.request.user, school).first()
-            qs = qs.filter(is_published=True, section=student.section) if student else qs.none()
+            if not student:
+                return qs.none()
+            qs = qs.filter(is_published=True).filter(
+                Q(section=student.section)
+                | Q(section__isnull=True, grade_level=student.grade_level)
+            )
+        elif has_school_roles(self.request.user, school, {"teacher"}) and not is_admin(self.request.user, school):
+            teacher = user_teacher_profiles(self.request.user, school).first()
+            if not teacher:
+                return qs.none()
+            assigned = teacher.assignments.filter(is_archived=False)
+            section_ids = assigned.values_list("section_id", flat=True)
+            grade_ids = assigned.values_list("section__grade_id", flat=True)
+            qs = qs.filter(
+                Q(created_by=self.request.user)
+                | Q(section_id__in=section_ids)
+                | Q(section__isnull=True, grade_level_id__in=grade_ids)
+            )
         return qs.order_by("-start_time")
 
     def perform_create(self, serializer):
@@ -717,7 +751,17 @@ class OnlineExamViewSet(TenantModelViewSet):
         exam = self.get_object()
         student = user_student_profiles(request.user, self.get_school()).first()
         if not is_admin(request.user, self.get_school()):
-            if not student or not exam.is_published or student.section_id != exam.section_id:
+            eligible = bool(
+                student and exam.is_published
+                and (
+                    (exam.section_id and exam.section_id == student.section_id)
+                    or (
+                        exam.section_id is None
+                        and exam.grade_level_id == student.grade_level_id
+                    )
+                )
+            )
+            if not eligible:
                 raise PermissionDenied("الاختبار غير متاح لهذا الطالب.")
             if timezone.now() < exam.start_time or timezone.now() > exam.end_time:
                 raise ValidationError("الاختبار غير متاح حالياً خارج فترة أدائه.")
@@ -733,7 +777,17 @@ class OnlineExamViewSet(TenantModelViewSet):
     def start(self, request, pk=None):
         exam = self.get_object()
         student = user_student_profiles(request.user, self.get_school()).first()
-        if not student or not exam.is_published or student.section_id != exam.section_id:
+        eligible = bool(
+            student and exam.is_published
+            and (
+                (exam.section_id and exam.section_id == student.section_id)
+                or (
+                    exam.section_id is None
+                    and exam.grade_level_id == student.grade_level_id
+                )
+            )
+        )
+        if not eligible:
             raise PermissionDenied("هذا الاختبار غير متاح لحسابك.")
         now = timezone.now()
         if now < exam.start_time or now > exam.end_time:
@@ -805,7 +859,18 @@ class ExamSubmissionViewSet(TenantModelViewSet):
         school = self.get_school()
         teacher = user_teacher_profiles(request.user, school).first()
         if teacher and not is_admin(request.user, school):
-            if not teacher.assignments.filter(section=submission.exam.section, subject=submission.exam.subject, is_archived=False).exists():
+            assigned_sections = teacher.assignments.filter(
+                subject=submission.exam.subject, is_archived=False,
+            ).values_list("section_id", flat=True)
+            if submission.exam.section_id:
+                allowed = submission.exam.section_id in set(assigned_sections)
+            else:
+                allowed = teacher.assignments.filter(
+                    subject=submission.exam.subject,
+                    section__grade_id=submission.exam.grade_level_id,
+                    is_archived=False,
+                ).exists()
+            if not allowed:
                 raise PermissionDenied("لا يمكنك تصحيح اختبار غير مسند إليك.")
         try:
             manual_score = Decimal(str(request.data.get("manual_score", "0")))
