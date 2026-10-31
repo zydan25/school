@@ -6,6 +6,8 @@ import os
 from decimal import Decimal
 from datetime import timedelta
 
+from django.conf import settings
+from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import F, Q, Sum
 from django.http import FileResponse, Http404
@@ -29,6 +31,7 @@ from apps.accounts.models import (
 from apps.accounts.services import (
     accept_school_invitation, active_membership, issue_school_invitation,
 )
+from apps.accounts.session_services import send_phone_message
 from apps.academics.models import (
     AcademicTerm, AcademicYear,
 )
@@ -227,6 +230,16 @@ class SchoolRoleViewSet(TenantModelViewSet):
     def perform_create(self, serializer):
         serializer.save(school=self.get_school(), is_system=False)
 
+    def perform_update(self, serializer):
+        if serializer.instance.is_system:
+            raise ValidationError("لا يمكن تعديل تعريف دور النظام الأساسي من واجهة الأدوار المخصصة.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.is_system:
+            raise ValidationError("لا يمكن أرشفة دور نظامي أساسي.")
+        super().perform_destroy(instance)
+
 
 class MembershipRoleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
@@ -248,6 +261,8 @@ class MembershipRoleViewSet(viewsets.ModelViewSet):
         school = self.get_school()
         membership = get_object_or_404(SchoolMembership, pk=serializer.validated_data["membership"].pk, school=school)
         role = get_object_or_404(SchoolRole, pk=serializer.validated_data["role"].pk, school=school, is_active=True, is_archived=False)
+        if active_membership(user=membership.user, school=school) is None:
+            raise ValidationError("لا يمكن إسناد دور لعضوية غير نشطة أو منتهية.")
         assignment = MembershipRole(
             membership=membership, role=role, assigned_by=self.request.user,
             valid_from=serializer.validated_data.get("valid_from") or timezone.localdate(),
@@ -268,6 +283,8 @@ class MembershipRoleViewSet(viewsets.ModelViewSet):
             pk=serializer.validated_data.get("role", serializer.instance.role).pk,
             school=school, is_active=True, is_archived=False,
         )
+        if active_membership(user=membership.user, school=school) is None:
+            raise ValidationError("لا يمكن إسناد دور لعضوية غير نشطة أو منتهية.")
         assignment = serializer.instance
         assignment.membership = membership
         assignment.role = role
@@ -293,14 +310,15 @@ class SchoolInvitationAPIView(APIView):
         school = school_for(request)
         require_school_role_or_permission(request, school, ADMIN_ROLES)
         email = (request.data.get("email") or "").strip().lower()
-        phone = (request.data.get("phone") or "").strip()
+        from apps.accounts.models import normalize_phone
+        phone = normalize_phone(request.data.get("phone") or "")
+        if not email and not phone:
+            raise ValidationError({"detail": "أدخل بريداً إلكترونياً أو رقم هاتف لإرسال الدعوة."})
         role_ids = request.data.get("role_ids") or []
         if not isinstance(role_ids, list):
             raise ValidationError({"role_ids": "يجب إرسال الأدوار كمصفوفة من المعرفات."})
         if len(set(map(str, role_ids))) != len(role_ids):
             raise ValidationError({"role_ids": "لا تكرر الدور نفسه في الدعوة."})
-        if not email:
-            raise ValidationError({"email": "البريد الإلكتروني مطلوب لإرسال الدعوة."})
         roles = list(SchoolRole.objects.filter(
             school=school, pk__in=role_ids, is_active=True, is_archived=False,
         ))
@@ -323,10 +341,41 @@ class SchoolInvitationAPIView(APIView):
             phone=phone, expires_at=expires_at, roles=roles,
             message=request.data.get("message", ""),
         )
+        delivery_channels = []
+        try:
+            if email:
+                subject = f"دعوة للانضمام إلى {school.name}"
+                body = (
+                    f"مرحباً،\n\nتمت دعوتك للانضمام إلى {school.name}.\n"
+                    f"رمز قبول الدعوة: {raw_token}\n"
+                    f"تنتهي الدعوة في: {invitation.expires_at.isoformat()}\n"
+                    "لا تشارك هذا الرمز مع أي شخص."
+                )
+                sent = send_mail(
+                    subject, body, settings.DEFAULT_FROM_EMAIL, [email],
+                    fail_silently=False,
+                )
+                if sent != 1:
+                    raise RuntimeError("لم يؤكد مزود البريد تسليم رسالة الدعوة.")
+                delivery_channels.append("email")
+            if phone:
+                send_phone_message(
+                    phone=phone,
+                    message=f"دعوة الانضمام إلى {school.name}. رمز القبول: {raw_token}",
+                    purpose="school_invitation",
+                )
+                delivery_channels.append("sms")
+        except Exception as exc:
+            invitation.status = SchoolInvitation.Status.REVOKED
+            invitation.save(update_fields=["status", "updated_at"])
+            return Response(
+                {"error": f"تعذر تسليم الدعوة؛ ألغيت الدعوة غير المسلمة. {str(exc)}"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         data = InvitationSerializer(invitation).data
-        # Token is returned exactly once; store only its hash in the database.
-        data["acceptance_token"] = raw_token
-        data["delivery_required"] = True
+        data["delivery_channels"] = delivery_channels
+        data["delivered"] = bool(delivery_channels)
         return Response(data, status=status.HTTP_201_CREATED)
 
 
