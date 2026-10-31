@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
                 ("archive_reason", models.CharField(blank=True, max_length=500, verbose_name="سبب الأرشفة")),
                 ("title", models.CharField(max_length=180, verbose_name="عنوان الوثيقة")),
                 ("document_type", models.CharField(choices=[("birth_certificate", "شهادة ميلاد"), ("identity", "هوية / إقامة"), ("medical", "وثيقة طبية"), ("academic", "وثيقة أكاديمية"), ("custody", "وثيقة ولاية / حضانة"), ("other", "أخرى")], default="other", max_length=30, verbose_name="نوع الوثيقة")),
-                ("file", models.FileField(max_length=255, upload_to=apps.students.models.student_document_upload_path, validators=[apps.students.models.validate_student_document_file], verbose_name="ملف الوثيقة")),
+                ("file", models.FileField(upload_to=apps.students.models.student_document_upload_path, validators=[apps.students.models.validate_student_document_file], verbose_name="ملف الوثيقة")),
                 ("description", models.TextField(blank=True, verbose_name="ملاحظات")),
                 ("issued_on", models.DateField(blank=True, null=True, verbose_name="تاريخ الإصدار")),
                 ("expires_on", models.DateField(blank=True, null=True, verbose_name="تاريخ الانتهاء")),
