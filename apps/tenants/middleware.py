@@ -11,19 +11,15 @@ class SchoolContextMiddleware(MiddlewareMixin):
         request.school_context_error = None
         user = getattr(request, "user", None)
 
-        # Support DRF Token authentication in middleware for mobile apps / external APIs
+        # Resolve the same credentials as DRF, including per-device sessions.
         if not user or not user.is_authenticated:
-            auth_header = request.headers.get("Authorization", "").strip()
-            if auth_header.startswith("Token ") or auth_header.startswith("Bearer "):
-                token_key = auth_header.split(" ", 1)[1].strip()
-                try:
-                    from rest_framework.authtoken.models import Token
-                    tok = Token.objects.select_related("user").filter(key=token_key).first()
-                    if tok and tok.user.is_active:
-                        user = tok.user
-                        request.user = user
-                except Exception:
-                    pass
+            auth_parts = request.headers.get("Authorization", "").strip().split()
+            if len(auth_parts) == 2 and auth_parts[0].lower() in {"token", "bearer"}:
+                from apps.accounts.session_services import authenticate_api_credential
+                authenticated = authenticate_api_credential(auth_parts[1])
+                if authenticated is not None:
+                    user, _auth_object = authenticated
+                    request.user = user
 
         if not user or not user.is_authenticated:
             return None
@@ -38,6 +34,7 @@ class SchoolContextMiddleware(MiddlewareMixin):
         membership_qs = SchoolMembership.objects.filter(
             user=user, status=SchoolMembership.Status.ACTIVE,
             school__status=School.Status.ACTIVE,
+            school__is_archived=False,
         ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())).select_related("school")
 
         if requested_code:
@@ -47,7 +44,10 @@ class SchoolContextMiddleware(MiddlewareMixin):
                 request.school_membership = membership
                 return None
             if platform_operator:
-                request.school = School.objects.filter(code=requested_code, status=School.Status.ACTIVE).first()
+                request.school = School.objects.filter(
+                    code=requested_code, status=School.Status.ACTIVE,
+                    is_archived=False,
+                ).first()
                 return None
             request.school_context_error = "لا تملك عضوية نشطة في المدرسة المطلوبة."
             return None
@@ -59,7 +59,10 @@ class SchoolContextMiddleware(MiddlewareMixin):
                 request.school_membership = membership
                 return None
             if platform_operator:
-                request.school = School.objects.filter(pk=requested_id, status=School.Status.ACTIVE).first()
+                request.school = School.objects.filter(
+                    pk=requested_id, status=School.Status.ACTIVE,
+                    is_archived=False,
+                ).first()
                 return None
             request.school_context_error = "المدرسة المختارة غير متاحة لهذا الحساب."
             return None
