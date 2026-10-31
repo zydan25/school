@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status, viewsets
@@ -677,12 +678,12 @@ class AttendanceReportsView(APIView):
         export_format = request.query_params.get("export")
 
         if report_type == "daily-summary":
-            date_str = request.query_params.get("date", str(datetime.date.today()))
+            date_str = request.query_params.get("date", timezone.localdate().isoformat())
             section_id = request.query_params.get("section_id")
             try:
                 date = datetime.date.fromisoformat(date_str)
-            except ValueError:
-                date = datetime.date.today()
+            except (TypeError, ValueError):
+                raise ValidationError("صيغة التاريخ غير صحيحة؛ استخدم YYYY-MM-DD.")
 
             summaries = get_daily_section_summary(school, date, section_id=section_id)
             if export_format == "csv":
@@ -694,10 +695,15 @@ class AttendanceReportsView(APIView):
 
         elif report_type == "monthly-matrix":
             section_id = request.query_params.get("section_id")
-            year = int(request.query_params.get("year", datetime.date.today().year))
-            month = int(request.query_params.get("month", datetime.date.today().month))
+            try:
+                year = int(request.query_params.get("year", timezone.localdate().year))
+                month = int(request.query_params.get("month", timezone.localdate().month))
+            except (TypeError, ValueError):
+                raise ValidationError("السنة والشهر يجب أن يكونا أرقاماً صحيحة.")
             if not section_id:
                 raise ValidationError("section_id مطلوب لكشف الحضور الشهري.")
+            if month < 1 or month > 12:
+                raise ValidationError("الشهر يجب أن يكون بين 1 و12.")
 
             matrix = get_monthly_attendance_matrix(school, int(section_id), year, month)
             return Response(matrix)
@@ -707,17 +713,28 @@ class AttendanceReportsView(APIView):
             section_id = request.query_params.get("section_id")
             if not term_id:
                 raise ValidationError("academic_term_id مطلوب.")
+            try:
+                term_id_value = int(term_id)
+                section_id_value = int(section_id) if section_id else None
+            except (TypeError, ValueError):
+                raise ValidationError("معرف الفصل أو الشعبة غير صحيح.")
 
-            res = get_term_attendance_summary(school, int(term_id), section_id=int(section_id) if section_id else None)
+            res = get_term_attendance_summary(school, term_id_value, section_id=section_id_value)
             return Response({"results": res})
 
         elif report_type == "chronic-absenteeism":
             year_id = request.query_params.get("academic_year_id")
-            threshold = float(request.query_params.get("threshold", 10.0))
-            if not year_id:
+            try:
+                year_id_value = int(year_id) if year_id else None
+                threshold = float(request.query_params.get("threshold", 10.0))
+            except (TypeError, ValueError):
+                raise ValidationError("السنة والحد النسبي يجب أن يكونا رقماً صحيحاً.")
+            if not year_id_value:
                 raise ValidationError("academic_year_id مطلوب لكشف الإنذار المبكر.")
+            if threshold < 0 or threshold > 100:
+                raise ValidationError("حد الغياب المزمن يجب أن يكون بين 0 و100 بالمائة.")
 
-            cases = get_chronic_absenteeism_report(school, int(year_id), threshold_percentage=threshold)
+            cases = get_chronic_absenteeism_report(school, year_id_value, threshold_percentage=threshold)
             if export_format == "csv":
                 csv_data = export_chronic_absenteeism_to_csv(cases)
                 response = HttpResponse(csv_data, content_type="text/csv; charset=utf-8")
