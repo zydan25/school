@@ -112,6 +112,54 @@ class IdentitySessionSecurityTests(TestCase):
         )
         self.assertEqual(blocked.status_code, status.HTTP_423_LOCKED)
 
+    def test_phone_login_throttle_cannot_be_bypassed_by_rotating_ip_and_device(self):
+        user = self.create_user(phone="+967770007710")
+        for attempt in range(5):
+            response = self.client.post(
+                "/api/v1/auth/login/",
+                {
+                    "phone": user.phone,
+                    "password": "incorrect-password",
+                    "device_id": f"device-{attempt}",
+                },
+                format="json",
+                REMOTE_ADDR=f"192.0.2.{attempt + 1}",
+            )
+            self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        blocked = self.client.post(
+            "/api/v1/auth/login/",
+            {
+                "phone": user.phone,
+                "password": "incorrect-password",
+                "device_id": "another-device",
+            },
+            format="json",
+            REMOTE_ADDR="198.51.100.25",
+        )
+        self.assertEqual(blocked.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        user.refresh_from_db()
+        self.assertEqual(user.failed_login_count, 5)
+
+    def test_phone_reset_throttle_is_shared_across_source_ips(self):
+        phone = "+967770007711"
+        for attempt in range(3):
+            response = self.client.post(
+                "/api/v1/auth/password/reset/request/",
+                {"phone": phone},
+                format="json",
+                REMOTE_ADDR=f"192.0.2.{attempt + 10}",
+            )
+            self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+
+        blocked = self.client.post(
+            "/api/v1/auth/password/reset/request/",
+            {"phone": phone},
+            format="json",
+            REMOTE_ADDR="198.51.100.26",
+        )
+        self.assertEqual(blocked.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
     def test_phone_registration_requires_otp_and_activates_only_after_verification(self):
         from unittest.mock import patch
 
