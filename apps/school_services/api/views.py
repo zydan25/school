@@ -126,12 +126,19 @@ class SchoolServiceViewSet(viewsets.ModelViewSet):
         return context
 
     def perform_create(self, serializer):
-        serializer.save(school=self.get_school())
+        self.save_serializer(serializer, school=self.get_school())
+
+    def perform_update(self, serializer):
+        self.save_serializer(serializer)
 
     def perform_destroy(self, instance):
         if not hasattr(instance, "archive"):
             raise MethodNotAllowed("DELETE")
-        instance.archive(actor=self.request.user, reason="أرشفة عبر واجهة خدمات المدرسة")
+        try:
+            instance.archive(actor=self.request.user, reason="أرشفة عبر واجهة خدمات المدرسة")
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or exc.messages
+            raise ValidationError(detail) from exc
 
 
 class BusRouteViewSet(SchoolServiceViewSet):
@@ -244,7 +251,7 @@ class StudentBusSubscriptionViewSet(SchoolServiceViewSet):
                 self._check_route_capacity(
                     route, exclude_subscription_id=serializer.instance.pk
                 )
-            serializer.save()
+            self.save_serializer(serializer)
 
 
 class LibraryBookViewSet(SchoolServiceViewSet):
@@ -302,7 +309,11 @@ class BookLoanViewSet(SchoolServiceViewSet):
                 raise ValidationError("لا يمكن إرجاع هذا السجل بحالته الحالية.")
             loan.status = BookLoan.Status.RETURNED
             loan.return_date = timezone.localdate()
-            loan.save(update_fields=["status", "return_date", "updated_at"])
+            try:
+                loan.save(update_fields=["status", "return_date", "updated_at"])
+            except DjangoValidationError as exc:
+                detail = getattr(exc, "message_dict", None) or exc.messages
+                raise ValidationError(detail) from exc
         return Response(BookLoanSerializer(loan).data)
 
 
@@ -332,7 +343,11 @@ class BusFinancialSettlementViewSet(SchoolServiceViewSet):
             if settlement.status != BusFinancialSettlement.Status.DRAFT:
                 raise ValidationError("لا يعاد احتساب التسوية بعد اعتمادها.")
             settlement.calculate_due()
-            settlement.save()
+            try:
+                settlement.save()
+            except DjangoValidationError as exc:
+                detail = getattr(exc, "message_dict", None) or exc.messages
+                raise ValidationError(detail) from exc
         return Response(self.get_serializer(settlement).data)
 
     @action(detail=True, methods=["post"])
