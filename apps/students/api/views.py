@@ -409,7 +409,7 @@ class StudentAccountBindingAPIView(APIView):
             pk=pk, school=school, is_archived=False,
         )
 
-    def post(self, request, pk):
+    def post(self, request, pk, *args, **kwargs):
         student = self.get_student(request, pk)
         phone = normalize_phone(request.data.get("phone") or "")
         if not phone:
@@ -427,7 +427,7 @@ class StudentAccountBindingAPIView(APIView):
             "phone": user.phone,
         }, status=status.HTTP_200_OK)
 
-    def delete(self, request, pk):
+    def delete(self, request, pk, *args, **kwargs):
         student = self.get_student(request, pk)
         unlinked = unlink_student_account(student=student, actor=request.user)
         return Response({
@@ -441,7 +441,7 @@ class StudentTransferAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, pk, *args, **kwargs):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
@@ -607,7 +607,7 @@ class StudentImportPreviewAPIView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
@@ -719,7 +719,7 @@ class StudentImportCommitAPIView(APIView):
 class StudentExportAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
