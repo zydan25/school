@@ -44,6 +44,35 @@ def is_platform_operator(user) -> bool:
     ).exists()
 
 
+SCHOOL_PERMISSION_APP_LABELS = {
+    "academics", "students", "staff", "timetable", "attendance",
+    "assignments", "assessments", "student_fees", "accounting",
+    "payroll", "assets", "inventory", "school_services", "reports",
+    "notifications", "copilot",
+}
+
+
+def is_school_permission_allowed(permission) -> bool:
+    """School roles cannot grant Django, account, tenant or platform privileges."""
+    content_type = getattr(permission, "content_type", None)
+    if content_type is None or content_type.app_label not in SCHOOL_PERMISSION_APP_LABELS:
+        return False
+    codename = getattr(permission, "codename", "")
+    return codename.startswith(("view_", "add_", "change_", "delete_"))
+
+
+def school_assignable_permissions():
+    from django.contrib.auth.models import Permission
+    from django.db.models import Q
+
+    actions = Q()
+    for prefix in ("view_", "add_", "change_", "delete_"):
+        actions |= Q(codename__startswith=prefix)
+    return Permission.objects.filter(
+        content_type__app_label__in=SCHOOL_PERMISSION_APP_LABELS,
+    ).filter(actions).select_related("content_type").distinct()
+
+
 def has_school_permission(*, user, school, permission: str) -> bool:
     """Check `app_label.codename`; a hidden UI control is never an authorization rule."""
     if not user or not user.is_authenticated or school is None:
@@ -54,6 +83,10 @@ def has_school_permission(*, user, school, permission: str) -> bool:
     if membership is None or "." not in permission:
         return False
     app_label, codename = permission.split(".", 1)
+    if app_label not in SCHOOL_PERMISSION_APP_LABELS or not codename.startswith(
+        ("view_", "add_", "change_", "delete_")
+    ):
+        return False
     today = timezone.localdate()
     assignments = MembershipRole.objects.filter(
         membership=membership,
