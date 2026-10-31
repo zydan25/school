@@ -175,8 +175,14 @@ class StudentMovement(TenantOwnedModel):
         verbose_name_plural = "سجل حركات الطلاب"
         ordering = ["-effective_date", "-created_at"]
         indexes = [
-            models.Index(fields=["school", "student", "effective_date"]),
-            models.Index(fields=["school", "movement_type", "effective_date"]),
+            models.Index(
+                fields=["school", "student", "effective_date"],
+                name="studmov_school_student_idx",
+            ),
+            models.Index(
+                fields=["school", "movement_type", "effective_date"],
+                name="studmov_school_type_date_idx",
+            ),
         ]
 
     def clean(self):
