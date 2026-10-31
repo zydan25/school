@@ -4,12 +4,17 @@ Existing student CRUD and lifecycle endpoints remain in views.py unchanged.
 """
 from __future__ import annotations
 
+import mimetypes
+from pathlib import Path
+
 from django.db import transaction
 from django.db.models import Q
+from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -28,14 +33,19 @@ from apps.students.api.support_serializers import (
     AdministrativeSummonTargetSerializer,
     ComplaintReviewSerializer,
     IncidentResolutionSerializer,
+    GuardianConsentResponseSerializer,
+    GuardianConsentSerializer,
     SchoolComplaintSerializer,
+    StudentDocumentSerializer,
     StudentIncidentReportSerializer,
     SummonAttendanceSerializer,
 )
 from apps.students.models import (
     AdministrativeSummon,
     Guardian,
+    GuardianConsent,
     SchoolComplaint,
+    StudentDocument,
     Student,
     StudentGuardianRelation,
     StudentIncidentReport,
@@ -462,3 +472,186 @@ class SchoolComplaintReviewAPIView(APIView):
         return Response(SchoolComplaintSerializer(
             complaint, context={"school": school}
         ).data)
+
+
+def student_document_queryset_for(request, school):
+    qs = StudentDocument.objects.filter(
+        school=school, is_archived=False, student__is_archived=False,
+    ).select_related("student", "uploaded_by")
+    if is_manager(request.user, school):
+        return qs.order_by("-created_at")
+
+    visible = Q(pk__in=[])
+    role_found = False
+    if has_school_roles(request.user, school, {"guardian"}):
+        role_found = True
+        visible |= Q(
+            student_id__in=linked_student_ids(request.user, school),
+            visible_to_guardian=True,
+        )
+    if has_school_roles(request.user, school, {"student"}):
+        role_found = True
+        visible |= Q(student__user=request.user)
+    if not role_found:
+        raise PermissionDenied("لا تملك صلاحية عرض وثائق الطلاب.")
+    return qs.filter(visible).distinct().order_by("-created_at")
+
+
+class StudentDocumentListCreateAPIView(generics.ListCreateAPIView):
+    """Only school managers upload documents; linked families see permitted records."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = StudentDocumentSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get_school(self):
+        return get_school(self.request)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["school"] = self.get_school()
+        return context
+
+    def get_queryset(self):
+        return student_document_queryset_for(self.request, self.get_school())
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        if not is_manager(self.request.user, school):
+            raise PermissionDenied("رفع وثائق الطلاب متاح للإدارة المخولة فقط.")
+        serializer.save(school=school, uploaded_by=self.request.user)
+
+
+class StudentDocumentDownloadAPIView(APIView):
+    """Stream private document content only after checking the current school relationship."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        school = get_school(request)
+        document = get_object_or_404(
+            student_document_queryset_for(request, school),
+            pk=pk,
+        )
+        if not document.file:
+            raise ValidationError("ملف الوثيقة غير متاح.")
+        filename = Path(document.file.name).name
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        response = FileResponse(
+            document.file.open("rb"),
+            as_attachment=True,
+            filename=filename,
+            content_type=content_type,
+        )
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
+def guardian_consent_queryset_for(request, school):
+    qs = GuardianConsent.objects.filter(
+        school=school, is_archived=False,
+        guardian__is_archived=False, student__is_archived=False,
+    ).select_related(
+        "student", "guardian__user", "requested_by", "responded_by",
+    )
+    if is_manager(request.user, school):
+        return qs.order_by("-created_at")
+    if has_school_roles(request.user, school, {"guardian"}):
+        return qs.filter(guardian__user=request.user).order_by("-created_at")
+    raise PermissionDenied("عرض طلبات الموافقة متاح لولي الأمر المعني أو إدارة المدرسة.")
+
+
+class GuardianConsentListCreateAPIView(generics.ListCreateAPIView):
+    """School managers issue requests; each guardian sees only requests addressed to them."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = GuardianConsentSerializer
+
+    def get_school(self):
+        return get_school(self.request)
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["school"] = self.get_school()
+        return context
+
+    def get_queryset(self):
+        return guardian_consent_queryset_for(self.request, self.get_school())
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        if not is_manager(self.request.user, school):
+            raise PermissionDenied("إنشاء طلبات الموافقة متاح لإدارة المدرسة المخولة فقط.")
+        serializer.save(school=school, requested_by=self.request.user)
+
+
+class GuardianConsentRespondAPIView(APIView):
+    """Only the exact linked guardian account may approve or reject a pending request."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        school = get_school(request)
+        serializer = GuardianConsentResponseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        now = timezone.now()
+        expired = False
+
+        with transaction.atomic():
+            consent = get_object_or_404(
+                GuardianConsent.objects.select_for_update(of=("self",)).select_related(
+                    "student", "guardian__user", "requested_by", "responded_by",
+                ),
+                pk=pk,
+                school=school,
+                is_archived=False,
+                guardian__is_archived=False,
+                guardian__user=request.user,
+                student__is_archived=False,
+            )
+            active_membership = SchoolMembership.objects.filter(
+                user=request.user,
+                school=school,
+                status=SchoolMembership.Status.ACTIVE,
+            ).filter(
+                Q(expires_at__isnull=True) | Q(expires_at__gt=now)
+            ).exists()
+            if not active_membership:
+                raise PermissionDenied("عضوية ولي الأمر غير نشطة أو منتهية.")
+            linked = StudentGuardianRelation.objects.filter(
+                school=school,
+                student=consent.student,
+                guardian=consent.guardian,
+                is_archived=False,
+            ).exists()
+            if not linked:
+                raise PermissionDenied("لم تعد لديك علاقة ولي أمر نشطة بهذا الطالب.")
+            if consent.status != GuardianConsent.Status.PENDING:
+                return Response(
+                    {"detail": "تم الرد على هذا الطلب أو لم يعد مفتوحاً.", "status": consent.status},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if consent.expires_at and consent.expires_at <= now:
+                consent.status = GuardianConsent.Status.EXPIRED
+                consent.save(update_fields=["status", "updated_at"])
+                expired = True
+            else:
+                consent.status = serializer.validated_data["status"]
+                consent.responded_at = now
+                consent.responded_by = request.user
+                consent.response_note = serializer.validated_data["response_note"]
+                consent.save(update_fields=[
+                    "status", "responded_at", "responded_by",
+                    "response_note", "updated_at",
+                ])
+
+        if expired:
+            return Response(
+                {"detail": "انتهت صلاحية طلب الموافقة.", "status": GuardianConsent.Status.EXPIRED},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(GuardianConsentSerializer(
+            consent,
+            context={"request": request, "school": school},
+        ).data, status=status.HTTP_200_OK)
