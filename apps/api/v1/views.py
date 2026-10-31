@@ -174,51 +174,6 @@ class TenantModelViewSet(viewsets.ModelViewSet):
 # ---------------------------------------------------------------------------
 # Identity, profile, memberships, school roles and invitations
 # ---------------------------------------------------------------------------
-class MeAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-    parser_classes = [JSONParser, MultiPartParser, FormParser]
-
-    def get(self, request):
-        user = request.user
-        school = resolve_active_school(request)
-        membership = active_membership(user=user, school=school) if school else None
-        profiles = []
-        if school:
-            profiles = [
-                {"type": "teacher", "id": str(x.pk), "label": str(x)}
-                for x in user_teacher_profiles(user, school)
-            ] + [
-                {"type": "guardian", "id": str(x.pk), "label": str(x)}
-                for x in user_guardian_profiles(user, school)
-            ] + [
-                {"type": "student", "id": str(x.pk), "label": x.get_full_name()}
-                for x in user_student_profiles(user, school)
-            ] + [
-                {"type": "staff", "id": str(x.pk), "label": str(x)}
-                for x in user_staff_profiles(user, school)
-            ]
-        from apps.api.v1.serializers import UserProfileSerializer
-        return Response({
-            "user": UserProfileSerializer(user, context={"request": request}).data,
-            "active_school": (
-                {"id": str(school.pk), "code": school.code, "name": school.name}
-                if school else None
-            ),
-            "membership_id": str(membership.pk) if membership else None,
-            "roles": sorted(membership.get_role_codes()) if membership else [],
-            "profiles": profiles,
-        })
-
-    def patch(self, request):
-        from apps.api.v1.serializers import UserProfileSerializer
-        serializer = UserProfileSerializer(
-            request.user, data=request.data, partial=True, context={"request": request},
-        )
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
-
-
 class MyProfilesAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -402,50 +357,6 @@ class GuardianRelationViewSet(TenantModelViewSet):
         ).select_related("student", "guardian__user")
 
 
-class StudentRecordViewSet(TenantModelViewSet):
-    serializer_class = StudentSerializer
-    read_roles = ADMIN_ROLES | {"teacher"}
-    write_roles = STUDENT_AFFAIRS_ROLES
-
-    def get_queryset(self):
-        qs = Student.objects.filter(school=self.get_school(), is_archived=False).select_related("grade_level", "section", "academic_year")
-        search = self.request.query_params.get("search")
-        grade = self.request.query_params.get("grade_level")
-        section = self.request.query_params.get("section")
-        year = self.request.query_params.get("academic_year")
-        if search:
-            qs = qs.filter(
-                Q(first_name__icontains=search) | Q(middle_name__icontains=search)
-                | Q(last_name__icontains=search) | Q(student_id_number__icontains=search)
-            )
-        if grade:
-            qs = qs.filter(grade_level_id=grade)
-        if section:
-            qs = qs.filter(section_id=section)
-        if year:
-            qs = qs.filter(academic_year_id=year)
-        if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not is_admin(self.request.user, self.get_school()):
-            teacher = user_teacher_profiles(self.request.user, self.get_school()).first()
-            section_ids = teacher.assignments.filter(is_archived=False).values_list("section_id", flat=True) if teacher else []
-            qs = qs.filter(section_id__in=section_ids)
-        return qs
-
-    def perform_create(self, serializer):
-        require_school_role_or_permission(self.request, self.get_school(), STUDENT_AFFAIRS_ROLES, "students.add_student")
-        serializer.save(school=self.get_school())
-
-    def perform_update(self, serializer):
-        require_school_role_or_permission(self.request, self.get_school(), STUDENT_AFFAIRS_ROLES, "students.change_student")
-        serializer.save()
-
-    def perform_destroy(self, instance):
-        require_school_role_or_permission(self.request, self.get_school(), STUDENT_AFFAIRS_ROLES, "students.delete_student")
-        super().perform_destroy(instance)
-
-
-# ---------------------------------------------------------------------------
-# Academic structure, teacher and HR master data
-# ---------------------------------------------------------------------------
 class AcademicYearViewSet(TenantModelViewSet):
     serializer_class = AcademicYearSerializer
     read_roles = READ_ROLES
@@ -552,18 +463,6 @@ class TeacherAssignmentViewSet(TenantModelViewSet):
             qs = qs.filter(teacher=teacher) if teacher else qs.none()
         year_id = self.request.query_params.get("academic_year_id")
         return qs.filter(academic_year_id=year_id) if year_id else qs
-
-
-class StaffMemberViewSet(TenantModelViewSet):
-    serializer_class = StaffMemberSerializer
-    read_roles = HR_ADMIN_ROLES
-    write_roles = HR_ADMIN_ROLES
-
-    def perform_create(self, serializer):
-        user = get_object_or_404(User, pk=self.request.data.get("user_id"), is_active=True)
-        if active_membership(user=user, school=self.get_school()) is None:
-            raise ValidationError("يجب إنشاء عضوية المدرسة للمستخدم قبل إنشاء ملف الموظف.")
-        serializer.save(school=self.get_school(), user=user)
 
 
 class DepartmentViewSet(TenantModelViewSet):
@@ -1579,29 +1478,6 @@ class NotificationPreferenceViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(user=request.user, school=pref.school)
         return Response(serializer.data)
-
-
-class UserNotificationsFeedAPIView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        school = school_for(request)
-        qs = Notification.objects.filter(recipient=request.user).filter(Q(school=school) | Q(school__isnull=True))
-        if request.query_params.get("unread_only", "").lower() in {"true", "1"}:
-            qs = qs.filter(is_read=False)
-        category = request.query_params.get("category")
-        if category:
-            qs = qs.filter(category=category)
-        return Response({
-            "unread_count": qs.filter(is_read=False).count(),
-            "results": [{
-                "id": str(x.pk), "title": x.title, "body": x.body,
-                "category": x.category, "channel": x.channel,
-                "action_url": x.action_url, "payload": x.payload,
-                "is_read": x.is_read, "created_at": x.created_at,
-                "read_at": x.read_at,
-            } for x in qs.order_by("-created_at")[:100]],
-        })
 
 
 class SchoolConversationViewSet(viewsets.ViewSet):
