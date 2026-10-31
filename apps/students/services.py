@@ -487,3 +487,57 @@ def withdraw_student(student: Student, reason: str = "", user=None) -> Student:
             reason=reason,
         )
         return locked_student
+
+
+@transaction.atomic
+def ensure_guardian_membership(*, user: User, school, actor=None):
+    """Ensure a verified guardian has an active membership and a non-privileged guardian role."""
+    locked_user = User.objects.select_for_update().get(pk=user.pk)
+    if not locked_user.is_active or locked_user.status != User.Status.ACTIVE:
+        raise ValidationError("لا يمكن ربط ملف ولي أمر بحساب غير نشط.")
+    if locked_user.phone_verified_at is None:
+        raise ValidationError("يجب توثيق رقم هاتف ولي الأمر قبل تفعيل حسابه في المدرسة.")
+
+    membership = SchoolMembership.objects.select_for_update().filter(
+        user=locked_user, school=school,
+    ).first()
+    now = timezone.now()
+    if membership is not None:
+        if membership.status != SchoolMembership.Status.ACTIVE:
+            raise ValidationError("عضوية ولي الأمر موقوفة أو غير مفعلة؛ راجع إدارة المدرسة.")
+        if membership.expires_at and membership.expires_at <= now:
+            raise ValidationError("انتهت عضوية ولي الأمر في المدرسة.")
+    else:
+        has_default = SchoolMembership.objects.filter(
+            user=locked_user, status=SchoolMembership.Status.ACTIVE,
+            is_default=True,
+        ).exists()
+        membership = SchoolMembership.objects.create(
+            user=locked_user,
+            school=school,
+            status=SchoolMembership.Status.ACTIVE,
+            is_default=not has_default,
+            joined_at=now,
+            invited_by=actor,
+        )
+
+    role, _ = SchoolRole.objects.get_or_create(
+        school=school,
+        code="guardian",
+        defaults={
+            "name": "ولي أمر",
+            "description": "متابعة الأبناء والاطلاع على الخدمات المخصصة لولي الأمر فقط.",
+            "is_system": True,
+        },
+    )
+    if not role.is_active or role.is_archived:
+        raise ValidationError("دور ولي الأمر غير مفعل في المدرسة.")
+    MembershipRole.objects.get_or_create(
+        membership=membership,
+        role=role,
+        defaults={
+            "assigned_by": actor,
+            "valid_from": timezone.localdate(),
+        },
+    )
+    return membership
