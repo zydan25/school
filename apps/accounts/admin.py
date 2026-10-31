@@ -13,6 +13,7 @@ from apps.accounts.models import (
     User,
 )
 from apps.auditlog.services import record_event
+from apps.accounts.services import school_assignable_permissions
 from apps.core.admin import AuditedAdminMixin
 
 
@@ -122,6 +123,11 @@ class SchoolRoleAdmin(AuditedAdminMixin, ModelAdmin):
     filter_horizontal = ("permissions",)
     readonly_fields = ("id", "created_at", "updated_at")
     list_select_related = ("school",)
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        if db_field.name == "permissions":
+            kwargs["queryset"] = school_assignable_permissions()
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
 
     def has_delete_permission(self, request, obj=None):
         return False
