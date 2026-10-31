@@ -20,17 +20,16 @@ from apps.assessments.models import (
     QuestionBank, StudentOnlineExamSubmission,
 )
 from apps.assignments.models import Homework, HomeworkSubmission
-from apps.attendance.models import AttendanceScoreEntry
 from apps.inventory.models import (
     InventoryItem, PurchaseOrder, PurchaseOrderItem, StockMovement,
     Supplier, VendorInvoice, Warehouse,
 )
 from apps.notifications.models import (
-    ConversationMessage, ConversationParticipant, Notification,
+    ConversationMessage, ConversationParticipant,
     NotificationPreference, PushDevice, SchoolConversation,
 )
 from apps.staff.models import (
-    Department, LeaveRequest, LeaveType, StaffAttendance, StaffMember,
+    Department, LeaveRequest, LeaveType, StaffMember,
     Teacher, TeacherAssignment, WorkShift,
 )
 from apps.students.models import (
