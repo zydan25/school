@@ -1401,7 +1401,20 @@ class VoucherBaseViewSet(TenantModelViewSet):
     write_roles = FINANCIAL_ROLES
 
     def perform_create(self, serializer):
-        raise MethodNotAllowed("POST", detail="استخدم إنشاء السند المخصص لضمان إنشاء قيد مزدوج مرتبط.")
+        raise MethodNotAllowed(
+            "POST",
+            detail="استخدم إنشاء السند المخصص لضمان إنشاء قيد مزدوج مرتبط.",
+        )
+
+    def perform_update(self, serializer):
+        if serializer.instance.status != "draft":
+            raise ValidationError("لا يمكن تعديل سند تم ترحيله أو إلغاؤه.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.status != "draft":
+            raise ValidationError("لا يمكن أرشفة سند مالي مرحّل؛ استخدم إجراء العكس المعتمد.")
+        super().perform_destroy(instance)
 
 
 class PaymentVoucherViewSet(VoucherBaseViewSet):
@@ -1420,6 +1433,8 @@ class PaymentVoucherViewSet(VoucherBaseViewSet):
         amount = d["amount"]
         if amount <= 0:
             raise ValidationError({"amount": "المبلغ يجب أن يكون أكبر من صفر."})
+        if debit.account_type != Account.AccountType.EXPENSE:
+            raise ValidationError({"debit_account": "حساب المصروف يجب أن يكون من نوع المصروفات."})
         if credit.account_type != Account.AccountType.ASSET:
             raise ValidationError({"credit_account": "حساب الدفع يجب أن يكون من نوع الأصول النقدية/البنكية."})
         period = FiscalPeriod.objects.filter(school=school, is_closed=False, start_date__lte=d["date"], end_date__gte=d["date"], is_archived=False).first()
@@ -1445,11 +1460,18 @@ class PaymentVoucherViewSet(VoucherBaseViewSet):
 
     @action(detail=True, methods=["post"], url_path="post")
     def post(self, request, pk=None):
-        voucher = self.get_object()
-        if voucher.status != PaymentVoucher.Status.DRAFT:
-            raise ValidationError("السند ليس مسودة.")
         with transaction.atomic():
-            voucher.journal_entry.post(user=request.user)
+            voucher = get_object_or_404(
+                PaymentVoucher.objects.select_for_update(),
+                pk=pk, school=self.get_school(), is_archived=False,
+            )
+            if voucher.status != PaymentVoucher.Status.DRAFT:
+                raise ValidationError("السند ليس مسودة.")
+            entry = get_object_or_404(
+                JournalEntry.objects.select_for_update(),
+                pk=voucher.journal_entry_id, school=self.get_school(),
+            )
+            entry.post(user=request.user)
             voucher.status = PaymentVoucher.Status.POSTED
             voucher.save(update_fields=["status", "updated_at"])
         return Response(self.get_serializer(voucher).data)
@@ -1467,7 +1489,10 @@ class ReceiptVoucherViewSet(VoucherBaseViewSet):
         d = serializer.validated_data
         school = self.get_school()
         debit = get_object_or_404(Account, pk=d["debit_account"].pk, school=school, is_leaf=True, account_type=Account.AccountType.ASSET)
-        credit = get_object_or_404(Account, pk=d["credit_account"].pk, school=school, is_leaf=True)
+        credit = get_object_or_404(
+            Account, pk=d["credit_account"].pk, school=school,
+            is_leaf=True, account_type=Account.AccountType.REVENUE,
+        )
         if d["amount"] <= 0:
             raise ValidationError({"amount": "المبلغ يجب أن يكون أكبر من صفر."})
         period = FiscalPeriod.objects.filter(school=school, is_closed=False, start_date__lte=d["date"], end_date__gte=d["date"], is_archived=False).first()
@@ -1493,11 +1518,18 @@ class ReceiptVoucherViewSet(VoucherBaseViewSet):
 
     @action(detail=True, methods=["post"], url_path="post")
     def post(self, request, pk=None):
-        voucher = self.get_object()
-        if voucher.status != ReceiptVoucher.Status.DRAFT:
-            raise ValidationError("السند ليس مسودة.")
         with transaction.atomic():
-            voucher.journal_entry.post(user=request.user)
+            voucher = get_object_or_404(
+                ReceiptVoucher.objects.select_for_update(),
+                pk=pk, school=self.get_school(), is_archived=False,
+            )
+            if voucher.status != ReceiptVoucher.Status.DRAFT:
+                raise ValidationError("السند ليس مسودة.")
+            entry = get_object_or_404(
+                JournalEntry.objects.select_for_update(),
+                pk=voucher.journal_entry_id, school=self.get_school(),
+            )
+            entry.post(user=request.user)
             voucher.status = ReceiptVoucher.Status.POSTED
             voucher.save(update_fields=["status", "updated_at"])
         return Response(self.get_serializer(voucher).data)
@@ -1539,6 +1571,10 @@ class StockMovementViewSet(TenantModelViewSet):
     read_roles = INVENTORY_ROLES | ADMIN_ROLES
     write_roles = INVENTORY_ROLES
 
+    def perform_destroy(self, instance):
+        # The model's delete() reverses the physical stock effect atomically.
+        instance.delete()
+
     def get_queryset(self):
         qs = super().get_queryset().select_related("item")
         item_id = self.request.query_params.get("item_id")
@@ -1562,7 +1598,21 @@ class PurchaseOrderViewSet(TenantModelViewSet):
     }
 
     def get_queryset(self):
-        return PurchaseOrder.objects.filter(school=self.get_school(), is_archived=False).prefetch_related("items__item").order_by("-order_date")
+        return PurchaseOrder.objects.filter(
+            school=self.get_school(), is_archived=False,
+        ).prefetch_related("items__item").order_by("-order_date")
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        supplier = get_object_or_404(
+            Supplier, pk=serializer.validated_data["supplier"].pk,
+            school=school, is_archived=False, is_active=True,
+        )
+        warehouse = get_object_or_404(
+            Warehouse, pk=serializer.validated_data["warehouse"].pk,
+            school=school, is_archived=False,
+        )
+        serializer.save(school=school, supplier=supplier, warehouse=warehouse)
 
     def perform_update(self, serializer):
         if serializer.instance.status != PurchaseOrder.Status.DRAFT:
@@ -1571,12 +1621,24 @@ class PurchaseOrderViewSet(TenantModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
-        order = self.get_object()
-        if order.status != PurchaseOrder.Status.DRAFT:
-            raise ValidationError("أمر الشراء ليس في حالة مسودة.")
-        order.status = PurchaseOrder.Status.APPROVED
-        order.approved_by = request.user
-        order.save(update_fields=["status", "approved_by", "updated_at"])
+        with transaction.atomic():
+            order = get_object_or_404(
+                PurchaseOrder.objects.select_for_update(),
+                pk=pk, school=self.get_school(), is_archived=False,
+            )
+            if order.status != PurchaseOrder.Status.DRAFT:
+                raise ValidationError("أمر الشراء ليس في حالة مسودة.")
+            if not order.items.filter(is_archived=False).exists():
+                raise ValidationError("أضف بنداً واحداً على الأقل قبل اعتماد أمر الشراء.")
+            order.total_amount = sum(
+                (item.total_price for item in order.items.filter(is_archived=False)),
+                Decimal("0.00"),
+            )
+            order.status = PurchaseOrder.Status.APPROVED
+            order.approved_by = request.user
+            order.save(update_fields=[
+                "total_amount", "status", "approved_by", "updated_at",
+            ])
         return Response(self.get_serializer(order).data)
 
     @action(detail=True, methods=["post"], url_path="receive")
@@ -1596,10 +1658,61 @@ class PurchaseOrderItemViewSet(TenantModelViewSet):
         order_id = self.request.query_params.get("purchase_order_id")
         return qs.filter(purchase_order_id=order_id) if order_id else qs
 
+    def _recalculate_order_total(self, order):
+        total = order.items.filter(is_archived=False).aggregate(
+            total=models.Sum("total_price"),
+        )["total"] or Decimal("0.00")
+        order.total_amount = total
+        order.save(update_fields=["total_amount", "updated_at"])
+
     def perform_create(self, serializer):
         school = self.get_school()
-        order = get_object_or_404(PurchaseOrder, pk=serializer.validated_data["purchase_order"].pk, school=school, status=PurchaseOrder.Status.DRAFT, is_archived=False)
-        serializer.save(school=school, purchase_order=order)
+        with transaction.atomic():
+            order = get_object_or_404(
+                PurchaseOrder.objects.select_for_update(),
+                pk=serializer.validated_data["purchase_order"].pk,
+                school=school, status=PurchaseOrder.Status.DRAFT,
+                is_archived=False,
+            )
+            item = get_object_or_404(
+                InventoryItem, pk=serializer.validated_data["item"].pk,
+                school=school, is_archived=False,
+            )
+            serializer.save(school=school, purchase_order=order, item=item)
+            self._recalculate_order_total(order)
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        with transaction.atomic():
+            order = get_object_or_404(
+                PurchaseOrder.objects.select_for_update(),
+                pk=serializer.instance.purchase_order_id,
+                school=school, status=PurchaseOrder.Status.DRAFT,
+                is_archived=False,
+            )
+            if (
+                "purchase_order" in serializer.validated_data
+                and serializer.validated_data["purchase_order"].pk != order.pk
+            ):
+                raise ValidationError("لا يمكن نقل بند بين أوامر شراء مختلفة.")
+            if "item" in serializer.validated_data:
+                serializer.validated_data["item"] = get_object_or_404(
+                    InventoryItem, pk=serializer.validated_data["item"].pk,
+                    school=school, is_archived=False,
+                )
+            serializer.save(purchase_order=order)
+            self._recalculate_order_total(order)
+
+    def perform_destroy(self, instance):
+        school = self.get_school()
+        with transaction.atomic():
+            order = get_object_or_404(
+                PurchaseOrder.objects.select_for_update(),
+                pk=instance.purchase_order_id, school=school,
+                status=PurchaseOrder.Status.DRAFT, is_archived=False,
+            )
+            instance.archive(actor=self.request.user, reason="أرشفة بند أمر الشراء")
+            self._recalculate_order_total(order)
 
 
 class VendorInvoiceViewSet(TenantModelViewSet):
@@ -1620,23 +1733,42 @@ class VendorInvoiceViewSet(TenantModelViewSet):
     def perform_create(self, serializer):
         serializer.save(school=self.get_school(), status=VendorInvoice.Status.DRAFT)
 
+    def perform_update(self, serializer):
+        if serializer.instance.status != VendorInvoice.Status.DRAFT or serializer.instance.journal_entry_id:
+            raise ValidationError("لا يمكن تعديل فاتورة مورد بعد اعتمادها أو ترحيلها.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.status != VendorInvoice.Status.DRAFT or instance.journal_entry_id:
+            raise ValidationError("لا يمكن أرشفة فاتورة مورد معتمدة أو مرحّلة.")
+        super().perform_destroy(instance)
+
     @action(detail=True, methods=["post"], url_path="approve")
     def approve(self, request, pk=None):
-        invoice = self.get_object()
-        if invoice.status != VendorInvoice.Status.DRAFT:
-            raise ValidationError("لا يمكن اعتماد الفاتورة إلا من حالة مسودة.")
-        invoice.status = VendorInvoice.Status.APPROVED
-        invoice.save(update_fields=["status", "updated_at"])
+        with transaction.atomic():
+            invoice = get_object_or_404(
+                VendorInvoice.objects.select_for_update(),
+                pk=pk, school=self.get_school(), is_archived=False,
+            )
+            if invoice.status != VendorInvoice.Status.DRAFT:
+                raise ValidationError("لا يمكن اعتماد الفاتورة إلا من حالة مسودة.")
+            invoice.status = VendorInvoice.Status.APPROVED
+            invoice.save(update_fields=["status", "updated_at"])
         return Response(self.get_serializer(invoice).data)
 
     @action(detail=True, methods=["post"], url_path="post")
     def post(self, request, pk=None):
-        invoice = self.get_object()
-        if invoice.status != VendorInvoice.Status.APPROVED:
-            raise ValidationError("يجب اعتماد فاتورة المورد قبل ترحيلها.")
-        from apps.accounting.services.auto_posting import _get_account_or_seed, _get_active_fiscal_period
+        from apps.accounting.services.auto_posting import (
+            _get_account_or_seed, _get_active_fiscal_period,
+        )
         school = self.get_school()
         with transaction.atomic():
+            invoice = get_object_or_404(
+                VendorInvoice.objects.select_for_update(),
+                pk=pk, school=school, is_archived=False,
+            )
+            if invoice.status != VendorInvoice.Status.APPROVED:
+                raise ValidationError("يجب اعتماد فاتورة المورد قبل ترحيلها.")
             if invoice.journal_entry_id:
                 raise ValidationError("تم ترحيل الفاتورة محاسبياً مسبقاً.")
             period = _get_active_fiscal_period(school, invoice.invoice_date)
@@ -1658,7 +1790,6 @@ class VendorInvoiceViewSet(TenantModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="record-payment")
     def record_payment(self, request, pk=None):
-        invoice = self.get_object()
         try:
             amount = Decimal(str(request.data.get("amount")))
         except Exception:
@@ -1670,6 +1801,18 @@ class VendorInvoiceViewSet(TenantModelViewSet):
         payment_account = get_object_or_404(Account, pk=request.data.get("payment_account_id"), school=self.get_school(), is_leaf=True, account_type=Account.AccountType.ASSET)
         from apps.accounting.services.auto_posting import _get_account_or_seed, _get_active_fiscal_period
         with transaction.atomic():
+            invoice = get_object_or_404(
+                VendorInvoice.objects.select_for_update(),
+                pk=pk, school=self.get_school(), is_archived=False,
+            )
+            if not invoice.journal_entry_id:
+                raise ValidationError("يجب ترحيل فاتورة المورد محاسبياً قبل تسجيل السداد.")
+            if invoice.status not in [VendorInvoice.Status.APPROVED, VendorInvoice.Status.PARTIAL]:
+                raise ValidationError("فاتورة المورد ليست في حالة تسمح بالسداد.")
+            if amount <= 0 or amount > invoice.remaining_amount:
+                raise ValidationError({
+                    "amount": f"المبلغ يجب أن يكون أكبر من صفر ولا يتجاوز المتبقي {invoice.remaining_amount}.",
+                })
             period = _get_active_fiscal_period(self.get_school(), timezone.localdate())
             ap = _get_account_or_seed(self.get_school(), "2101", "ذمم الموردين")
             entry = JournalEntry.objects.create(
