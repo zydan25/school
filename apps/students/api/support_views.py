@@ -617,8 +617,10 @@ class GuardianConsentRespondAPIView(APIView):
             ).filter(
                 Q(expires_at__isnull=True) | Q(expires_at__gt=now)
             ).exists()
-            if not active_membership:
-                raise PermissionDenied("عضوية ولي الأمر غير نشطة أو منتهية.")
+            if not active_membership or not has_school_roles(
+                request.user, school, {"guardian"}
+            ):
+                raise PermissionDenied("يجب أن يكون الحساب ولي أمر بعضوية سارية في المدرسة.")
             linked = StudentGuardianRelation.objects.filter(
                 school=school,
                 student=consent.student,
