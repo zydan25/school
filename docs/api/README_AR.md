@@ -290,15 +290,22 @@ Accept: application/json
 | GET, POST | `/attendance/calendars/` | قراءة/إنشاء تقويم |
 | GET, PUT, PATCH, DELETE | `/attendance/calendars/{calendar_id}/` | إدارة تقويم |
 | POST | `/attendance/calendars/{calendar_id}/seed-days/` | توليد أيام التقويم |
+| GET, POST | `/attendance/calendar-days/?calendar_id=&from=&to=` | قراءة أيام التقويم حسب التقويم أو الفترة |
+| GET, PUT, PATCH, DELETE | `/attendance/calendar-days/{day_id}/` | إدارة يوم تقويمي؛ DELETE يؤرشف ولا يحذف تاريخياً |
 | GET, POST | `/attendance/calendar-events/` | قراءة/إنشاء فعالية |
 | GET, PUT, PATCH, DELETE | `/attendance/calendar-events/{event_id}/` | إدارة فعالية |
+| GET | `/attendance/calendar-events/{event_id}/occurrences/` | عرض المواعيد المتولدة للفعالية |
+| POST | `/attendance/calendar-events/{event_id}/generate-occurrences/` | توليد المواعيد الدورية الناقصة دون تكرار |
 
-ترتبط الفعاليات بسنة دراسية وقد تستهدف مرحلة أو صفاً أو شعبة أو مادة أو معلماً أو قاعة. الخادم يتحقق من أن الارتباطات تتبع المدرسة نفسها وأن الشعبة ضمن العام والصف المحددين.
+عند إنشاء فعالية، ينشئ الخادم مواعيدها تلقائياً وفق نمط التكرار. بعد تعديل تاريخ أو نمط فعالية موجودة، استخدم `generate-occurrences` لإضافة المواعيد الناقصة؛ لا يحذف النظام المواعيد التاريخية تلقائياً. ترتبط الفعاليات بسنة دراسية وقد تستهدف مرحلة أو صفاً أو شعبة أو مادة أو معلماً أو قاعة. الخادم يتحقق من أن الارتباطات تتبع المدرسة نفسها، وأن الشعبة والصف والمرحلة تتوافق مع السنة الدراسية.
 
-### 6.7 درجات المواظبة والتقارير
+### 6.7 سياسات درجات المواظبة والسجلات والتقارير
 
 | Method | Endpoint | الوظيفة |
 |---|---|---|
+| GET, POST | `/attendance/scoring-policies/` | قراءة/إنشاء سياسة درجات المواظبة |
+| GET, PUT, PATCH, DELETE | `/attendance/scoring-policies/{policy_id}/` | إدارة سياسة؛ DELETE يؤرشف السياسة |
+| GET | `/attendance/score-entries/?student_id=&academic_term_id=&section_id=` | قراءة درجات المواظبة المحتسبة |
 | POST | `/attendance/scoring/calculate/` | احتساب درجة مواظبة طالب |
 | POST | `/attendance/scoring/recalculate-term/` | إعادة احتساب درجات فصل أو شعبة |
 | POST | `/attendance/scoring/{entry_id}/sync-gradebook/` | مزامنة الدرجة إلى GradeBook |
