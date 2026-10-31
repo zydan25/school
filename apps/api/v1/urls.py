@@ -13,6 +13,7 @@ from apps.api.v1.views import (
     ClassroomViewSet,
     ClassScheduleViewSet,
     ConversationAttachmentDownloadAPIView,
+    ConversationMessageDetailAPIView,
     CostCenterViewSet,
     DailyLessonLogViewSet,
     DepartmentViewSet,
@@ -136,6 +137,7 @@ urlpatterns = [
     path("my/children/", GuardianChildrenAPIView.as_view(), name="app-my-children"),
     path("my/timetable/", MyWeeklyTimetableAPIView.as_view(), name="app-my-timetable"),
     path("homework-submissions/<uuid:submission_id>/attachment/", HomeworkAttachmentDownloadAPIView.as_view(), name="app-homework-attachment"),
+    path("conversations/<uuid:conversation_id>/messages/<uuid:message_id>/", ConversationMessageDetailAPIView.as_view(), name="app-conversation-message-detail"),
     path("conversation-messages/<uuid:message_id>/attachment/", ConversationAttachmentDownloadAPIView.as_view(), name="app-conversation-attachment"),
     path("", include(router.urls)),
 ]
