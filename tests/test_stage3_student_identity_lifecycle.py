@@ -280,7 +280,7 @@ class StudentIdentityAndLifecycleTests(TestCase):
             user=unverified_teacher,
             status=SchoolMembership.Status.ACTIVE,
         )
-        query = f"?school_code={self.school.code}"
+        query = self.authenticate_school_admin()
         rejected_teacher = self.client.post(
             f"/api/v1/app/teachers/{query}",
             {"user_id": str(unverified_teacher.pk), "specialization": "رياضيات"},
