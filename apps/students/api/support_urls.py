@@ -3,6 +3,10 @@ from django.urls import path
 
 from apps.students.api.support_views import (
     AdministrativeSummonAttendAPIView,
+    GuardianConsentListCreateAPIView,
+    GuardianConsentRespondAPIView,
+    StudentDocumentDownloadAPIView,
+    StudentDocumentListCreateAPIView,
     AdministrativeSummonDetailAPIView,
     AdministrativeSummonListCreateAPIView,
     SchoolComplaintDetailAPIView,
@@ -16,6 +20,10 @@ from apps.students.api.support_views import (
 )
 
 urlpatterns = [
+    path("documents/", StudentDocumentListCreateAPIView.as_view(), name="student-document-list-create"),
+    path("documents/<uuid:pk>/download/", StudentDocumentDownloadAPIView.as_view(), name="student-document-download"),
+    path("consents/", GuardianConsentListCreateAPIView.as_view(), name="guardian-consent-list-create"),
+    path("consents/<uuid:pk>/respond/", GuardianConsentRespondAPIView.as_view(), name="guardian-consent-respond"),
     path("incidents/", StudentIncidentListCreateAPIView.as_view(), name="student-incident-list-create"),
     path("incidents/<uuid:pk>/", StudentIncidentDetailAPIView.as_view(), name="student-incident-detail"),
     path("incidents/<uuid:pk>/notify-parents/", StudentIncidentNotifyParentsAPIView.as_view(), name="student-incident-notify-parents"),
