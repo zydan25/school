@@ -7,11 +7,12 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.academics.models import AcademicTerm, AcademicYear, Section, Subject
+from apps.accounts.api_permissions import has_school_roles, require_school_role_or_permission
 from apps.attendance.api.serializers import (
     AttendanceExcuseRequestSerializer,
     AttendancePolicySerializer,
@@ -40,6 +41,7 @@ from apps.attendance.models import (
     AttendanceStatusType,
     CalendarEvent,
     EarlyDepartureRequest,
+    StudentAttendanceRecord,
     SchoolCalendar,
     SchoolCalendarDay,
 )
@@ -76,18 +78,42 @@ from apps.students.models import Guardian, Student
 from apps.timetable.models import ClassSchedule
 
 
+ATTENDANCE_ADMIN_ROLES = {
+    "school-director", "school_director",
+    "academic-coordinator", "academic_coordinator",
+    "student-affairs", "student_affairs",
+}
+ATTENDANCE_READ_ROLES = ATTENDANCE_ADMIN_ROLES | {"teacher"}
+ATTENDANCE_TEACHER_ROLES = ATTENDANCE_ADMIN_ROLES | {"teacher"}
+ATTENDANCE_GATE_ROLES = ATTENDANCE_ADMIN_ROLES | {"gate-security", "gate_security", "school-gate-guard"}
+
+
 class BaseAttendanceViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
+    action_role_map: dict[str, set[str]] = {}
+    special_access_actions: set[str] = set()
 
     def get_school(self):
         school = _resolve_school(self.request)
         if not school:
-            raise PermissionDenied("لم يتم تحديد المدرسة أو لا تملك صلاحية الوصول.")
+            raise PermissionDenied("حدد مدرسة نشطة تملك عضوية سارية فيها.")
         return school
 
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        school = self.get_school()
+        if self.action in self.special_access_actions:
+            return
+        allowed_roles = self.action_role_map.get(self.action, ATTENDANCE_ADMIN_ROLES)
+        require_school_role_or_permission(request, school, allowed_roles)
 
 class AttendancePolicyViewSet(BaseAttendanceViewSet):
     serializer_class = AttendancePolicySerializer
+    action_role_map = {
+        "list": ATTENDANCE_READ_ROLES, "retrieve": ATTENDANCE_READ_ROLES,
+        "create": ATTENDANCE_ADMIN_ROLES, "update": ATTENDANCE_ADMIN_ROLES,
+        "partial_update": ATTENDANCE_ADMIN_ROLES, "destroy": ATTENDANCE_ADMIN_ROLES,
+    }
 
     def get_queryset(self):
         return AttendancePolicy.objects.filter(
@@ -101,6 +127,11 @@ class AttendancePolicyViewSet(BaseAttendanceViewSet):
 
 class AttendanceStatusTypeViewSet(BaseAttendanceViewSet):
     serializer_class = AttendanceStatusTypeSerializer
+    action_role_map = {
+        "list": ATTENDANCE_READ_ROLES, "retrieve": ATTENDANCE_READ_ROLES,
+        "create": ATTENDANCE_ADMIN_ROLES, "update": ATTENDANCE_ADMIN_ROLES,
+        "partial_update": ATTENDANCE_ADMIN_ROLES, "destroy": ATTENDANCE_ADMIN_ROLES,
+    }
 
     def get_queryset(self):
         return AttendanceStatusType.objects.filter(
@@ -114,6 +145,16 @@ class AttendanceStatusTypeViewSet(BaseAttendanceViewSet):
 
 class AttendanceRegisterViewSet(BaseAttendanceViewSet):
     serializer_class = AttendanceRegisterSerializer
+    action_role_map = {
+        "list": ATTENDANCE_READ_ROLES, "retrieve": ATTENDANCE_READ_ROLES,
+        "open_register": ATTENDANCE_TEACHER_ROLES,
+        "bulk_record": ATTENDANCE_TEACHER_ROLES,
+        "submit_action": ATTENDANCE_TEACHER_ROLES,
+        "reopen_request": ATTENDANCE_TEACHER_ROLES,
+        "approve_action": ATTENDANCE_ADMIN_ROLES,
+        "lock_action": ATTENDANCE_ADMIN_ROLES,
+        "review_reopen": ATTENDANCE_ADMIN_ROLES,
+    }
 
     def get_queryset(self):
         qs = AttendanceRegister.objects.filter(
@@ -129,7 +170,25 @@ class AttendanceRegisterViewSet(BaseAttendanceViewSet):
         if section_param:
             qs = qs.filter(section_id=section_param)
 
+        if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not has_school_roles(
+            self.request.user, self.get_school(), ATTENDANCE_ADMIN_ROLES
+        ):
+            teacher = self.request.user.teacher_profiles.filter(school=self.get_school()).first()
+            assigned_sections = teacher.assignments.filter(is_archived=False).values_list("section_id", flat=True) if teacher else []
+            qs = qs.filter(section_id__in=assigned_sections)
         return qs.order_by("-date", "-created_at")
+
+    def create(self, request, *args, **kwargs):
+        raise MethodNotAllowed("POST", detail="استخدم POST /registers/open/ لتهيئة سجل الحضور.")
+
+    def update(self, request, *args, **kwargs):
+        raise MethodNotAllowed("PUT", detail="استخدم bulk-record ودورة الاعتماد لتعديل الرصد.")
+
+    def partial_update(self, request, *args, **kwargs):
+        raise MethodNotAllowed("PATCH", detail="استخدم bulk-record ودورة الاعتماد لتعديل الرصد.")
+
+    def destroy(self, request, *args, **kwargs):
+        raise MethodNotAllowed("DELETE", detail="لا يجوز حذف سجل حضور؛ استخدم طلب إعادة الفتح.")
 
     @action(detail=False, methods=["post"], url_path="open")
     def open_register(self, request):
@@ -145,6 +204,8 @@ class AttendanceRegisterViewSet(BaseAttendanceViewSet):
         if data.get("schedule_id"):
             schedule = get_object_or_404(ClassSchedule, pk=data["schedule_id"], school=school)
 
+        if data.get("bypass_calendar_check"):
+            require_school_role_or_permission(request, school, ATTENDANCE_ADMIN_ROLES)
         try:
             register, created = get_or_create_register(
                 school=school,
@@ -261,6 +322,22 @@ class AttendanceRegisterViewSet(BaseAttendanceViewSet):
 
 class AttendanceExcuseRequestViewSet(BaseAttendanceViewSet):
     serializer_class = AttendanceExcuseRequestSerializer
+    special_access_actions = {"list", "retrieve", "create"}
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        school = self.get_school()
+        guardian = Guardian.objects.filter(school=school, user=request.user).first()
+        if self.action == "create":
+            if guardian is None:
+                raise PermissionDenied("تقديم العذر متاح لولي الأمر المرتبط بالطالب فقط.")
+        elif self.action in {"list", "retrieve"}:
+            if guardian is None and not has_school_roles(request.user, school, ATTENDANCE_ADMIN_ROLES):
+                raise PermissionDenied("لا تملك صلاحية عرض طلبات الأعذار.")
+        elif self.action == "review_action":
+            require_school_role_or_permission(request, school, ATTENDANCE_ADMIN_ROLES)
+        else:
+            raise MethodNotAllowed(request.method)
 
     def get_queryset(self):
         qs = AttendanceExcuseRequest.objects.filter(
@@ -272,18 +349,20 @@ class AttendanceExcuseRequestViewSet(BaseAttendanceViewSet):
         if status_param:
             qs = qs.filter(status=status_param)
 
+        if not has_school_roles(self.request.user, self.get_school(), ATTENDANCE_ADMIN_ROLES):
+            guardian = Guardian.objects.filter(school=self.get_school(), user=self.request.user).first()
+            qs = qs.filter(guardian=guardian) if guardian else qs.none()
         return qs.order_by("-created_at")
 
     def perform_create(self, serializer):
         school = self.get_school()
         guardian = Guardian.objects.filter(school=school, user=self.request.user).first()
-        if not guardian and not self.request.user.is_staff:
-            raise ValidationError("المستخدم الحالي ليس لديه ملف ولي أمر مرتبط.")
-
+        if not guardian:
+            raise PermissionDenied("لا يوجد ملف ولي أمر مرتبط بحسابك في هذه المدرسة.")
         data = serializer.validated_data
-        guardian_obj = data.get("guardian") or guardian
+        guardian_obj = guardian
         try:
-            create_excuse_request(
+            created_request = create_excuse_request(
                 school=school,
                 student=data["student"],
                 guardian=guardian_obj,
@@ -293,6 +372,7 @@ class AttendanceExcuseRequestViewSet(BaseAttendanceViewSet):
                 reason=data["reason"],
                 attachment=self.request.FILES.get("attachment"),
             )
+            serializer.instance = created_request
         except DjangoValidationError as exc:
             raise ValidationError(detail=str(exc))
 
@@ -317,6 +397,28 @@ class AttendanceExcuseRequestViewSet(BaseAttendanceViewSet):
 
 class EarlyDepartureRequestViewSet(BaseAttendanceViewSet):
     serializer_class = EarlyDepartureRequestSerializer
+    special_access_actions = {"list", "retrieve", "create"}
+    action_role_map = {
+        "approve_action": ATTENDANCE_ADMIN_ROLES,
+        "confirm_gate_exit_action": ATTENDANCE_GATE_ROLES,
+    }
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        school = self.get_school()
+        guardian = Guardian.objects.filter(school=school, user=request.user).first()
+        if self.action == "create":
+            if guardian is None:
+                raise PermissionDenied("طلب الانصراف متاح لولي الأمر المرتبط بالطالب فقط.")
+        elif self.action in {"list", "retrieve"}:
+            if guardian is None and not has_school_roles(request.user, school, ATTENDANCE_ADMIN_ROLES):
+                raise PermissionDenied("لا تملك صلاحية عرض طلبات الانصراف.")
+        elif self.action == "approve_action":
+            require_school_role_or_permission(request, school, ATTENDANCE_ADMIN_ROLES)
+        elif self.action == "confirm_gate_exit_action":
+            require_school_role_or_permission(request, school, ATTENDANCE_GATE_ROLES)
+        else:
+            raise MethodNotAllowed(request.method)
 
     def get_queryset(self):
         qs = EarlyDepartureRequest.objects.filter(
@@ -328,18 +430,20 @@ class EarlyDepartureRequestViewSet(BaseAttendanceViewSet):
         if date_param:
             qs = qs.filter(date=date_param)
 
+        if not has_school_roles(self.request.user, self.get_school(), ATTENDANCE_ADMIN_ROLES):
+            guardian = Guardian.objects.filter(school=self.get_school(), user=self.request.user).first()
+            qs = qs.filter(guardian=guardian) if guardian else qs.none()
         return qs.order_by("-date", "-created_at")
 
     def perform_create(self, serializer):
         school = self.get_school()
         guardian = Guardian.objects.filter(school=school, user=self.request.user).first()
-        if not guardian and not self.request.user.is_staff:
-            raise ValidationError("المستخدم الحالي ليس لديه ملف ولي أمر مرتبط.")
-
+        if not guardian:
+            raise PermissionDenied("لا يوجد ملف ولي أمر مرتبط بحسابك في هذه المدرسة.")
         data = serializer.validated_data
-        guardian_obj = data.get("guardian") or guardian
+        guardian_obj = guardian
         try:
-            create_early_departure_request(
+            created_request = create_early_departure_request(
                 school=school,
                 student=data["student"],
                 guardian=guardian_obj,
@@ -351,6 +455,7 @@ class EarlyDepartureRequestViewSet(BaseAttendanceViewSet):
                 recipient_relationship=data["recipient_relationship"],
                 recipient_national_id=data.get("recipient_national_id", ""),
             )
+            serializer.instance = created_request
         except DjangoValidationError as exc:
             raise ValidationError(detail=str(exc))
 
@@ -380,6 +485,12 @@ class EarlyDepartureRequestViewSet(BaseAttendanceViewSet):
 
 class SchoolCalendarViewSet(BaseAttendanceViewSet):
     serializer_class = SchoolCalendarSerializer
+    action_role_map = {
+        "list": ATTENDANCE_READ_ROLES, "retrieve": ATTENDANCE_READ_ROLES,
+        "create": ATTENDANCE_ADMIN_ROLES, "update": ATTENDANCE_ADMIN_ROLES,
+        "partial_update": ATTENDANCE_ADMIN_ROLES, "destroy": ATTENDANCE_ADMIN_ROLES,
+        "seed_days": ATTENDANCE_ADMIN_ROLES,
+    }
 
     def get_queryset(self):
         return SchoolCalendar.objects.filter(
@@ -396,6 +507,11 @@ class SchoolCalendarViewSet(BaseAttendanceViewSet):
 
 class CalendarEventViewSet(BaseAttendanceViewSet):
     serializer_class = CalendarEventSerializer
+    action_role_map = {
+        "list": ATTENDANCE_READ_ROLES, "retrieve": ATTENDANCE_READ_ROLES,
+        "create": ATTENDANCE_ADMIN_ROLES, "update": ATTENDANCE_ADMIN_ROLES,
+        "partial_update": ATTENDANCE_ADMIN_ROLES, "destroy": ATTENDANCE_ADMIN_ROLES,
+    }
 
     def get_queryset(self):
         return CalendarEvent.objects.filter(
@@ -409,6 +525,10 @@ class CalendarEventViewSet(BaseAttendanceViewSet):
 
 class AttendanceScoringViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        require_school_role_or_permission(request, self.get_school(), ATTENDANCE_ADMIN_ROLES)
 
     def get_school(self):
         school = _resolve_school(self.request)
@@ -460,6 +580,68 @@ class AttendanceScoringViewSet(viewsets.ViewSet):
         return Response({"message": "تم ترحيل درجة المواظبة بنجاح إلى سجل الدرجات العام.", "score": entry.final_score})
 
 
+class MyChildrenAttendanceAPIView(APIView):
+    """سجل حضور الأبناء المرتبطين حصراً بولي الأمر المصادق عليه."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        school = _resolve_school(request)
+        if not school:
+            raise PermissionDenied("حدد المدرسة النشطة أولاً.")
+        guardian = Guardian.objects.filter(school=school, user=request.user).first()
+        if not guardian:
+            raise PermissionDenied("هذه الخدمة متاحة لحساب ولي الأمر فقط.")
+
+        children = guardian.children.filter(
+            school=school, is_archived=False
+        ).order_by("first_name", "last_name")
+        student_id = request.query_params.get("student_id")
+        if student_id:
+            children = children.filter(pk=student_id)
+            if not children.exists():
+                raise PermissionDenied("الطالب المحدد ليس من الأبناء المرتبطين بحسابك.")
+
+        records = StudentAttendanceRecord.objects.filter(
+            school=school, student__in=children, is_archived=False
+        ).select_related("student", "register", "register__section").order_by(
+            "-register__date", "-recorded_at"
+        )
+        date_from = request.query_params.get("from")
+        date_to = request.query_params.get("to")
+        try:
+            if date_from:
+                datetime.date.fromisoformat(date_from)
+                records = records.filter(register__date__gte=date_from)
+            if date_to:
+                datetime.date.fromisoformat(date_to)
+                records = records.filter(register__date__lte=date_to)
+        except ValueError:
+            raise ValidationError("صيغة التاريخ غير صحيحة؛ استخدم YYYY-MM-DD.")
+
+        rows = [{
+            "id": str(record.pk),
+            "student_id": str(record.student_id),
+            "student_name": str(record.student),
+            "section": record.register.section.name,
+            "date": record.register.date.isoformat(),
+            "session_type": record.register.session_type,
+            "status": record.status_category,
+            "late_minutes": record.late_minutes,
+            "notes": record.notes,
+            "recorded_at": record.recorded_at.isoformat() if record.recorded_at else None,
+        } for record in records[:250]]
+        return Response({
+            "children": [{
+                "id": str(child.pk),
+                "student_number": child.student_id_number,
+                "name": str(child),
+                "section": child.section.name if child.section_id else None,
+            } for child in children],
+            "results": rows,
+            "count": len(rows),
+        })
+
+
 class AttendanceReportsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -471,6 +653,7 @@ class AttendanceReportsView(APIView):
 
     def get(self, request, report_type):
         school = self.get_school()
+        require_school_role_or_permission(request, school, ATTENDANCE_ADMIN_ROLES)
         export_format = request.query_params.get("export")
 
         if report_type == "daily-summary":
