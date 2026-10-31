@@ -12,7 +12,11 @@ from apps.tenants.models import Branch, School, SchoolSettings
 
 
 def resolve_school_for_user(*, user, school_code: str) -> School:
-    school = School.objects.filter(code=school_code.strip().upper(), status=School.Status.ACTIVE).first()
+    school = School.objects.filter(
+        code=school_code.strip().upper(),
+        status=School.Status.ACTIVE,
+        is_archived=False,
+    ).first()
     if school is None:
         raise PermissionDenied("المدرسة غير متاحة.")
     if is_platform_operator(user):
