@@ -80,6 +80,8 @@ class StaffMemberListAPIView(generics.ListCreateAPIView):
         user = serializer.validated_data["user"]
         if not user.is_active or user.status != user.Status.ACTIVE:
             raise ValidationError("لا يمكن ربط ملف موظف بحساب غير نشط.")
+        if user.phone_verified_at is None:
+            raise ValidationError("يجب توثيق رقم هاتف الموظف قبل ربط حسابه بالملف الوظيفي.")
         membership = user.school_memberships.filter(
             school=school, status=SchoolMembership.Status.ACTIVE,
         ).filter(
