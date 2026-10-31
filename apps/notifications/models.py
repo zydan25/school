@@ -4,7 +4,7 @@ from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.core.models import UUIDTimestampedModel
+from apps.core.models import UUIDTimestampedModel, TenantOwnedModel
 
 
 class NotificationTemplate(UUIDTimestampedModel):
@@ -200,7 +200,138 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
 
     def __str__(self):
         owner = self.school.name if self.school else "المنصة المركزية"
-        return f"{self.name} ({self.get_channel_display()}) - {owner}"
+        return f"{self.name} ({self.get_channel_display
+class SchoolConversation(TenantOwnedModel):
+    class Status(models.TextChoices):
+        OPEN = "open", "مفتوحة"
+        CLOSED = "closed", "مغلقة"
+
+    class ConversationType(models.TextChoices):
+        GENERAL = "general", "محادثة عامة"
+        STUDENT = "student", "مرتبطة بطالب"
+        ADMINISTRATIVE = "administrative", "إدارية"
+
+    subject = models.CharField("موضوع المحادثة", max_length=200)
+    conversation_type = models.CharField(
+        "نوع المحادثة", max_length=20, choices=ConversationType.choices,
+        default=ConversationType.GENERAL,
+    )
+    student = models.ForeignKey(
+        "students.Student", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="conversations", verbose_name="الطالب المرتبط",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="created_school_conversations", verbose_name="أنشأها",
+    )
+    status = models.CharField("الحالة", max_length=12, choices=Status.choices, default=Status.OPEN)
+    last_message_at = models.DateTimeField("آخر رسالة", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "محادثة مدرسية"
+        verbose_name_plural = "المحادثات المدرسية"
+        ordering = ["-last_message_at", "-created_at"]
+        indexes = [models.Index(fields=["school", "status", "last_message_at"])]
+
+    def __str__(self):
+        return f"{self.subject} - {self.school}"
+
+
+class ConversationParticipant(TenantOwnedModel):
+    class Role(models.TextChoices):
+        ADMIN = "admin", "إدارة المدرسة"
+        TEACHER = "teacher", "معلم"
+        GUARDIAN = "guardian", "ولي أمر"
+        STUDENT = "student", "طالب"
+        STAFF = "staff", "موظف"
+
+    conversation = models.ForeignKey(
+        SchoolConversation, on_delete=models.CASCADE, related_name="participants",
+        verbose_name="المحادثة",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        related_name="school_conversation_participations", verbose_name="المشارك",
+    )
+    role = models.CharField("صفة المشارك", max_length=16, choices=Role.choices)
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="added_conversation_participants", verbose_name="أضيف بواسطة",
+    )
+    is_active = models.BooleanField("مشارك نشط", default=True)
+    is_muted = models.BooleanField("كتم الإشعارات", default=False)
+    last_read_at = models.DateTimeField("آخر قراءة", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "مشارك محادثة"
+        verbose_name_plural = "مشاركو المحادثات"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "conversation", "user"],
+                condition=models.Q(is_archived=False),
+                name="notifications_conversation_participant_uniq",
+            ),
+        ]
+        indexes = [models.Index(fields=["school", "user", "is_active"])]
+
+    def clean(self):
+        super().clean()
+        if self.conversation_id and self.conversation.school_id != self.school_id:
+            from django.core.exceptions import ValidationError
+            raise ValidationError({"conversation": "المحادثة لا تتبع المدرسة نفسها."})
+
+    def __str__(self):
+        return f"{self.user} / {self.conversation}"
+
+
+class ConversationMessage(TenantOwnedModel):
+    class MessageType(models.TextChoices):
+        TEXT = "text", "نص"
+        FILE = "file", "مرفق"
+        SYSTEM = "system", "نظام"
+
+    conversation = models.ForeignKey(
+        SchoolConversation, on_delete=models.CASCADE, related_name="messages",
+        verbose_name="المحادثة",
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="school_conversation_messages", verbose_name="المرسل",
+    )
+    message_type = models.CharField("نوع الرسالة", max_length=12, choices=MessageType.choices, default=MessageType.TEXT)
+    body = models.TextField("محتوى الرسالة", blank=True)
+    attachment = models.FileField("المرفق الخاص", upload_to=conversation_attachment_path, blank=True)
+    attachment_name = models.CharField("اسم الملف الأصلي", max_length=255, blank=True)
+    attachment_size = models.PositiveBigIntegerField("حجم المرفق", default=0)
+    reply_to = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="replies", verbose_name="رد على رسالة",
+    )
+    edited_at = models.DateTimeField("تاريخ التعديل", null=True, blank=True)
+    is_deleted = models.BooleanField("محذوفة من العرض", default=False)
+
+    class Meta:
+        verbose_name = "رسالة محادثة"
+        verbose_name_plural = "رسائل المحادثات"
+        ordering = ["created_at"]
+        indexes = [
+            models.Index(fields=["school", "conversation", "created_at"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.conversation_id and self.conversation.school_id != self.school_id:
+            from django.core.exceptions import ValidationError
+            raise ValidationError({"conversation": "المحادثة لا تتبع المدرسة نفسها."})
+        if not self.body and not self.attachment:
+            from django.core.exceptions import ValidationError
+            raise ValidationError("يجب إرسال نص أو ملف مرفق على الأقل.")
+
+    def __str__(self):
+        return f"{self.sender or 'النظام'} - {self.created_at}"
+
+
+()}) - {owner}"
 
 
 class InboundWebhookMessage(UUIDTimestampedModel):
