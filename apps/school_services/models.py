@@ -501,10 +501,7 @@ class StudentBookDistribution(TenantOwnedModel):
                     description=f"كتاب: {locked_dist.book_title} (عدد {locked_dist.quantity})",
                     amount=locked_dist.fee_amount,
                 )
-                try:
-                    post_student_invoice_to_journal(inv)
-                except Exception:
-                    pass
+                post_student_invoice_to_journal(inv)
                 locked_dist.invoice = inv
                 self.invoice = inv
 
@@ -541,9 +538,19 @@ class StudentBookDistribution(TenantOwnedModel):
             if locked_dist.invoice_id:
                 from apps.student_fees.models import StudentInvoice
                 inv = StudentInvoice.objects.select_for_update().get(pk=locked_dist.invoice_id)
-                if inv.paid_amount == Decimal("0.00"):
-                    inv.status = StudentInvoice.Status.CANCELLED
-                    inv.save(update_fields=["status", "updated_at"])
+                if inv.paid_amount > Decimal("0.00"):
+                    raise ValidationError(
+                        "لا يمكن استرجاع الكتاب مالياً قبل عكس سندات القبض المرتبطة وإعادة الفاتورة إلى رصيد غير مسدد."
+                    )
+                if inv.journal_entry_id:
+                    from apps.accounting.services.auto_posting import reverse_journal_entry
+                    reverse_journal_entry(
+                        inv.journal_entry,
+                        reason=f"إلغاء رسوم استرجاع الكتاب: {locked_dist.book_title}",
+                        reversed_by=user,
+                    )
+                inv.status = StudentInvoice.Status.CANCELLED
+                inv.save(update_fields=["status", "updated_at"])
 
             locked_dist.delivery_status = self.DeliveryStatus.RETURNED
             locked_dist.returned_at = timezone.now()
