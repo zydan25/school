@@ -99,12 +99,20 @@ class BaseAttendanceViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("حدد مدرسة نشطة تملك عضوية سارية فيها.")
         return school
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["school"] = self.get_school()
+        return context
+
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         school = self.get_school()
         if self.action in self.special_access_actions:
             return
-        allowed_roles = self.action_role_map.get(self.action, ATTENDANCE_ADMIN_ROLES)
+        allowed_roles = self.action_role_map.get(
+            self.action,
+            ATTENDANCE_READ_ROLES if self.action == "metadata" else ATTENDANCE_ADMIN_ROLES,
+        )
         require_school_role_or_permission(request, school, allowed_roles)
 
 class AttendancePolicyViewSet(BaseAttendanceViewSet):
