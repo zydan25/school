@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
+import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -367,6 +369,176 @@ class StudentGuardianRelation(TenantOwnedModel):
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
         if self.guardian_id and self.guardian.school_id != self.school_id:
             raise ValidationError({"guardian": "ولي الأمر لا يتبع نفس المدرسة."})
+
+
+def validate_student_document_file(value):
+    """Accept common document/image formats and cap each file at 10 MiB."""
+    if value.size > 10 * 1024 * 1024:
+        raise ValidationError("يجب ألا يتجاوز حجم الوثيقة 10 ميجابايت.")
+    extension = Path(value.name).suffix.lower()
+    if extension not in {".pdf", ".jpg", ".jpeg", ".png", ".webp"}:
+        raise ValidationError("صيغة الوثيقة غير مسموحة؛ استخدم PDF أو JPG أو PNG أو WEBP.")
+
+
+def student_document_upload_path(instance, filename):
+    extension = Path(filename).suffix.lower()
+    safe_extension = extension if extension in {".pdf", ".jpg", ".jpeg", ".png", ".webp"} else ""
+    return (
+        f"student-documents/{instance.school_id}/"
+        f"{instance.student_id}/{uuid.uuid4().hex}{safe_extension}"
+    )
+
+
+class StudentDocument(TenantOwnedModel):
+    """Private school-managed documents attached to a single student profile."""
+
+    class DocumentType(models.TextChoices):
+        BIRTH_CERTIFICATE = "birth_certificate", "شهادة ميلاد"
+        IDENTITY = "identity", "هوية / إقامة"
+        MEDICAL = "medical", "وثيقة طبية"
+        ACADEMIC = "academic", "وثيقة أكاديمية"
+        CUSTODY = "custody", "وثيقة ولاية / حضانة"
+        OTHER = "other", "أخرى"
+
+    student = models.ForeignKey(
+        Student,
+        verbose_name="الطالب",
+        on_delete=models.PROTECT,
+        related_name="documents",
+    )
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="رفع الوثيقة",
+        on_delete=models.PROTECT,
+        related_name="uploaded_student_documents",
+    )
+    title = models.CharField("عنوان الوثيقة", max_length=180)
+    document_type = models.CharField(
+        "نوع الوثيقة", max_length=30, choices=DocumentType.choices,
+        default=DocumentType.OTHER,
+    )
+    file = models.FileField(
+        "ملف الوثيقة",
+        upload_to=student_document_upload_path,
+        validators=[validate_student_document_file],
+    )
+    description = models.TextField("ملاحظات", blank=True)
+    issued_on = models.DateField("تاريخ الإصدار", null=True, blank=True)
+    expires_on = models.DateField("تاريخ الانتهاء", null=True, blank=True)
+    visible_to_guardian = models.BooleanField("متاحة لولي الأمر المرتبط", default=True)
+
+    class Meta:
+        verbose_name = "وثيقة طالب"
+        verbose_name_plural = "وثائق الطلاب"
+        indexes = [
+            models.Index(
+                fields=["school", "student", "created_at"],
+                name="stdoc_school_stud_date_idx",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.student_id and self.student.school_id != self.school_id:
+            raise ValidationError({"student": "الطالب لا يتبع المدرسة المحددة للوثيقة."})
+        if self.issued_on and self.expires_on and self.expires_on < self.issued_on:
+            raise ValidationError({"expires_on": "تاريخ انتهاء الوثيقة يسبق تاريخ إصدارها."})
+
+
+class GuardianConsent(TenantOwnedModel):
+    """A traceable consent request that only the linked guardian can answer."""
+
+    class ConsentType(models.TextChoices):
+        TRIP = "trip", "رحلة / نشاط خارجي"
+        MEDIA = "media", "تصوير ونشر"
+        MEDICAL = "medical", "إجراء طبي"
+        ACADEMIC = "academic", "إجراء أكاديمي"
+        DATA = "data", "استخدام البيانات"
+        GENERAL = "general", "موافقة عامة"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "بانتظار رد ولي الأمر"
+        APPROVED = "approved", "تمت الموافقة"
+        REJECTED = "rejected", "مرفوضة"
+        CANCELED = "canceled", "ملغاة"
+        EXPIRED = "expired", "منتهية"
+
+    student = models.ForeignKey(
+        Student,
+        verbose_name="الطالب",
+        on_delete=models.PROTECT,
+        related_name="guardian_consents",
+    )
+    guardian = models.ForeignKey(
+        Guardian,
+        verbose_name="ولي الأمر المعني",
+        on_delete=models.PROTECT,
+        related_name="consent_requests",
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="منشئ طلب الموافقة",
+        on_delete=models.PROTECT,
+        related_name="created_guardian_consents",
+    )
+    responded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="صاحب الرد",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="responded_guardian_consents",
+    )
+    consent_type = models.CharField(
+        "نوع الموافقة", max_length=20, choices=ConsentType.choices,
+        default=ConsentType.GENERAL,
+    )
+    title = models.CharField("عنوان الطلب", max_length=180)
+    details = models.TextField("تفاصيل الموافقة المطلوبة")
+    status = models.CharField(
+        "حالة الموافقة", max_length=12, choices=Status.choices,
+        default=Status.PENDING, db_index=True,
+    )
+    requested_at = models.DateTimeField("وقت إرسال الطلب", default=timezone.now)
+    expires_at = models.DateTimeField("موعد انتهاء الطلب", null=True, blank=True)
+    responded_at = models.DateTimeField("وقت رد ولي الأمر", null=True, blank=True)
+    response_note = models.TextField("ملاحظة ولي الأمر", blank=True)
+
+    class Meta:
+        verbose_name = "طلب موافقة ولي أمر"
+        verbose_name_plural = "موافقات أولياء الأمور"
+        indexes = [
+            models.Index(
+                fields=["school", "guardian", "status"],
+                name="gcons_school_guard_stat_idx",
+            ),
+            models.Index(
+                fields=["school", "student", "created_at"],
+                name="gcons_school_stud_date_idx",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.student_id and self.student.school_id != self.school_id:
+            raise ValidationError({"student": "الطالب لا يتبع المدرسة المحددة."})
+        if self.guardian_id and self.guardian.school_id != self.school_id:
+            raise ValidationError({"guardian": "ولي الأمر لا يتبع المدرسة المحددة."})
+        if self.student_id and self.guardian_id and self.school_id:
+            linked = StudentGuardianRelation.objects.filter(
+                school_id=self.school_id,
+                student_id=self.student_id,
+                guardian_id=self.guardian_id,
+                is_archived=False,
+            ).exists()
+            if not linked:
+                raise ValidationError({"guardian": "ولي الأمر غير مرتبط بالطالب المحدد."})
+        if self.expires_at and self.expires_at <= self.requested_at:
+            raise ValidationError({"expires_at": "يجب أن يكون انتهاء الطلب بعد وقت إنشائه."})
+        if self.status == self.Status.PENDING and self.responded_at is not None:
+            raise ValidationError({"responded_at": "لا يمكن أن يكون الطلب بانتظار الرد مع وجود وقت استجابة."})
+        if self.status in {self.Status.APPROVED, self.Status.REJECTED} and self.responded_at is None:
+            raise ValidationError({"responded_at": "يجب تسجيل وقت الاستجابة للطلب الذي تم الرد عليه."})
 
 
 # -----------------------------------------------------------------------------
