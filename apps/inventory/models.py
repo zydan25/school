@@ -275,7 +275,7 @@ class PurchaseOrder(TenantOwnedModel):
                 raise ValidationError("لا يمكن استلام أمر الشراء في المخزن إلا بعد اعتماده رسمياً (APPROVED).")
 
             created_movements = []
-            for po_item in locked_po.items.all():
+            for po_item in locked_po.items.filter(is_archived=False).select_related("item"):
                 movement = StockMovement.objects.create(
                     school=locked_po.school,
                     item=po_item.item,
