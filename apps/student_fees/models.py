@@ -543,16 +543,27 @@ def apply_credit_balance_to_invoice(student, invoice: StudentInvoice, amount: De
             locked_invoice.status = StudentInvoice.Status.PARTIAL
         locked_invoice.save(update_fields=["paid_amount", "status", "updated_at"])
 
-        # Identify source receipt if traceable from unreversed deposit
+        # Link this use only when one deposit has enough unconsumed value to fund it.
+        # When the balance is pooled across deposits, leave the source unspecified rather
+        # than recording a false provenance link.
         src_receipt = None
-        latest_dep = StudentCreditTransaction.objects.filter(
+        from django.db.models import Sum
+        deposits = StudentCreditTransaction.objects.filter(
             student=locked_student,
             transaction_type=StudentCreditTransaction.TransactionType.DEPOSIT,
             is_reversed=False,
             receipt__isnull=False,
-        ).order_by("-created_at").first()
-        if latest_dep:
-            src_receipt = latest_dep.receipt
+        ).order_by("created_at", "pk")
+        for deposit in deposits:
+            consumed = StudentCreditTransaction.objects.filter(
+                student=locked_student,
+                transaction_type=StudentCreditTransaction.TransactionType.USAGE,
+                source_receipt=deposit.receipt,
+                is_reversed=False,
+            ).aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
+            if deposit.amount - consumed >= amount:
+                src_receipt = deposit.receipt
+                break
 
         tx = StudentCreditTransaction.objects.create(
             school=locked_student.school,
@@ -700,14 +711,13 @@ def reverse_payment_receipt(receipt: PaymentReceipt, reason: str, reversed_by=No
             # If part of this deposit was already used to pay other invoices:
             if student.credit_balance < total_excess:
                 used_amount = total_excess - student.credit_balance
-                # Find active (unreversed) usage transactions linked to this receipt or chronologically after deposit
+                # Never infer ownership from timestamps: another receipt may have funded the usage.
                 usage_txs = list(StudentCreditTransaction.objects.filter(
                     student=student,
                     transaction_type=StudentCreditTransaction.TransactionType.USAGE,
+                    source_receipt=locked_receipt,
                     is_reversed=False,
-                ).filter(
-                    models.Q(source_receipt=locked_receipt) | models.Q(created_at__gte=locked_receipt.paid_at)
-                ).order_by("-created_at"))
+                ).order_by("-created_at", "-pk"))
                 
                 # Unwind usages automatically until student.credit_balance >= total_excess
                 for u_tx in usage_txs:
