@@ -126,6 +126,12 @@ class BookLoanSerializer(SchoolServiceSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        student = attrs.get("student", getattr(self.instance, "student", None))
+        teacher = attrs.get("teacher", getattr(self.instance, "teacher", None))
+        if bool(student) == bool(teacher):
+            raise serializers.ValidationError(
+                "يجب تحديد مستعير واحد فقط: طالب أو معلم."
+            )
         borrow_date = attrs.get(
             "borrow_date", getattr(self.instance, "borrow_date", None)
         )

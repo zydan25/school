@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -34,6 +35,7 @@ from apps.school_services.models import (
     StudentHealthProfile,
 )
 from apps.students.models import Student
+from apps.staff.models import Teacher
 
 from .serializers import (
     BookLoanSerializer,
@@ -138,6 +140,15 @@ class BusRouteViewSet(SchoolServiceViewSet):
         if not has_school_roles(self.request.user, self.get_school(), TRANSPORT_ROLES):
             queryset = queryset.filter(driver_user=self.request.user)
         return queryset.order_by("route_name")
+
+    def perform_destroy(self, instance):
+        active_subscriptions = instance.student_subscriptions.filter(
+            status=StudentBusSubscription.Status.ACTIVE,
+            is_archived=False,
+        ).exists()
+        if active_subscriptions:
+            raise ValidationError("لا يمكن أرشفة خط نقل عليه اشتراكات نشطة.")
+        super().perform_destroy(instance)
 
     def perform_update(self, serializer):
         with transaction.atomic():
@@ -325,10 +336,17 @@ class BusFinancialSettlementViewSet(SchoolServiceViewSet):
             )
             if settlement.status == BusFinancialSettlement.Status.PAID:
                 raise ValidationError("التسوية مصروفة بالفعل ولا يمكن إعادة اعتمادها.")
-            settlement.approve_and_create_payment_voucher(
-                approved_by_user=request.user
-            )
+            try:
+                settlement.approve_and_create_payment_voucher(
+                    approved_by_user=request.user
+                )
+            except DjangoValidationError as exc:
+                raise ValidationError(getattr(exc, "message_dict", None) or exc.messages) from exc
             settlement.refresh_from_db()
+            if settlement.net_payable > Decimal("0.00") and not settlement.payment_voucher_id:
+                raise ValidationError(
+                    "تعذر إنشاء سند الصرف؛ تحقق من إعداد حساب مصروفات النقل وحساب الصندوق."
+                )
         return Response(self.get_serializer(settlement).data)
 
 
@@ -364,7 +382,10 @@ class StudentBookDistributionViewSet(SchoolServiceViewSet):
             distribution = get_object_or_404(
                 self.get_queryset().select_for_update(), pk=pk
             )
-            distribution.deliver_book(user=request.user)
+            try:
+                distribution.deliver_book(user=request.user)
+            except DjangoValidationError as exc:
+                raise ValidationError(getattr(exc, "message_dict", None) or exc.messages) from exc
             distribution.refresh_from_db()
         return Response(self.get_serializer(distribution).data)
 
@@ -376,7 +397,10 @@ class StudentBookDistributionViewSet(SchoolServiceViewSet):
             )
             if distribution.delivery_status != StudentBookDistribution.DeliveryStatus.DELIVERED:
                 raise ValidationError("لا يمكن استرجاع كتاب لم يتم تسليمه.")
-            distribution.return_book(user=request.user)
+            try:
+                distribution.return_book(user=request.user)
+            except DjangoValidationError as exc:
+                raise ValidationError(getattr(exc, "message_dict", None) or exc.messages) from exc
             distribution.refresh_from_db()
         return Response(self.get_serializer(distribution).data)
 
@@ -558,16 +582,21 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
                     school=self.get_school(),
                     is_archived=False,
                 )
-                StockMovement.objects.create(
-                    school=self.get_school(),
-                    item=inventory_item,
-                    movement_type=StockMovement.MovementType.ISSUE,
-                    quantity=quantity,
-                    unit_cost=inventory_item.unit_cost,
-                    recipient_name=f"أمر صرف الكتب {order.order_number}",
-                    reference=order.order_number,
-                    notes=f"{req_item.book_title} - صرف لصالح الطلب",
-                )
+                try:
+                    StockMovement.objects.create(
+                        school=self.get_school(),
+                        item=inventory_item,
+                        movement_type=StockMovement.MovementType.ISSUE,
+                        quantity=quantity,
+                        unit_cost=inventory_item.unit_cost,
+                        recipient_name=f"أمر صرف الكتب {order.order_number}",
+                        reference=order.order_number,
+                        notes=f"{req_item.book_title} - صرف لصالح الطلب",
+                    )
+                except DjangoValidationError as exc:
+                    raise ValidationError(
+                        getattr(exc, "message_dict", None) or exc.messages
+                    ) from exc
                 req_item.quantity_dispatched += int(quantity)
                 req_item.save(update_fields=["quantity_dispatched", "updated_at"])
             if all(
