@@ -16,8 +16,10 @@ from rest_framework.views import APIView
 from apps.academics.models import AcademicTerm, AcademicYear, Section, Subject
 from apps.accounts.api_permissions import has_school_roles, require_school_role_or_permission
 from apps.attendance.api.serializers import (
+    AttendanceAuditLogSerializer,
     AttendanceExcuseRequestSerializer,
     AttendancePolicySerializer,
+    AttendanceReopenRequestSerializer,
     AttendanceRegisterSerializer,
     AttendanceScoreEntrySerializer,
     AttendanceScoringPolicySerializer,
@@ -35,6 +37,7 @@ from apps.attendance.api.serializers import (
     SchoolCalendarSerializer,
 )
 from apps.attendance.models import (
+    AttendanceAuditLog,
     AttendanceExcuseRequest,
     AttendancePolicy,
     AttendanceRegister,
@@ -616,6 +619,80 @@ class CalendarEventViewSet(BaseAttendanceViewSet):
             "occurrences": CalendarOccurrenceSerializer(created, many=True).data,
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
+class AttendanceReopenRequestViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = AttendanceReopenRequestSerializer
+
+    def get_school(self):
+        school = _resolve_school(self.request)
+        if not school:
+            raise PermissionDenied("حدد مدرسة نشطة تملك عضوية سارية فيها.")
+        return school
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        require_school_role_or_permission(request, self.get_school(), ATTENDANCE_READ_ROLES)
+
+    def get_queryset(self):
+        qs = AttendanceReopenRequest.objects.filter(
+            school=self.get_school(), is_archived=False
+        ).select_related("register", "register__section", "requested_by", "reviewed_by").order_by("-created_at")
+        if not has_school_roles(self.request.user, self.get_school(), ATTENDANCE_ADMIN_ROLES):
+            qs = qs.filter(requested_by=self.request.user)
+        status_filter = self.request.query_params.get("status")
+        register_id = self.request.query_params.get("register_id")
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        if register_id:
+            qs = qs.filter(register_id=register_id)
+        return qs
+
+
+class AttendanceAuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = AttendanceAuditLogSerializer
+
+    def get_school(self):
+        school = _resolve_school(self.request)
+        if not school:
+            raise PermissionDenied("حدد مدرسة نشطة تملك عضوية سارية فيها.")
+        return school
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        require_school_role_or_permission(request, self.get_school(), ATTENDANCE_ADMIN_ROLES)
+
+    def get_queryset(self):
+        qs = AttendanceAuditLog.objects.filter(
+            school=self.get_school()
+        ).select_related(
+            "register", "register__section", "student_record", "student_record__student", "performed_by"
+        ).order_by("-timestamp")
+        register_id = self.request.query_params.get("register_id")
+        student_id = self.request.query_params.get("student_id")
+        action_code = self.request.query_params.get("action")
+        date_from = self.request.query_params.get("from")
+        date_to = self.request.query_params.get("to")
+        if register_id:
+            qs = qs.filter(register_id=register_id)
+        if student_id:
+            qs = qs.filter(student_record__student_id=student_id)
+        if action_code:
+            qs = qs.filter(action=action_code)
+        try:
+            start_value = datetime.date.fromisoformat(date_from) if date_from else None
+            end_value = datetime.date.fromisoformat(date_to) if date_to else None
+        except (TypeError, ValueError):
+            raise ValidationError("صيغة فترة سجل التدقيق غير صحيحة؛ استخدم YYYY-MM-DD.")
+        if start_value and end_value and end_value < start_value:
+            raise ValidationError("تاريخ نهاية فترة التدقيق يسبق بدايتها.")
+        if start_value:
+            qs = qs.filter(register__date__gte=start_value)
+        if end_value:
+            qs = qs.filter(register__date__lte=end_value)
+        return qs
+
+
 class AttendanceScoringPolicyViewSet(BaseAttendanceViewSet):
     serializer_class = AttendanceScoringPolicySerializer
     action_role_map = {
@@ -679,6 +756,53 @@ class AttendanceScoreEntryViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class AttendanceScoringViewSet(viewsets.ViewSet):
+
+class MyChildrenAttendanceScoresAPIView(APIView):
+    """درجات المواظبة الفصلية للأبناء المرتبطين بولي الأمر الحالي فقط."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        school = _resolve_school(request)
+        if not school:
+            raise PermissionDenied("حدد المدرسة النشطة أولاً.")
+        guardian = Guardian.objects.filter(school=school, user=request.user).first()
+        if not guardian:
+            raise PermissionDenied("هذه الخدمة متاحة لحساب ولي الأمر فقط.")
+
+        children = guardian.children.filter(school=school, is_archived=False)
+        student_id = request.query_params.get("student_id")
+        if student_id:
+            children = children.filter(pk=student_id)
+            if not children.exists():
+                raise PermissionDenied("الطالب المحدد ليس من الأبناء المرتبطين بحسابك.")
+
+        entries = AttendanceScoreEntry.objects.filter(
+            school=school, student__in=children, is_archived=False
+        ).select_related("student", "academic_term", "subject").order_by(
+            "-academic_term__starts_on", "student__first_name"
+        )
+        term_id = request.query_params.get("academic_term_id")
+        if term_id:
+            entries = entries.filter(academic_term_id=term_id)
+
+        rows = [{
+            "id": str(entry.pk),
+            "student_id": str(entry.student_id),
+            "student_name": str(entry.student),
+            "academic_term_id": str(entry.academic_term_id),
+            "academic_term": entry.academic_term.name,
+            "subject_id": str(entry.subject_id) if entry.subject_id else None,
+            "subject": entry.subject.name if entry.subject_id else None,
+            "raw_score": str(entry.raw_score),
+            "unexcused_absence_count": entry.unexcused_absence_count,
+            "excused_absence_count": entry.excused_absence_count,
+            "late_count": entry.late_count,
+            "deduction_total": str(entry.deduction_total),
+            "final_score": str(entry.final_score),
+            "calculated_at": entry.calculated_at.isoformat() if entry.calculated_at else None,
+        } for entry in entries[:250]]
+        return Response({"results": rows, "count": len(rows)})
+
 
 class AttendanceReportsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
