@@ -10,7 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.accounting.models import Account, JournalEntry, JournalEntryLine
+from apps.accounting.models import Account, JournalEntry, JournalEntryLine, PaymentVoucher
 from apps.payroll.models import (
     EmployeeContract,
     EmployeeLoanAdvance,
@@ -394,7 +394,6 @@ def disburse_payroll_run(
     if payment_account is None:
         raise ValueError("يجب تحديد حساب الصرف المالي (الصندوق أو البنك).")
 
-    from apps.accounting.models import PaymentVoucher
     from apps.accounting.services.auto_posting import (
         _get_account_or_seed,
         _get_active_fiscal_period,
