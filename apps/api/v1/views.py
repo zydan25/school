@@ -19,7 +19,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.api_permissions import (
-    FINANCIAL_ROLES, HR_ROLES, STUDENT_AFFAIRS_ROLES,
+    FINANCIAL_ROLES, STUDENT_AFFAIRS_ROLES,
     has_school_roles, require_school_role_or_permission, resolve_active_school,
 )
 from apps.accounts.models import (
@@ -29,37 +29,33 @@ from apps.accounts.services import (
     accept_school_invitation, active_membership, issue_school_invitation,
 )
 from apps.academics.models import (
-    AcademicTerm, AcademicYear, Classroom, EducationalStage, GradeLevel,
-    PeriodDefinition, SchoolWorkingDay, Section, Subject,
+    AcademicTerm, AcademicYear,
 )
 from apps.accounting.models import (
-    Account, CostCenter, ExpenseCategory, FiscalPeriod, FiscalYear,
-    JournalEntry, JournalEntryLine, PaymentVoucher, ReceiptVoucher,
+    Account, CostCenter, FiscalPeriod, JournalEntry, JournalEntryLine,
+    PaymentVoucher, ReceiptVoucher,
 )
 from apps.accounting.services.auto_posting import reverse_journal_entry
-from apps.assets.models import AssetCategory, AssetDepreciationEntry, FixedAsset
+from apps.assets.models import AssetDepreciationEntry, FixedAsset
 from apps.assessments.models import (
-    AssessmentType, ExamCommittee, ExamSeating, GradeBook, OnlineExam,
-    QuestionBank, StudentOnlineExamSubmission,
+    GradeBook, OnlineExam, QuestionBank, StudentOnlineExamSubmission,
 )
 from apps.assignments.models import Homework, HomeworkSubmission
 from apps.inventory.models import (
-    InventoryItem, PurchaseOrder, PurchaseOrderItem, StockMovement,
-    Supplier, VendorInvoice, Warehouse,
+    InventoryItem, PurchaseOrder, Supplier, VendorInvoice, Warehouse,
 )
 from apps.notifications.models import (
     ConversationMessage, ConversationParticipant, Notification,
     NotificationPreference, PushDevice, SchoolConversation,
 )
 from apps.staff.models import (
-    Department, LeaveRequest, LeaveType, StaffAttendance, StaffMember,
-    Teacher, TeacherAssignment, WorkShift,
+    StaffMember, Teacher, TeacherAssignment,
 )
 from apps.students.models import (
     Guardian, Student, StudentGuardianRelation,
 )
 from apps.timetable.models import (
-    ClassSchedule, DailyLessonLog, SchedulePeriodTemplate, SchoolBellSchedule,
+    ClassSchedule,
 )
 
 from apps.api.v1.serializers import (
@@ -81,8 +77,7 @@ from apps.api.v1.serializers import (
     PurchaseOrderSerializer, QuestionBankTeacherSerializer, ReceiptVoucherSerializer,
     SchoolBellScheduleSerializer, SchoolConversationSerializer, SchoolRoleSerializer,
     SchoolWorkingDaySerializer, SchedulePeriodTemplateSerializer, SectionSerializer,
-    StaffMemberSerializer, StockMovementSerializer, StudentEnrollmentSerializer,
-    StudentGuardianRelationSerializer, StudentSerializer, SubjectSerializer,
+    StockMovementSerializer, StudentGuardianRelationSerializer, SubjectSerializer,
     SupplierSerializer, TeacherAssignmentSerializer, TeacherSerializer,
     VendorInvoiceSerializer, WarehouseSerializer, WorkShiftSerializer,
 )
@@ -2080,7 +2075,7 @@ class SchoolConversationViewSet(viewsets.ViewSet):
     @action(detail=True, methods=["get", "post"], url_path="messages")
     def messages(self, request, pk=None):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
-        participant = self.get_participant(conv)
+        self.get_participant(conv)
         if request.method == "GET":
             qs = conv.messages.filter(is_archived=False, is_deleted=False).select_related("sender").order_by("created_at")
             before = request.query_params.get("before")
