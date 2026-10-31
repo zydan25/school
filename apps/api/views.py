@@ -1,6 +1,6 @@
 from django.contrib.auth import password_validation
 from django.core.exceptions import ImproperlyConfigured, ValidationError as DjangoValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
@@ -244,6 +244,8 @@ class PhoneRegistrationAPIView(APIView):
 
         if User.objects.filter(phone=phone).exists():
             raise ValidationError({"phone": "رقم الهاتف مسجل بالفعل."})
+        if email and User.objects.filter(email__iexact=email).exists():
+            raise ValidationError({"email": "البريد الإلكتروني مسجل بالفعل."})
 
         try:
             user = User.objects.create_user(
@@ -258,6 +260,10 @@ class PhoneRegistrationAPIView(APIView):
             )
         except DjangoValidationError as exc:
             raise ValidationError(exc.message_dict) from exc
+        except IntegrityError as exc:
+            raise ValidationError({
+                "detail": "رقم الهاتف أو البريد الإلكتروني مستخدم في حساب آخر.",
+            }) from exc
 
         try:
             issue_phone_challenge(
