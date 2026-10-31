@@ -212,6 +212,16 @@ class AttendanceRegisterViewSet(BaseAttendanceViewSet):
         if data.get("schedule_id"):
             schedule = get_object_or_404(ClassSchedule, pk=data["schedule_id"], school=school)
 
+        if has_school_roles(request.user, school, {"teacher"}) and not has_school_roles(
+            request.user, school, ATTENDANCE_ADMIN_ROLES
+        ):
+            teacher = request.user.teacher_profiles.filter(school=school).first()
+            assigned = teacher.assignments.filter(
+                section_id=section.pk, is_archived=False
+            ).exists() if teacher else False
+            if not assigned:
+                raise PermissionDenied("لا يمكنك فتح سجل حضور لشعبة غير مسندة إليك.")
+
         if data.get("bypass_calendar_check"):
             require_school_role_or_permission(request, school, ATTENDANCE_ADMIN_ROLES)
         try:
@@ -419,7 +429,7 @@ class EarlyDepartureRequestViewSet(BaseAttendanceViewSet):
             if guardian is None:
                 raise PermissionDenied("طلب الانصراف متاح لولي الأمر المرتبط بالطالب فقط.")
         elif self.action in {"list", "retrieve"}:
-            if guardian is None and not has_school_roles(request.user, school, ATTENDANCE_ADMIN_ROLES):
+            if guardian is None and not has_school_roles(request.user, school, ATTENDANCE_GATE_ROLES):
                 raise PermissionDenied("لا تملك صلاحية عرض طلبات الانصراف.")
         elif self.action == "approve_action":
             require_school_role_or_permission(request, school, ATTENDANCE_ADMIN_ROLES)
@@ -439,6 +449,8 @@ class EarlyDepartureRequestViewSet(BaseAttendanceViewSet):
             qs = qs.filter(date=date_param)
 
         if not has_school_roles(self.request.user, self.get_school(), ATTENDANCE_ADMIN_ROLES):
+            if has_school_roles(self.request.user, self.get_school(), ATTENDANCE_GATE_ROLES):
+                return qs.order_by("-date", "-created_at")
             guardian = Guardian.objects.filter(school=self.get_school(), user=self.request.user).first()
             qs = qs.filter(guardian=guardian) if guardian else qs.none()
         return qs.order_by("-date", "-created_at")
