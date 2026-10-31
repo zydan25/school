@@ -105,6 +105,9 @@ class IdentitySessionSecurityTests(TestCase):
         self.assertIsNotNone(user.locked_until)
         self.assertGreater(user.locked_until, timezone.now())
 
+        # Clear request throttles so this assertion specifically exercises
+        # the account-level temporary lockout.
+        cache.clear()
         blocked = self.client.post(
             "/api/v1/auth/login/",
             {"phone": user.phone, "password": "Strong-Password-7701!"},
