@@ -6,7 +6,7 @@ from django.contrib.admin.forms import AdminAuthenticationForm
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Q
 from django.utils import timezone
-from unfold.admin import ModelAdmin
+from unfold.admin import ModelAdmin, TabularInline
 from unfold.sites import UnfoldAdminSite
 
 from apps.academics.models import (
@@ -560,8 +560,252 @@ class SchoolAIChatSessionAdmin(SchoolScopedAdmin):
 # Attendance, Student Fees & Accounting in School Admin
 # -----------------------------------------------------------------------------
 from apps.accounting.models import Account, CostCenter, FiscalYear, JournalEntry
-from apps.attendance.models import DailyAttendance, PeriodAttendance
+from apps.attendance.models import (
+    AttendanceAuditLog,
+    AttendanceExcuseRequest,
+    AttendancePolicy,
+    AttendanceRegister,
+    AttendanceReopenRequest,
+    AttendanceScoreEntry,
+    AttendanceScoringPolicy,
+    AttendanceStatusType,
+    CalendarEvent,
+    CalendarOccurrence,
+    DailyAttendance,
+    EarlyDepartureRequest,
+    PeriodAttendance,
+    SchoolCalendar,
+    SchoolCalendarDay,
+    StudentAttendanceRecord,
+)
+from apps.attendance.services import (
+    approve_early_departure,
+    approve_register,
+    confirm_gate_exit,
+    lock_register,
+    review_excuse_request,
+    review_reopen_request,
+    sync_score_to_gradebook,
+)
 from apps.student_fees.models import FeeCategory, FeeStructure, PaymentReceipt, StudentInvoice
+
+
+class SchoolStudentAttendanceRecordInline(TabularInline):
+    model = StudentAttendanceRecord
+    extra = 0
+    fields = ("student", "status_category", "late_minutes", "excuse_request", "notes")
+    readonly_fields = ("excuse_request",)
+    autocomplete_fields = ("student",)
+
+
+class SchoolCalendarDayInline(TabularInline):
+    model = SchoolCalendarDay
+    extra = 0
+    fields = ("date", "day_type", "title", "is_school_day")
+    ordering = ("date",)
+
+
+class SchoolCalendarOccurrenceInline(TabularInline):
+    model = CalendarOccurrence
+    extra = 0
+    fields = ("date", "start_time", "end_time", "status", "exception_reason")
+
+
+@admin.register(AttendancePolicy, site=school_admin_site)
+class SchoolAttendancePolicyAdmin(SchoolScopedAdmin):
+    list_display = ("academic_year", "attendance_mode", "morning_assembly_time", "grace_period_minutes", "cascade_daily_to_periods", "is_active")
+    list_filter = ("attendance_mode", "cascade_daily_to_periods", "is_active")
+    autocomplete_fields = ("academic_year",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(AttendanceStatusType, site=school_admin_site)
+class SchoolAttendanceStatusTypeAdmin(SchoolScopedAdmin):
+    list_display = ("name", "code", "category", "color_code", "counts_as_present", "counts_as_absent", "is_default", "is_active")
+    list_filter = ("category", "counts_as_present", "is_active")
+    search_fields = ("name", "code")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(SchoolCalendar, site=school_admin_site)
+class SchoolCalendarAdmin(SchoolScopedAdmin):
+    list_display = ("name", "academic_year", "is_central_template", "version", "is_active")
+    list_filter = ("is_central_template", "is_active")
+    search_fields = ("name", "academic_year__name")
+    autocomplete_fields = ("academic_year",)
+    readonly_fields = ("id", "created_at", "updated_at")
+    inlines = [SchoolCalendarDayInline]
+
+
+@admin.register(SchoolCalendarDay, site=school_admin_site)
+class SchoolCalendarDayAdmin(SchoolScopedAdmin):
+    list_display = ("calendar", "date", "day_type", "title", "is_school_day")
+    list_filter = ("day_type", "is_school_day", "date")
+    search_fields = ("title", "calendar__name")
+    autocomplete_fields = ("calendar",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(CalendarEvent, site=school_admin_site)
+class SchoolCalendarEventAdmin(SchoolScopedAdmin):
+    list_display = ("title", "event_type", "recurrence_type", "start_date", "end_date", "target_scope", "is_active")
+    list_filter = ("event_type", "recurrence_type", "target_scope", "is_active")
+    search_fields = ("title", "teacher__user__first_name")
+    autocomplete_fields = ("academic_year", "stage", "grade_level", "section", "subject", "teacher", "classroom")
+    readonly_fields = ("id", "created_at", "updated_at")
+    inlines = [SchoolCalendarOccurrenceInline]
+
+
+@admin.register(AttendanceRegister, site=school_admin_site)
+class SchoolAttendanceRegisterAdmin(SchoolScopedAdmin):
+    list_display = ("section", "date", "session_type", "status", "submitted_by", "approved_by")
+    list_filter = ("status", "session_type", "date")
+    search_fields = ("section__name", "section__grade__name")
+    autocomplete_fields = ("academic_year", "academic_term", "section", "schedule")
+    readonly_fields = ("id", "submitted_at", "approved_at", "locked_at", "created_at", "updated_at")
+    inlines = [SchoolStudentAttendanceRecordInline]
+    actions = ["action_approve_registers", "action_lock_registers"]
+
+    @admin.action(description="اعتماد السجلات المحددة رسمياً وتعميم الحضور")
+    def action_approve_registers(self, request, queryset):
+        count = 0
+        for reg in queryset:
+            if reg.status != AttendanceRegister.Status.LOCKED:
+                approve_register(reg, approved_by=request.user)
+                count += 1
+        self.message_user(request, f"تم اعتماد {count} سجل حضور وتعميم الحصص بنجاح.")
+
+    @admin.action(description="إقفال السجلات المحددة نهائياً وحمايتها")
+    def action_lock_registers(self, request, queryset):
+        count = 0
+        for reg in queryset:
+            lock_register(reg, locked_by=request.user)
+            count += 1
+        self.message_user(request, f"تم إقفال {count} سجل حضور بنجاح.")
+
+
+@admin.register(StudentAttendanceRecord, site=school_admin_site)
+class SchoolStudentAttendanceRecordAdmin(SchoolScopedAdmin):
+    list_display = ("student", "register", "status_category", "late_minutes", "recorded_by")
+    list_filter = ("status_category", "register__date")
+    search_fields = ("student__first_name", "student__last_name", "student__student_id_number")
+    autocomplete_fields = ("register", "student", "status_type", "excuse_request")
+    readonly_fields = ("id", "recorded_at", "created_at", "updated_at")
+
+
+@admin.register(AttendanceReopenRequest, site=school_admin_site)
+class SchoolAttendanceReopenRequestAdmin(SchoolScopedAdmin):
+    list_display = ("register", "requested_by", "status", "reviewed_by", "reviewed_at")
+    list_filter = ("status",)
+    search_fields = ("register__section__name", "reason")
+    autocomplete_fields = ("register",)
+    readonly_fields = ("id", "reviewed_at", "created_at", "updated_at")
+    actions = ["action_approve_reopen"]
+
+    @admin.action(description="الموافقة على إعادة فتح السجلات المحددة")
+    def action_approve_reopen(self, request, queryset):
+        count = 0
+        for req in queryset.filter(status=AttendanceReopenRequest.Status.PENDING):
+            review_reopen_request(req, reviewed_by=request.user, is_approved=True, review_notes="معتمد من الإدارة")
+            count += 1
+        self.message_user(request, f"تمت الموافقة على فتح {count} سجل حضور.")
+
+
+@admin.register(AttendanceExcuseRequest, site=school_admin_site)
+class SchoolAttendanceExcuseRequestAdmin(SchoolScopedAdmin):
+    list_display = ("student", "guardian", "request_type", "start_date", "end_date", "status", "reviewed_by")
+    list_filter = ("status", "request_type")
+    search_fields = ("student__first_name", "student__last_name", "guardian__user__first_name", "reason")
+    autocomplete_fields = ("student", "guardian")
+    readonly_fields = ("id", "reviewed_at", "created_at", "updated_at")
+    actions = ["action_approve_excuse", "action_reject_excuse"]
+
+    @admin.action(description="اعتماد وقبول طلبات الأعذار وتحديث الغياب تلقائياً")
+    def action_approve_excuse(self, request, queryset):
+        count = 0
+        for exc in queryset.filter(status=AttendanceExcuseRequest.Status.SUBMITTED):
+            review_excuse_request(exc, reviewed_by=request.user, is_approved=True, review_notes="تم التحقق من العذر وقبوله")
+            count += 1
+        self.message_user(request, f"تم اعتماد {count} عذر وتحديث سجلات الحضور بنجاح.")
+
+    @admin.action(description="رفض طلبات الأعذار المحددة")
+    def action_reject_excuse(self, request, queryset):
+        count = 0
+        for exc in queryset.filter(status=AttendanceExcuseRequest.Status.SUBMITTED):
+            review_excuse_request(exc, reviewed_by=request.user, is_approved=False, review_notes="العذر غير مقبول")
+            count += 1
+        self.message_user(request, f"تم رفض {count} عذر.")
+
+
+@admin.register(EarlyDepartureRequest, site=school_admin_site)
+class SchoolEarlyDepartureRequestAdmin(SchoolScopedAdmin):
+    list_display = ("student", "guardian", "date", "departure_time", "recipient_name", "status", "approved_by")
+    list_filter = ("status", "date")
+    search_fields = ("student__first_name", "student__last_name", "recipient_name", "recipient_phone")
+    autocomplete_fields = ("student", "guardian")
+    readonly_fields = ("id", "approved_at", "exit_confirmed_at", "created_at", "updated_at")
+    actions = ["action_approve_early_departure", "action_confirm_gate_exit"]
+
+    @admin.action(description="اعتماد طلبات الانصراف المبكر المحددة")
+    def action_approve_early_departure(self, request, queryset):
+        count = 0
+        for req in queryset.filter(status=EarlyDepartureRequest.Status.PENDING):
+            approve_early_departure(req, approved_by=request.user)
+            count += 1
+        self.message_user(request, f"تم اعتماد {count} طلب انصراف مبكر بنجاح.")
+
+    @admin.action(description="تأكيد خروج الطالب من البوابة الأمنية وتحديث الحصص")
+    def action_confirm_gate_exit(self, request, queryset):
+        count = 0
+        for req in queryset.filter(status=EarlyDepartureRequest.Status.APPROVED):
+            confirm_gate_exit(req, confirmed_by=request.user, exit_notes="تم الاستلام عند البوابة")
+            count += 1
+        self.message_user(request, f"تم توثيق خروج {count} طالب من البوابة وتحديث حصصهم.")
+
+
+@admin.register(AttendanceScoringPolicy, site=school_admin_site)
+class SchoolAttendanceScoringPolicyAdmin(SchoolScopedAdmin):
+    list_display = ("academic_year", "subject", "total_attendance_score", "calculation_mode", "unexcused_absence_deduction", "is_active")
+    list_filter = ("calculation_mode", "is_active")
+    search_fields = ("academic_year__name", "subject__name")
+    autocomplete_fields = ("academic_year", "subject")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(AttendanceScoreEntry, site=school_admin_site)
+class SchoolAttendanceScoreEntryAdmin(SchoolScopedAdmin):
+    list_display = ("student", "academic_term", "subject", "final_score", "raw_score", "deduction_total", "is_synced_to_gradebook")
+    list_filter = ("is_synced_to_gradebook", "academic_term")
+    search_fields = ("student__first_name", "student__last_name", "student__student_id_number")
+    autocomplete_fields = ("student", "academic_term", "subject", "scoring_policy")
+    readonly_fields = ("id", "calculated_at", "created_at", "updated_at")
+    actions = ["action_sync_to_gradebook"]
+
+    @admin.action(description="مزامنة درجات المواظبة المحددة مع سجل الدرجات GradeBook")
+    def action_sync_to_gradebook(self, request, queryset):
+        count = 0
+        for entry in queryset:
+            sync_score_to_gradebook(entry, teacher=None)
+            count += 1
+        self.message_user(request, f"تمت مزامنة {count} درجة مواظبة مع سجل الدرجات بنجاح.")
+
+
+@admin.register(AttendanceAuditLog, site=school_admin_site)
+class SchoolAttendanceAuditLogAdmin(SchoolScopedAdmin):
+    list_display = ("action", "register", "student_record", "performed_by", "timestamp")
+    list_filter = ("action", "timestamp")
+    search_fields = ("register__section__name", "reason")
+    autocomplete_fields = ("register", "student_record")
+    readonly_fields = ("id", "register", "student_record", "action", "performed_by", "timestamp", "old_value", "new_value", "reason", "ip_address", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(DailyAttendance, site=school_admin_site)

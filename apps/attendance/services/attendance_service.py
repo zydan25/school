@@ -127,6 +127,8 @@ def get_or_create_register(
             for rec in register.student_records.all():
                 _sync_legacy_attendance(rec, user)
 
+            cascade_daily_attendance_to_periods(register, user=user)
+
         if created:
             AttendanceAuditLog.objects.create(
                 school=school,
@@ -203,6 +205,9 @@ def bulk_record_attendance(
                 )
                 updated_count += 1
 
+        if updated_count > 0:
+            cascade_daily_attendance_to_periods(register, user=recorded_by)
+
     return updated_count
 
 
@@ -271,6 +276,8 @@ def approve_register(
             new_value={"status": register.status},
             ip_address=ip_address,
         )
+
+        cascade_daily_attendance_to_periods(register, user=approved_by)
 
     return register
 
@@ -412,3 +419,117 @@ def _sync_legacy_attendance(rec: StudentAttendanceRecord, user=None):
                 "detailed_record": rec,
             },
         )
+
+
+def cascade_daily_attendance_to_periods(
+    register: AttendanceRegister,
+    student: Student | None = None,
+    user=None,
+) -> int:
+    """تعميم حالة الحضور اليومي على حصص اليوم المجدولة مع استثناء فترات ما بعد الانصراف المبكر."""
+    from apps.attendance.models import AttendancePolicy, EarlyDepartureRequest
+    from apps.timetable.models import ClassSchedule
+
+    policy = AttendancePolicy.objects.filter(
+        school=register.school,
+        academic_year=register.academic_year,
+        is_active=True,
+        is_archived=False,
+    ).first()
+
+    if policy and not policy.cascade_daily_to_periods:
+        return 0
+
+    if register.session_type not in [
+        AttendanceRegister.SessionType.DAILY_MORNING,
+        AttendanceRegister.SessionType.DAILY_FULL,
+        AttendanceRegister.SessionType.DAILY_EVENING,
+    ]:
+        return 0
+
+    # Sunday: 6 -> 1; Monday: 0 -> 2; Tuesday: 1 -> 3; Wednesday: 2 -> 4; Thursday: 3 -> 5; Friday: 4 -> 6; Saturday: 5 -> 7
+    weekday_map = {6: 1, 0: 2, 1: 3, 2: 4, 3: 5, 4: 6, 5: 7}
+    schedule_weekday = weekday_map.get(register.date.weekday(), 1)
+
+    schedules = ClassSchedule.objects.filter(
+        school=register.school,
+        section=register.section,
+        academic_year=register.academic_year,
+        day_of_week=schedule_weekday,
+        is_archived=False,
+    ).order_by("period_number")
+
+    if not schedules.exists():
+        return 0
+
+    student_records = register.student_records.all()
+    if student:
+        student_records = student_records.filter(student=student)
+
+    early_departures = {
+        ed.student_id: ed
+        for ed in EarlyDepartureRequest.objects.filter(
+            school=register.school,
+            date=register.date,
+            status__in=[EarlyDepartureRequest.Status.APPROVED, EarlyDepartureRequest.Status.EXITED],
+            is_archived=False,
+        )
+    }
+
+    synced_count = 0
+    with transaction.atomic():
+        for rec in student_records.select_related("student"):
+            st = rec.student
+            departure = early_departures.get(st.id)
+
+            for sched in schedules:
+                if rec.status_category == AttendanceStatusType.Category.PRESENT:
+                    if departure and sched.start_time and sched.start_time >= departure.departure_time:
+                        p_status = PeriodAttendance.Status.EARLY_DEPARTURE
+                        notes = f"انصراف مبكر في الساعة {departure.departure_time.strftime('%H:%M')}"
+                    else:
+                        p_status = PeriodAttendance.Status.PRESENT
+                        notes = "حاضر (وفق اعتماد الحضور اليومي)"
+                elif rec.status_category in [
+                    AttendanceStatusType.Category.ABSENT_UNEXCUSED,
+                    AttendanceStatusType.Category.ABSENT_EXCUSED,
+                ]:
+                    p_status = PeriodAttendance.Status.ABSENT
+                    notes = "غائب (وفق سجل الغياب اليومي)"
+                elif rec.status_category in [
+                    AttendanceStatusType.Category.LATE,
+                    AttendanceStatusType.Category.LATE_EXCUSED,
+                ]:
+                    if sched.period_number == 1:
+                        p_status = PeriodAttendance.Status.LATE
+                        notes = f"متأخر ({rec.late_minutes} دقيقة)"
+                    else:
+                        p_status = PeriodAttendance.Status.PRESENT
+                        notes = "حاضر في الحصة"
+                elif rec.status_category == AttendanceStatusType.Category.AUTHORIZED_DEPARTURE:
+                    if departure and sched.start_time and sched.start_time < departure.departure_time:
+                        p_status = PeriodAttendance.Status.PRESENT
+                        notes = "حاضر قبل الانصراف"
+                    else:
+                        p_status = PeriodAttendance.Status.EARLY_DEPARTURE
+                        notes = "انصراف مبكر مصرح به"
+                else:
+                    p_status = PeriodAttendance.Status.PRESENT
+                    notes = ""
+
+                PeriodAttendance.objects.update_or_create(
+                    school=register.school,
+                    schedule=sched,
+                    student=st,
+                    date=register.date,
+                    defaults={
+                        "status": p_status,
+                        "notes": notes,
+                        "register": register,
+                        "detailed_record": rec,
+                    },
+                )
+                synced_count += 1
+
+    return synced_count
+

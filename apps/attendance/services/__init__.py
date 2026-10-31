@@ -2,6 +2,7 @@
 from apps.attendance.services.attendance_service import (
     approve_register,
     bulk_record_attendance,
+    cascade_daily_attendance_to_periods,
     get_or_create_register,
     lock_register,
     request_reopen_register,
@@ -30,6 +31,7 @@ from apps.attendance.services.scoring_service import (
 __all__ = [
     "get_or_create_register",
     "bulk_record_attendance",
+    "cascade_daily_attendance_to_periods",
     "submit_register",
     "approve_register",
     "lock_register",

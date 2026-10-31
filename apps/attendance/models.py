@@ -60,6 +60,11 @@ class AttendancePolicy(TenantOwnedModel):
     allow_guardian_advance_excuse = models.BooleanField("السماح لولي الأمر بطلب استئذان غياب مسبق", default=True)
     allow_guardian_post_excuse = models.BooleanField("السماح لولي الأمر بتقديم عذر لغياب سابق", default=True)
     allow_guardian_early_departure = models.BooleanField("السماح لولي الأمر بطلب انصراف مبكر", default=True)
+    cascade_daily_to_periods = models.BooleanField(
+        "تعميم الحضور اليومي تلقائياً على كافة حصص اليوم",
+        default=True,
+        help_text="عند رصد أو اعتماد الحضور اليومي، يعتبر حضور الطالب لليوم حضوراً لكافة الحصص المجدولة، إلا في حال تسجيل انصراف مبكر له قبل انتهاء الدوام.",
+    )
     is_active = models.BooleanField("السياسة النشطة للعام الدراسي", default=True)
     notes = models.TextField("ملاحظات وتوجيهات السياسة", blank=True)
 
@@ -979,6 +984,7 @@ class PeriodAttendance(TenantOwnedModel):
         PRESENT = "present", "حاضر في الحصة"
         ABSENT = "absent", "غائب عن الحصة"
         LATE = "late", "متأخر عن الحصة"
+        EARLY_DEPARTURE = "early_departure", "انصراف مبكر مصرح به"
 
     schedule = models.ForeignKey(
         "timetable.ClassSchedule",

@@ -489,3 +489,88 @@ class AttendanceSystemTests(TestCase):
         self.assertTrue(len(chronic) >= 1)
         # Student 2 has high absence percentage
         self.assertTrue(any(c["student_id"] == self.student_2.id for c in chronic))
+
+    def test_cascade_daily_attendance_to_all_periods_and_early_departure(self):
+        """اعتماد الحضور باليوم يعمم الحضور على كافة الحصص إلا في حال تسجيل انصراف مبكر."""
+        from apps.staff.models import Teacher
+        from apps.timetable.models import ClassSchedule
+
+        teacher = Teacher.objects.create(
+            school=self.school_a,
+            user=self.teacher_user,
+            specialization="رياضيات",
+        )
+
+        # Sunday weekday is 1 in ClassSchedule.WeekDay
+        sunday_date = datetime.date(2026, 9, 6)
+        sched_p1 = ClassSchedule.objects.create(
+            school=self.school_a, academic_year=self.year_a, academic_term=self.term_a,
+            section=self.section_a, subject=self.subject_a, teacher=teacher,
+            day_of_week=ClassSchedule.WeekDay.SUNDAY, period_number=1,
+            start_time=datetime.time(8, 0), end_time=datetime.time(8, 45),
+        )
+        sched_p2 = ClassSchedule.objects.create(
+            school=self.school_a, academic_year=self.year_a, academic_term=self.term_a,
+            section=self.section_a, subject=self.subject_a, teacher=teacher,
+            day_of_week=ClassSchedule.WeekDay.SUNDAY, period_number=2,
+            start_time=datetime.time(9, 0), end_time=datetime.time(9, 45),
+        )
+        sched_p3 = ClassSchedule.objects.create(
+            school=self.school_a, academic_year=self.year_a, academic_term=self.term_a,
+            section=self.section_a, subject=self.subject_a, teacher=teacher,
+            day_of_week=ClassSchedule.WeekDay.SUNDAY, period_number=3,
+            start_time=datetime.time(11, 30), end_time=datetime.time(12, 15),
+        )
+
+        # Student 1 has an approved early departure at 11:00 AM
+        dep_req = create_early_departure_request(
+            school=self.school_a,
+            student=self.student_1,
+            guardian=self.guardian,
+            date=sunday_date,
+            departure_time=datetime.time(11, 0),
+            reason="موعد خارجي",
+            recipient_name="عبدالله اليماني",
+            recipient_phone="+967771234567",
+            recipient_relationship="العم",
+        )
+        approve_early_departure(dep_req, approved_by=self.owner_a)
+
+        # Open daily register for Sunday
+        reg, _ = get_or_create_register(
+            school=self.school_a,
+            academic_year=self.year_a,
+            section=self.section_a,
+            date=sunday_date,
+            session_type=AttendanceRegister.SessionType.DAILY_MORNING,
+            bypass_calendar_check=True,
+            user=self.teacher_user,
+        )
+
+        # Student 1 is Present daily, Student 2 is Absent Unexcused
+        bulk_record_attendance(reg, [
+            {"student_id": self.student_1.id, "status_category": AttendanceStatusType.Category.PRESENT},
+            {"student_id": self.student_2.id, "status_category": AttendanceStatusType.Category.ABSENT_UNEXCUSED},
+        ], recorded_by=self.teacher_user)
+
+        # Approve daily register
+        approve_register(reg, approved_by=self.owner_a)
+
+        # Check Student 1 period attendances:
+        # P1 (08:00) -> Present
+        p1_st1 = PeriodAttendance.objects.get(school=self.school_a, schedule=sched_p1, student=self.student_1, date=sunday_date)
+        self.assertEqual(p1_st1.status, PeriodAttendance.Status.PRESENT)
+        # P2 (09:00) -> Present
+        p2_st1 = PeriodAttendance.objects.get(school=self.school_a, schedule=sched_p2, student=self.student_1, date=sunday_date)
+        self.assertEqual(p2_st1.status, PeriodAttendance.Status.PRESENT)
+        # P3 (11:30 - after 11:00 departure) -> Early Departure!
+        p3_st1 = PeriodAttendance.objects.get(school=self.school_a, schedule=sched_p3, student=self.student_1, date=sunday_date)
+        self.assertEqual(p3_st1.status, PeriodAttendance.Status.EARLY_DEPARTURE)
+
+        # Check Student 2 period attendances:
+        # All periods should be Absent
+        p1_st2 = PeriodAttendance.objects.get(school=self.school_a, schedule=sched_p1, student=self.student_2, date=sunday_date)
+        self.assertEqual(p1_st2.status, PeriodAttendance.Status.ABSENT)
+        p3_st2 = PeriodAttendance.objects.get(school=self.school_a, schedule=sched_p3, student=self.student_2, date=sunday_date)
+        self.assertEqual(p3_st2.status, PeriodAttendance.Status.ABSENT)
+

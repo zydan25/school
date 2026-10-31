@@ -238,6 +238,9 @@ def confirm_gate_exit(
             rec.notes = f"انصراف مبكر مصرح به مع ({departure_request.recipient_name})"
             rec.save(update_fields=["status_category", "notes", "updated_at"])
 
+            from apps.attendance.services.attendance_service import cascade_daily_attendance_to_periods
+            cascade_daily_attendance_to_periods(rec.register, student=rec.student, user=confirmed_by)
+
             AttendanceAuditLog.objects.create(
                 school=departure_request.school,
                 register=rec.register,
