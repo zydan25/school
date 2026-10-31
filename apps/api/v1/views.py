@@ -2330,13 +2330,20 @@ class HomeworkAttachmentDownloadAPIView(APIView):
         allowed = is_admin(request.user, school)
         if has_school_roles(request.user, school, {"student"}):
             student = user_student_profiles(request.user, school).first()
-            allowed = bool(student and submission.student_id == student.pk)
-        elif has_school_roles(request.user, school, {"guardian"}):
+            allowed = allowed or bool(
+                student and submission.student_id == student.pk
+            )
+        if has_school_roles(request.user, school, {"guardian"}):
             guardian = user_guardian_profiles(request.user, school).first()
-            allowed = bool(guardian and guardian.children.filter(pk=submission.student_id).exists())
-        elif has_school_roles(request.user, school, {"teacher"}):
+            allowed = allowed or bool(
+                guardian
+                and guardian.children.filter(pk=submission.student_id).exists()
+            )
+        if has_school_roles(request.user, school, {"teacher"}):
             teacher = user_teacher_profiles(request.user, school).first()
-            allowed = bool(teacher and submission.homework.teacher_id == teacher.pk)
+            allowed = allowed or bool(
+                teacher and submission.homework.teacher_id == teacher.pk
+            )
         if not allowed or not submission.attachment:
             raise Http404
         filename = os.path.basename(submission.attachment.name)
