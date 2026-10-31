@@ -32,6 +32,10 @@ def authenticate_api_credential(raw_token: str):
         user__status=User.Status.ACTIVE,
     ).first()
     if session:
+        now = timezone.now()
+        if session.last_used_at is None or session.last_used_at < now - timedelta(minutes=5):
+            session.last_used_at = now
+            session.save(update_fields=["last_used_at", "updated_at"])
         return session.user, session
 
     # Backward compatibility for tokens issued before the device-session rollout.
