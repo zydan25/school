@@ -633,11 +633,21 @@ class TeacherViewSet(TenantModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        require_school_role_or_permission(self.request, self.get_school(), HR_ADMIN_ROLES, "staff.add_teacher")
-        user = get_object_or_404(User, pk=self.request.data.get("user_id"), is_active=True)
-        if active_membership(user=user, school=self.get_school()) is None:
+        school = self.get_school()
+        require_school_role_or_permission(
+            self.request, school, HR_ADMIN_ROLES, "staff.add_teacher",
+        )
+        user = get_object_or_404(
+            User, pk=self.request.data.get("user_id"),
+            is_active=True, status=User.Status.ACTIVE,
+        )
+        if active_membership(user=user, school=school) is None:
             raise ValidationError("يجب إنشاء عضوية المدرسة للمستخدم قبل إنشاء ملف المعلم.")
-        serializer.save(school=self.get_school(), user=user)
+        if Teacher.objects.filter(
+            school=school, user=user, is_archived=False,
+        ).exists():
+            raise ValidationError("يوجد بالفعل ملف معلم لهذا الحساب في المدرسة.")
+        serializer.save(school=school, user=user)
 
 
 class TeacherAssignmentViewSet(TenantModelViewSet):
@@ -652,6 +662,46 @@ class TeacherAssignmentViewSet(TenantModelViewSet):
             qs = qs.filter(teacher=teacher) if teacher else qs.none()
         year_id = self.request.query_params.get("academic_year_id")
         return qs.filter(academic_year_id=year_id) if year_id else qs
+
+    def _validate_assignment(self, data):
+        school = self.get_school()
+        teacher = data["teacher"]
+        subject = data["subject"]
+        section = data["section"]
+        academic_year = data["academic_year"]
+        if (
+            teacher.school_id != school.pk or teacher.is_archived
+            or not teacher.is_active_teaching
+        ):
+            raise ValidationError({"teacher": "يجب اختيار ملف معلم نشط تابع للمدرسة."})
+        if subject.school_id != school.pk or subject.is_archived or not subject.is_active:
+            raise ValidationError({"subject": "المادة المحددة غير نشطة أو لا تتبع المدرسة."})
+        if (
+            section.school_id != school.pk or section.is_archived
+            or not section.is_active or section.academic_year_id != academic_year.pk
+        ):
+            raise ValidationError({"section": "الشعبة غير نشطة أو لا تتبع السنة الدراسية المحددة."})
+        if academic_year.school_id != school.pk or academic_year.is_archived:
+            raise ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة أو مؤرشفة."})
+        if academic_year.status not in {
+            AcademicYear.Status.ACTIVE, AcademicYear.Status.PLANNING,
+        }:
+            raise ValidationError({"academic_year": "لا يمكن إنشاء إسناد لسنة دراسية مغلقة."})
+
+    def perform_create(self, serializer):
+        data = serializer.validated_data
+        self._validate_assignment(data)
+        serializer.save(school=self.get_school())
+
+    def perform_update(self, serializer):
+        data = {
+            "teacher": serializer.validated_data.get("teacher", serializer.instance.teacher),
+            "subject": serializer.validated_data.get("subject", serializer.instance.subject),
+            "section": serializer.validated_data.get("section", serializer.instance.section),
+            "academic_year": serializer.validated_data.get("academic_year", serializer.instance.academic_year),
+        }
+        self._validate_assignment(data)
+        serializer.save()
 
 
 class DepartmentViewSet(TenantModelViewSet):
