@@ -239,6 +239,16 @@ def promote_student(
             raise ValidationError(
                 f"لا توجد شعب دراسية متاحة في الصف {next_grade_level.name} للعام {next_academic_year.name}."
             )
+        target_section = Section.objects.select_for_update().filter(
+            pk=target_section.pk,
+            school=locked_student.school,
+            academic_year=next_academic_year,
+            grade=next_grade_level,
+            is_archived=False,
+            is_active=True,
+        ).first()
+        if target_section is None:
+            raise ValidationError("الشعبة المستهدفة لم تعد متاحة؛ أعد المحاولة.")
         if target_section.is_full:
             raise ValidationError("الشعبة المستهدفة ممتلئة.")
 
@@ -324,13 +334,15 @@ def retain_student(
             raise ValidationError(
                 f"لا توجد شعب دراسية متاحة في الصف {locked_student.grade_level.name} للعام الدراسي {next_academic_year.name}."
             )
-        if (
-            target_section.school_id != locked_student.school_id
-            or target_section.academic_year_id != next_academic_year.pk
-            or target_section.grade_id != locked_student.grade_level_id
-            or target_section.is_archived
-            or not target_section.is_active
-        ):
+        target_section = Section.objects.select_for_update().filter(
+            pk=target_section.pk,
+            school=locked_student.school,
+            academic_year=next_academic_year,
+            grade=locked_student.grade_level,
+            is_archived=False,
+            is_active=True,
+        ).first()
+        if target_section is None:
             raise ValidationError("الشعبة المختارة لا تتبع الصف والسنة الجديدين.")
         if target_section.is_full:
             raise ValidationError("الشعبة المستهدفة ممتلئة.")
