@@ -239,9 +239,7 @@ class StudentDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
                 ),
                 "fields": sorted(changed_lifecycle_fields),
             })
-        student = serializer.save()
-        student.full_clean()
-        student.save()
+        serializer.save()
 
     def perform_destroy(self, instance):
         require_school_role_or_permission(
