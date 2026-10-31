@@ -5,9 +5,8 @@ import os
 from decimal import Decimal
 from datetime import timedelta
 
-from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Q, Count
+from django.db.models import F, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -28,7 +27,6 @@ from apps.accounts.models import (
 )
 from apps.accounts.services import (
     accept_school_invitation, active_membership, issue_school_invitation,
-    is_platform_operator,
 )
 from apps.academics.models import (
     AcademicTerm, AcademicYear, Classroom, EducationalStage, GradeLevel,
@@ -53,13 +51,12 @@ from apps.notifications.models import (
     ConversationMessage, ConversationParticipant, Notification,
     NotificationPreference, PushDevice, SchoolConversation,
 )
-from apps.payroll.models import PayrollRun
 from apps.staff.models import (
     Department, LeaveRequest, LeaveType, StaffAttendance, StaffMember,
     Teacher, TeacherAssignment, WorkShift,
 )
 from apps.students.models import (
-    Guardian, Student, StudentEnrollment, StudentGuardianRelation,
+    Guardian, Student, StudentGuardianRelation,
 )
 from apps.timetable.models import (
     ClassSchedule, DailyLessonLog, SchedulePeriodTemplate, SchoolBellSchedule,
@@ -69,15 +66,15 @@ from apps.api.v1.serializers import (
     AcademicTermSerializer, AcademicYearSerializer, AccountSerializer,
     AssetCategorySerializer, AssetDepreciationSerializer, AssessmentTypeSerializer,
     ClassroomSerializer, ClassScheduleSerializer, ConversationCreateSerializer,
-    ConversationMessageSerializer, ConversationParticipantSerializer,
+    ConversationMessageSerializer,
     CostCenterSerializer, DailyLessonLogSerializer, DepartmentSerializer,
     EducationalStageSerializer, ExamCommitteeSerializer, ExamPaperQuestionSerializer,
-    ExamSeatingSerializer, ExamSubmissionReviewSerializer, ExamSubmissionSerializer,
+    ExamSeatingSerializer, ExamSubmissionReviewSerializer,
     ExpenseCategorySerializer, FiscalPeriodSerializer, FiscalYearSerializer,
     FixedAssetSerializer, GradeBookSerializer, GradeLevelSerializer,
     GuardianSerializer, HomeworkSerializer, HomeworkSubmissionSerializer,
     InvitationSerializer, InventoryItemSerializer, JournalEntryCreateSerializer,
-    JournalEntrySerializer, LeaveRequestDomainSerializer, LeaveTypeSerializer,
+    JournalEntrySerializer, LeaveTypeSerializer,
     MembershipRoleSerializer, MembershipSerializer, MessageCreateSerializer,
     NotificationPreferenceSerializer, OnlineExamSerializer, PaymentVoucherSerializer,
     PeriodDefinitionSerializer, PushDeviceSerializer, PurchaseOrderItemSerializer,
@@ -1312,7 +1309,7 @@ class InventoryItemViewSet(TenantModelViewSet):
         if warehouse:
             qs = qs.filter(warehouse_id=warehouse)
         if low_stock in ("1", "true"):
-            qs = qs.filter(current_stock__lte=models.F("reorder_level"))
+            qs = qs.filter(current_stock__lte=F("reorder_level"))
         return qs.order_by("name")
 
 
@@ -1511,8 +1508,13 @@ class AssetDepreciationViewSet(TenantModelViewSet):
 # ---------------------------------------------------------------------------
 # Notification devices/preferences and secure conversation messaging
 # ---------------------------------------------------------------------------
-class PushDeviceViewSet(viewsets.ViewSet):
+class PushDeviceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
+    serializer_class = PushDeviceSerializer
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_queryset(self):
+        return PushDevice.objects.filter(user=self.request.user).order_by("-last_seen_at")
 
     def list(self, request):
         devices = PushDevice.objects.filter(user=request.user).order_by("-last_seen_at")
