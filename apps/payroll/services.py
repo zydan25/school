@@ -10,7 +10,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from apps.accounting.models import Account, JournalEntry, JournalEntryLine, PaymentVoucher
+from apps.accounting.models import Account, JournalEntry, JournalEntryLine
 from apps.payroll.models import (
     EmployeeContract,
     EmployeeLoanAdvance,
@@ -382,7 +382,7 @@ def disburse_payroll_run(
     reference_number: str = "",
     disbursed_by=None,
     user=None,
-) -> tuple[JournalEntry, PaymentVoucher]:
+) -> JournalEntry:
     """
     تنفيذ الصرف الفعلي لمسير الرواتب من حساب الصندوق أو البنك،
     وإنشاء قيد صرف مالي وسند صرف وتحديث قسائم الموظفين كـ مدفوعة.
@@ -481,4 +481,4 @@ def disburse_payroll_run(
             updated_at=timezone.now(),
         )
 
-        return disb_entry, pv
+        return disb_entry
