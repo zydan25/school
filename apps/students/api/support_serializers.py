@@ -252,7 +252,10 @@ class StudentDocumentSerializer(StudentSupportTenantSerializer):
             return None
         from django.urls import reverse
 
-        url = reverse("student-document-download", kwargs={"pk": obj.pk})
+        url = reverse(
+            "student-document-download",
+            kwargs={"pk": obj.pk, "version": getattr(request, "version", "v1")},
+        )
         return request.build_absolute_uri(url)
 
 
