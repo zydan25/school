@@ -1,4 +1,7 @@
 """In-app messages, transactional outbox, and WhatsApp/SMS gateway integrations."""
+import os
+import uuid
+
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
@@ -200,7 +203,78 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
 
     def __str__(self):
         owner = self.school.name if self.school else "المنصة المركزية"
-        return f"{self.name} ({self.get_channel_display
+        return f"{self.name} ({self.get_channel_display()}) - {owner}"
+
+
+class InboundWebhookMessage(UUIDTimestampedModel):
+    """سجل وتوثيق دائم للرسائل الواردة عبر Webhook لمنع التكرار وضمان عدم المعالجة المزدوجة."""
+    school = models.ForeignKey(
+        "tenants.School",
+        verbose_name="المدرسة",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="inbound_webhook_messages",
+    )
+    provider_msg_id = models.CharField("معرف الرسالة من المزود", max_length=255, db_index=True)
+    sender_phone = models.CharField("رقم المرسل", max_length=50)
+    received_at = models.DateTimeField("تاريخ ووقت الاستقبال", default=timezone.now)
+    processed = models.BooleanField("تمت المعالجة", default=True)
+
+    class Meta:
+        verbose_name = "رسالة ويب هوك واردة"
+        verbose_name_plural = "سجل رسائل الويب هوك الواردة"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "provider_msg_id"],
+                name="notifications_inbound_msg_school_uniq",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.sender_phone}: {self.provider_msg_id}"
+
+
+def conversation_attachment_path(instance, filename):
+    extension = os.path.splitext(os.path.basename(filename))[1].lower()[:12]
+    return (
+        f"private/schools/{instance.school_id}/conversations/"
+        f"{instance.conversation_id}/{uuid.uuid4().hex}{extension}"
+    )
+
+
+class PushDevice(UUIDTimestampedModel):
+    class Platform(models.TextChoices):
+        ANDROID = "android", "Android"
+        IOS = "ios", "iOS"
+        WEB = "web", "Web"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المستخدم",
+        on_delete=models.CASCADE,
+        related_name="push_devices",
+    )
+    device_id = models.CharField("معرف الجهاز داخل التطبيق", max_length=160)
+    platform = models.CharField("المنصة", max_length=12, choices=Platform.choices)
+    push_token = models.CharField("رمز الإشعارات من المزود", max_length=2048, unique=True)
+    app_version = models.CharField("إصدار التطبيق", max_length=40, blank=True)
+    device_name = models.CharField("اسم الجهاز", max_length=120, blank=True)
+    is_active = models.BooleanField("نشط", default=True, db_index=True)
+    last_seen_at = models.DateTimeField("آخر نشاط", default=timezone.now)
+
+    class Meta:
+        verbose_name = "جهاز إشعارات"
+        verbose_name_plural = "أجهزة الإشعارات"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "device_id"], name="notifications_push_device_user_device_uniq"),
+        ]
+        indexes = [models.Index(fields=["user", "is_active"], name="notifications_push_user_active_idx")]
+
+    def __str__(self):
+        return f"{self.user} / {self.platform} / {self.device_id}"
+
+
 class SchoolConversation(TenantOwnedModel):
     class Status(models.TextChoices):
         OPEN = "open", "مفتوحة"
@@ -231,7 +305,7 @@ class SchoolConversation(TenantOwnedModel):
         verbose_name = "محادثة مدرسية"
         verbose_name_plural = "المحادثات المدرسية"
         ordering = ["-last_message_at", "-created_at"]
-        indexes = [models.Index(fields=["school", "status", "last_message_at"])]
+        indexes = [models.Index(fields=["school", "status", "last_message_at"], name="notifications_conv_school_status_idx")]
 
     def __str__(self):
         return f"{self.subject} - {self.school}"
@@ -272,7 +346,7 @@ class ConversationParticipant(TenantOwnedModel):
                 name="notifications_conversation_participant_uniq",
             ),
         ]
-        indexes = [models.Index(fields=["school", "user", "is_active"])]
+        indexes = [models.Index(fields=["school", "user", "is_active"], name="notifications_conv_user_active_idx")]
 
     def clean(self):
         super().clean()
@@ -314,9 +388,7 @@ class ConversationMessage(TenantOwnedModel):
         verbose_name = "رسالة محادثة"
         verbose_name_plural = "رسائل المحادثات"
         ordering = ["created_at"]
-        indexes = [
-            models.Index(fields=["school", "conversation", "created_at"]),
-        ]
+        indexes = [models.Index(fields=["school", "conversation", "created_at"], name="notifications_conv_msg_time_idx")]
 
     def clean(self):
         super().clean()
@@ -329,35 +401,3 @@ class ConversationMessage(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.sender or 'النظام'} - {self.created_at}"
-
-
-()}) - {owner}"
-
-
-class InboundWebhookMessage(UUIDTimestampedModel):
-    """سجل وتوثيق دائم للرسائل الواردة عبر Webhook لمنع التكرار وضمان عدم المعالجة المزدوجة."""
-    school = models.ForeignKey(
-        "tenants.School",
-        verbose_name="المدرسة",
-        null=True,
-        blank=True,
-        on_delete=models.CASCADE,
-        related_name="inbound_webhook_messages",
-    )
-    provider_msg_id = models.CharField("معرف الرسالة من المزود", max_length=255, db_index=True)
-    sender_phone = models.CharField("رقم المرسل", max_length=50)
-    received_at = models.DateTimeField("تاريخ ووقت الاستقبال", default=timezone.now)
-    processed = models.BooleanField("تمت المعالجة", default=True)
-
-    class Meta:
-        verbose_name = "رسالة ويب هوك واردة"
-        verbose_name_plural = "سجل رسائل الويب هوك الواردة"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["school", "provider_msg_id"],
-                name="notifications_inbound_msg_school_uniq",
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.sender_phone}: {self.provider_msg_id}"
