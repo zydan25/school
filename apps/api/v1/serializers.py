@@ -372,17 +372,17 @@ class OnlineExamSerializer(TenantModelSerializer):
 
     class Meta(TenantModelSerializer.Meta):
         model = OnlineExam
-        exclude = ("school", "branch", "is_archived", "archived_at", "archived_by")
-        read_only_fields = ("id", "created_at", "updated_at", "created_by")
+        fields = "__all__"
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + ("created_by",)
 
 
 class ExamSubmissionSerializer(TenantModelSerializer):
     class Meta(TenantModelSerializer.Meta):
         model = StudentOnlineExamSubmission
-        exclude = ("school", "branch", "is_archived", "archived_at", "archived_by")
-        read_only_fields = (
-            "id", "student", "started_at", "submitted_at", "answers_json",
-            "auto_score", "manual_score", "final_score", "status", "graded_by", "created_at", "updated_at",
+        fields = "__all__"
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + (
+            "student", "started_at", "submitted_at", "answers_json",
+            "auto_score", "manual_score", "final_score", "status", "graded_by",
         )
 
 
@@ -520,9 +520,18 @@ class JournalEntryCreateSerializer(serializers.Serializer):
         return lines
 
 
-class VoucherSerializer(TenantModelSerializer):
+class PaymentVoucherSerializer(TenantModelSerializer):
     class Meta(TenantModelSerializer.Meta):
+        model = PaymentVoucher
         fields = "__all__"
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + ("status", "journal_entry")
+
+
+class ReceiptVoucherSerializer(TenantModelSerializer):
+    class Meta(TenantModelSerializer.Meta):
+        model = ReceiptVoucher
+        fields = "__all__"
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + ("status", "journal_entry")
 
 
 class SupplierSerializer(TenantModelSerializer):
