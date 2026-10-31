@@ -181,7 +181,7 @@ class IdentitySessionSecurityTests(TestCase):
         legacy, _ = Token.objects.get_or_create(user=user)
 
         user.status = User.Status.SUSPENDED
-        user.save(update_fields=["status", "is_active", "updated_at"])
+        user.save(update_fields=["status", "updated_at"])
         self.assertFalse(DeviceSession.objects.filter(
             user=user, revoked_at__isnull=True,
         ).exists())
