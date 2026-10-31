@@ -61,6 +61,7 @@ class StudentListSerializer(serializers.ModelSerializer):
             "credit_balance",
             "enrollment_date",
         ]
+        read_only_fields = ["credit_balance"]
 
 
 class StudentDetailSerializer(StudentListSerializer):
