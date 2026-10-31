@@ -889,28 +889,29 @@ class OnlineExamViewSet(TenantModelViewSet):
             school=school, is_archived=False,
         ).select_related("subject", "academic_term", "grade_level", "section")
         if not is_admin(self.request.user, school):
+            allowed = Q(pk__in=[])
             if has_school_roles(self.request.user, school, {"student"}):
                 student = user_student_profiles(self.request.user, school).first()
-                if not student:
-                    return qs.none()
-                qs = qs.filter(is_published=True).filter(
-                    Q(section=student.section)
-                    | Q(section__isnull=True, grade_level=student.grade_level)
-                )
-            elif has_school_roles(self.request.user, school, {"teacher"}):
+                if student:
+                    allowed |= (
+                        Q(is_published=True)
+                        & (
+                            Q(section=student.section)
+                            | Q(section__isnull=True, grade_level=student.grade_level)
+                        )
+                    )
+            if has_school_roles(self.request.user, school, {"teacher"}):
                 teacher = user_teacher_profiles(self.request.user, school).first()
-                if not teacher:
-                    return qs.none()
-                assigned = teacher.assignments.filter(is_archived=False)
-                sections = assigned.values_list("section_id", flat=True)
-                grades = assigned.values_list("section__grade_id", flat=True)
-                qs = qs.filter(
-                    Q(created_by=self.request.user)
-                    | Q(section_id__in=sections)
-                    | Q(section__isnull=True, grade_level_id__in=grades)
-                )
-            else:
-                return qs.none()
+                if teacher:
+                    assigned = teacher.assignments.filter(is_archived=False)
+                    sections = assigned.values_list("section_id", flat=True)
+                    grades = assigned.values_list("section__grade_id", flat=True)
+                    allowed |= (
+                        Q(created_by=self.request.user)
+                        | Q(section_id__in=sections)
+                        | Q(section__isnull=True, grade_level_id__in=grades)
+                    )
+            qs = qs.filter(allowed)
         return qs.order_by("-start_time")
 
     def perform_create(self, serializer):
