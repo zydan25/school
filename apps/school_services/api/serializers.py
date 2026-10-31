@@ -1,4 +1,6 @@
 """Serializers for the school support-services API."""
+from decimal import Decimal
+
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
@@ -67,6 +69,8 @@ class SchoolServiceSerializer(serializers.ModelSerializer):
 
 
 class BusRouteSerializer(SchoolServiceSerializer):
+    bus_capacity = serializers.IntegerField(min_value=1)
+
     class Meta(SchoolServiceSerializer.Meta):
         model = BusRoute
         fields = "__all__"
@@ -81,12 +85,29 @@ class StudentBusSubscriptionSerializer(SchoolServiceSerializer):
 
 
 class LibraryBookSerializer(SchoolServiceSerializer):
+    total_copies = serializers.IntegerField(min_value=1)
+
     class Meta(SchoolServiceSerializer.Meta):
         model = LibraryBook
         fields = "__all__"
         read_only_fields = SchoolServiceSerializer.Meta.read_only_fields + (
             "available_copies",
         )
+
+    def create(self, validated_data):
+        validated_data["available_copies"] = validated_data.get("total_copies", 1)
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        old_total = instance.total_copies
+        outstanding = old_total - instance.available_copies
+        new_total = validated_data.get("total_copies", old_total)
+        if new_total < outstanding:
+            raise serializers.ValidationError({
+                "total_copies": "لا يمكن خفض عدد النسخ عن عدد النسخ المعارة حالياً."
+            })
+        validated_data["available_copies"] = new_total - outstanding
+        return super().update(instance, validated_data)
 
 
 class BookLoanSerializer(SchoolServiceSerializer):
@@ -96,6 +117,18 @@ class BookLoanSerializer(SchoolServiceSerializer):
         read_only_fields = SchoolServiceSerializer.Meta.read_only_fields + (
             "status", "return_date",
         )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        borrow_date = attrs.get(
+            "borrow_date", getattr(self.instance, "borrow_date", None)
+        )
+        due_date = attrs.get("due_date", getattr(self.instance, "due_date", None))
+        if borrow_date and due_date and due_date < borrow_date:
+            raise serializers.ValidationError({
+                "due_date": "يجب أن يكون موعد الإرجاع في تاريخ الاستعارة أو بعده."
+            })
+        return attrs
 
 
 class BusFinancialSettlementSerializer(SchoolServiceSerializer):
@@ -134,6 +167,10 @@ class BusFinancialSettlementSerializer(SchoolServiceSerializer):
 
 
 class StudentBookDistributionSerializer(SchoolServiceSerializer):
+    quantity = serializers.DecimalField(
+        max_digits=6, decimal_places=2, min_value=Decimal("0.01")
+    )
+
     class Meta(SchoolServiceSerializer.Meta):
         model = StudentBookDistribution
         fields = "__all__"
@@ -144,6 +181,8 @@ class StudentBookDistributionSerializer(SchoolServiceSerializer):
 
 
 class BookRequisitionItemSerializer(serializers.ModelSerializer):
+    quantity_requested = serializers.IntegerField(min_value=1)
+
     class Meta:
         model = BookRequisitionItem
         fields = (

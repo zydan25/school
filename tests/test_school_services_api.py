@@ -2,6 +2,8 @@
 from django.test import SimpleTestCase
 from django.urls import resolve
 
+from apps.school_services.api import serializers as service_serializers
+
 
 class SchoolServicesApiRouteTests(SimpleTestCase):
     def test_school_services_endpoints_are_mounted_once(self):
@@ -33,3 +35,26 @@ class SchoolServicesApiRouteTests(SimpleTestCase):
         for route, expected_name in existing.items():
             with self.subTest(route=route):
                 self.assertEqual(resolve(route).url_name, expected_name)
+
+
+class SchoolServicesSerializerContractTests(SimpleTestCase):
+    def test_all_school_services_serializers_build_their_fields(self):
+        serializer_types = (
+            service_serializers.BusRouteSerializer,
+            service_serializers.StudentBusSubscriptionSerializer,
+            service_serializers.LibraryBookSerializer,
+            service_serializers.BookLoanSerializer,
+            service_serializers.BusFinancialSettlementSerializer,
+            service_serializers.StudentBookDistributionSerializer,
+            service_serializers.BookRequisitionItemSerializer,
+            service_serializers.BookRequisitionOrderSerializer,
+            service_serializers.StudentHealthProfileSerializer,
+            service_serializers.ClinicVisitSerializer,
+        )
+        errors = {}
+        for serializer_type in serializer_types:
+            try:
+                tuple(serializer_type().fields.keys())
+            except Exception as exc:
+                errors[serializer_type.__name__] = f"{type(exc).__name__}: {exc}"
+        self.assertEqual(errors, {})
