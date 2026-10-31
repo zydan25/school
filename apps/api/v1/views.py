@@ -1,6 +1,7 @@
 """Versioned REST API surface for the multi-role School mobile application."""
 from __future__ import annotations
 
+import hashlib
 import os
 from decimal import Decimal
 from datetime import timedelta
@@ -1812,8 +1813,19 @@ class VendorInvoiceViewSet(TenantModelViewSet):
     def record_payment(self, request, pk=None):
         try:
             amount = Decimal(str(request.data.get("amount")))
-        except Exception:
-            raise ValidationError({"amount": "المبلغ غير صحيح."})
+        except Exception as exc:
+            raise ValidationError({"amount": "المبلغ غير صحيح."}) from exc
+
+        idempotency_key = (request.data.get("idempotency_key") or "").strip()
+        if len(idempotency_key) < 8 or len(idempotency_key) > 120:
+            raise ValidationError({
+                "idempotency_key": "أرسل مفتاحاً فريداً من 8 إلى 120 حرفاً لإعادة المحاولة بأمان.",
+            })
+
+        payment_method = request.data.get("payment_method", PaymentVoucher.PaymentMethod.BANK_TRANSFER)
+        if payment_method not in PaymentVoucher.PaymentMethod.values:
+            raise ValidationError({"payment_method": "طريقة الدفع غير مدعومة."})
+
         payment_account = get_object_or_404(
             Account, pk=request.data.get("payment_account_id"),
             school=self.get_school(), is_leaf=True,
@@ -1822,34 +1834,110 @@ class VendorInvoiceViewSet(TenantModelViewSet):
         from apps.accounting.services.auto_posting import (
             _get_account_or_seed, _get_active_fiscal_period,
         )
+        school = self.get_school()
+        key_digest = hashlib.sha256(idempotency_key.encode("utf-8")).hexdigest()
+        source_reference = f"{pk}:{key_digest}"
+
         with transaction.atomic():
             invoice = get_object_or_404(
                 VendorInvoice.objects.select_for_update(),
-                pk=pk, school=self.get_school(), is_archived=False,
+                pk=pk, school=school, is_archived=False,
             )
             if not invoice.journal_entry_id:
                 raise ValidationError("يجب ترحيل فاتورة المورد محاسبياً قبل تسجيل السداد.")
-            if invoice.status not in [VendorInvoice.Status.APPROVED, VendorInvoice.Status.PARTIAL]:
+
+            existing_entry = JournalEntry.objects.filter(
+                school=school,
+                source_module="vendor_invoice_payment",
+                source_reference=source_reference,
+                is_archived=False,
+            ).first()
+            if existing_entry:
+                existing_total = sum(
+                    (line.debit for line in existing_entry.lines.all()),
+                    Decimal("0.00"),
+                )
+                if existing_total != amount:
+                    raise ValidationError({
+                        "idempotency_key": "استُخدم هذا المفتاح سابقاً بمبلغ مختلف.",
+                    })
+                existing_voucher = PaymentVoucher.objects.filter(
+                    school=school, journal_entry=existing_entry,
+                ).first()
+                if existing_voucher is None:
+                    raise ValidationError(
+                        "تم العثور على قيد سداد سابق دون سند مرتبط؛ يلزم مراجعة المحاسبة.",
+                    )
+                return Response({
+                    "invoice": self.get_serializer(invoice).data,
+                    "payment_voucher": PaymentVoucherSerializer(existing_voucher).data,
+                    "journal_entry": existing_entry.entry_number,
+                    "idempotent_replay": True,
+                })
+
+            if invoice.status not in {
+                VendorInvoice.Status.APPROVED,
+                VendorInvoice.Status.PARTIAL,
+            }:
                 raise ValidationError("فاتورة المورد ليست في حالة تسمح بالسداد.")
             if amount <= 0 or amount > invoice.remaining_amount:
                 raise ValidationError({
                     "amount": f"المبلغ يجب أن يكون أكبر من صفر ولا يتجاوز المتبقي {invoice.remaining_amount}.",
                 })
-            period = _get_active_fiscal_period(self.get_school(), timezone.localdate())
-            ap = _get_account_or_seed(self.get_school(), "2101", "ذمم الموردين")
+
+            period = _get_active_fiscal_period(school, timezone.localdate())
+            ap = _get_account_or_seed(school, "2101", "ذمم الموردين")
+            entry_number = f"JV-VENDOR-PAY-{invoice.pk.hex[:8]}-{key_digest[:12].upper()}"
             entry = JournalEntry.objects.create(
-                school=self.get_school(), fiscal_period=period,
-                entry_number=f"JV-VENDOR-PAY-{invoice.pk.hex[:8]}-{timezone.now().strftime('%Y%m%d%H%M%S%f')}",
-                date=timezone.localdate(), description=f"سداد فاتورة المورد #{invoice.invoice_number}",
-                status=JournalEntry.Status.DRAFT, source_module="vendor_invoice_payment", source_reference=str(invoice.pk),
+                school=school,
+                fiscal_period=period,
+                entry_number=entry_number,
+                date=timezone.localdate(),
+                description=f"سداد فاتورة المورد #{invoice.invoice_number}",
+                status=JournalEntry.Status.DRAFT,
+                source_module="vendor_invoice_payment",
+                source_reference=source_reference,
             )
-            JournalEntryLine.objects.create(school=self.get_school(), journal_entry=entry, account=ap, debit=amount, credit=Decimal("0.00"), description="تسوية ذمم المورد")
-            JournalEntryLine.objects.create(school=self.get_school(), journal_entry=entry, account=payment_account, debit=Decimal("0.00"), credit=amount, description="السداد من الصندوق/البنك")
+            JournalEntryLine.objects.create(
+                school=school, journal_entry=entry, account=ap,
+                debit=amount, credit=Decimal("0.00"),
+                description="تسوية ذمم المورد",
+            )
+            JournalEntryLine.objects.create(
+                school=school, journal_entry=entry, account=payment_account,
+                debit=Decimal("0.00"), credit=amount,
+                description="السداد من الصندوق/البنك",
+            )
             entry.post(user=request.user)
+
+            voucher = PaymentVoucher.objects.create(
+                school=school,
+                voucher_number=f"PV-VINV-{key_digest[:16].upper()}",
+                date=timezone.localdate(),
+                paid_to=invoice.supplier.name,
+                amount=amount,
+                payment_method=payment_method,
+                credit_account=payment_account,
+                debit_account=ap,
+                description=f"سداد فاتورة المورد #{invoice.invoice_number}",
+                reference_number=request.data.get("reference_number", "")[:100],
+                status=PaymentVoucher.Status.POSTED,
+                journal_entry=entry,
+            )
             invoice.paid_amount += amount
-            invoice.status = VendorInvoice.Status.PAID if invoice.paid_amount == invoice.total_amount else VendorInvoice.Status.PARTIAL
+            invoice.status = (
+                VendorInvoice.Status.PAID
+                if invoice.paid_amount == invoice.total_amount
+                else VendorInvoice.Status.PARTIAL
+            )
             invoice.save(update_fields=["paid_amount", "status", "updated_at"])
-        return Response(self.get_serializer(invoice).data)
+
+        return Response({
+            "invoice": self.get_serializer(invoice).data,
+            "payment_voucher": PaymentVoucherSerializer(voucher).data,
+            "journal_entry": entry.entry_number,
+            "idempotent_replay": False,
+        }, status=status.HTTP_201_CREATED)
 
 
 class AssetCategoryViewSet(TenantModelViewSet):
