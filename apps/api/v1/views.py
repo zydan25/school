@@ -1378,22 +1378,43 @@ class JournalEntryViewSet(TenantModelViewSet):
             raise ValidationError("لا يمكن تعديل قيد مرحّل؛ استخدم قيداً عكسياً.")
         return super().update(request, *args, **kwargs)
 
+    def perform_destroy(self, instance):
+        if instance.status == JournalEntry.Status.POSTED:
+            raise ValidationError("لا يمكن أرشفة قيد مرحّل؛ أنشئ قيداً عكسياً أولاً.")
+        instance.delete()
+
     @action(detail=True, methods=["post"], url_path="post")
     def post(self, request, pk=None):
-        entry = self.get_object()
-        if entry.status != JournalEntry.Status.DRAFT:
-            raise ValidationError("القيد ليس في حالة مسودة.")
-        entry.post(user=request.user)
+        with transaction.atomic():
+            entry = get_object_or_404(
+                JournalEntry.objects.select_for_update(),
+                pk=pk, school=self.get_school(), is_archived=False,
+            )
+            if entry.status != JournalEntry.Status.DRAFT:
+                raise ValidationError("القيد ليس في حالة مسودة.")
+            entry.post(user=request.user)
         return Response(self.get_serializer(entry).data)
 
     @action(detail=True, methods=["post"], url_path="reverse")
     def reverse(self, request, pk=None):
-        entry = self.get_object()
         reason = (request.data.get("reason") or "").strip()
         if len(reason) < 3:
             raise ValidationError({"reason": "سبب عكس القيد مطلوب."})
-        reversed_entry = reverse_journal_entry(entry, reason=reason, reversed_by=request.user)
-        return Response({"reversed_entry_id": str(reversed_entry.pk), "entry": self.get_serializer(entry).data}, status=status.HTTP_201_CREATED)
+        with transaction.atomic():
+            entry = get_object_or_404(
+                JournalEntry.objects.select_for_update(),
+                pk=pk, school=self.get_school(), is_archived=False,
+            )
+            try:
+                reversed_entry = reverse_journal_entry(
+                    entry, reason=reason, reversed_by=request.user,
+                )
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
+        return Response({
+            "reversed_entry_id": str(reversed_entry.pk),
+            "entry": self.get_serializer(entry).data,
+        }, status=status.HTTP_201_CREATED)
 
 
 class VoucherBaseViewSet(TenantModelViewSet):
@@ -1407,14 +1428,18 @@ class VoucherBaseViewSet(TenantModelViewSet):
         )
 
     def perform_update(self, serializer):
-        if serializer.instance.status != "draft":
-            raise ValidationError("لا يمكن تعديل سند تم ترحيله أو إلغاؤه.")
-        serializer.save()
+        raise MethodNotAllowed(
+            "PATCH",
+            detail="لا يمكن تعديل سند بعد إنشائه لأن له قيداً مزدوجاً مرتبطاً؛ ألغِ المسودة وأعد إنشاءها.",
+        )
 
     def perform_destroy(self, instance):
         if instance.status != "draft":
             raise ValidationError("لا يمكن أرشفة سند مالي مرحّل؛ استخدم إجراء العكس المعتمد.")
+        entry = instance.journal_entry
         super().perform_destroy(instance)
+        if entry and entry.status == JournalEntry.Status.DRAFT:
+            entry.delete()
 
 
 class PaymentVoucherViewSet(VoucherBaseViewSet):
