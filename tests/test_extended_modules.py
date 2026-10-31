@@ -475,6 +475,7 @@ class ExtendedModulesTests(TestCase):
             provider=SchoolMessagingGateway.Provider.ULTRAMSG,
             api_endpoint_url="https://api.ultramsg.com/instance123/messages/chat",
             auth_token="test_token_abc",
+            webhook_verify_token="test-webhook-secret",
             sender_id="+967777333000",
             auto_ai_reply=True,
         )
@@ -503,10 +504,23 @@ class ExtendedModulesTests(TestCase):
         get_res = client.get(f"/api/v1/notifications/webhook/whatsapp/{self.school.code}/")
         self.assertEqual(get_res.status_code, 200)
 
+        import hashlib
+        import hmac
+        import json
+
+        webhook_payload = {
+            "from": self.student.student_id_number,
+            "body": "???? ?????",
+        }
+        webhook_body = json.dumps(webhook_payload, separators=(",", ":")).encode("utf-8")
+        webhook_signature = "sha256=" + hmac.new(
+            b"test-webhook-secret", webhook_body, hashlib.sha256,
+        ).hexdigest()
         post_res = client.post(
             f"/api/v1/notifications/webhook/whatsapp/{self.school.code}/",
-            data={"from": self.student.student_id_number, "body": "???? ?????"},
-            format="json",
+            data=webhook_body,
+            content_type="application/json",
+            HTTP_X_HUB_SIGNATURE_256=webhook_signature,
         )
         self.assertEqual(post_res.status_code, 200)
         self.assertEqual(post_res.data["status"], "success")
