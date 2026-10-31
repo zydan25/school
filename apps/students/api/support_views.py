@@ -109,10 +109,12 @@ def incident_queryset_for(request, school):
 
 def require_teacher_assigned_to_student(user, school, student):
     teacher = Teacher.objects.filter(
-        school=school, user=user, is_archived=False
+        school=school, user=user, is_archived=False,
+        is_active_teaching=True,
     ).first()
     if not teacher or not teacher.assignments.filter(
-        school=school, section=student.section, is_archived=False
+        school=school, section=student.section,
+        academic_year=student.academic_year, is_archived=False,
     ).exists():
         raise PermissionDenied("لا يمكنك تسجيل بلاغ إلا لطالب في شعبة مسندة إليك.")
 
