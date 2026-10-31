@@ -1235,11 +1235,15 @@ class DailyLessonLogViewSet(TenantModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        teacher = user_teacher_profiles(self.request.user, self.get_school()).first()
+        school = self.get_school()
+        teacher = user_teacher_profiles(self.request.user, school).first()
         schedule = serializer.validated_data["schedule"]
-        if teacher and not is_admin(self.request.user, self.get_school()) and schedule.teacher_id != teacher.pk:
-            raise PermissionDenied("لا يمكنك توثيق تنفيذ حصة لمعلم آخر.")
-        serializer.save(school=self.get_school())
+        if not is_admin(self.request.user, school):
+            if teacher is None:
+                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
+            if schedule.teacher_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك توثيق تنفيذ حصة لمعلم آخر.")
+        serializer.save(school=school)
 
 
 class MyWeeklyTimetableAPIView(APIView):
