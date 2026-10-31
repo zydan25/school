@@ -251,13 +251,13 @@ class StudentDocumentSerializer(StudentSupportTenantSerializer):
         request = self.context.get("request")
         if not request:
             return None
-        from django.urls import reverse
-
-        url = reverse(
-            "student-document-download",
-            kwargs={"pk": obj.pk, "version": getattr(request, "version", "v1")},
+        version = (
+            getattr(request, "version", None)
+            or getattr(getattr(request, "resolver_match", None), "kwargs", {}).get("version")
+            or "v1"
         )
-        return request.build_absolute_uri(url)
+        path = f"/api/{version}/students/documents/{obj.pk}/download/"
+        return request.build_absolute_uri(path)
 
 
 class GuardianConsentSerializer(StudentSupportTenantSerializer):
