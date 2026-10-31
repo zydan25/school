@@ -17,13 +17,42 @@ class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, version):
+        from apps.api.v1.serializers import UserProfileSerializer
+
         return Response({
-            "id": str(request.user.pk),
-            "full_name": request.user.full_name,
-            "phone": request.user.phone,
-            "email": request.user.email,
+            "user": UserProfileSerializer(
+                request.user, context={"request": request},
+            ).data,
+            "active_school": (
+                {
+                    "id": str(request.school.pk),
+                    "code": request.school.code,
+                    "name": request.school.name,
+                }
+                if request.school else None
+            ),
             "is_platform_admin": request.user.is_platform_admin,
-            "school": ({"id": str(request.school.pk), "code": request.school.code, "name": request.school.name} if request.school else None),
+        })
+
+    def patch(self, request, version):
+        from apps.api.v1.serializers import UserProfileSerializer
+
+        serializer = UserProfileSerializer(
+            request.user, data=request.data, partial=True,
+            context={"request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({
+            "user": serializer.data,
+            "active_school": (
+                {
+                    "id": str(request.school.pk),
+                    "code": request.school.code,
+                    "name": request.school.name,
+                }
+                if request.school else None
+            ),
         })
 
 
