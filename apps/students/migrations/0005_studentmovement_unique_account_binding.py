@@ -65,7 +65,7 @@ class Migration(migrations.Migration):
                 ("previous_grade_level", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name="+", to="academics.gradelevel")),
                 ("previous_section", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name="+", to="academics.section")),
                 ("recorded_by", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name="recorded_student_movements", to=settings.AUTH_USER_MODEL)),
-                ("school", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="students_studentmovement_records", to="tenants.school", verbose_name="المدرسة")),
+                ("school", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="%(app_label)s_%(class)s_records", to="tenants.school", verbose_name="المدرسة")),
                 ("student", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="movements", to="students.student", verbose_name="الطالب")),
             ],
             options={
