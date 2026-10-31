@@ -103,17 +103,38 @@ class User(AbstractBaseUser, PermissionsMixin, UUIDTimestampedModel):
             raise ValidationError({"phone": "أدخل رقم هاتف دولياً بصيغة صحيحة، مثل +9677XXXXXXX."})
 
     def save(self, *args, **kwargs):
+        from django.db import transaction
+
         self.phone = normalize_phone(self.phone)
         self.email = (self.email or "").strip().lower()
         self.full_name = " ".join(part for part in [self.first_name, self.middle_name, self.last_name] if part).strip()
+        previous = None
+        if self.pk:
+            previous = type(self).objects.filter(pk=self.pk).values("status", "is_active").first()
+
         # Keep Django's authentication flag aligned with explicit account suspension.
         if self.status != self.Status.ACTIVE:
             self.is_active = False
-        elif self.pk:
-            previous_status = type(self).objects.filter(pk=self.pk).values_list("status", flat=True).first()
-            if previous_status and previous_status != self.status:
-                self.is_active = True
-        return super().save(*args, **kwargs)
+        elif previous and previous["status"] != self.status:
+            self.is_active = True
+
+        deactivation_transition = bool(
+            previous
+            and previous["is_active"]
+            and (not self.is_active or self.status != self.Status.ACTIVE)
+        )
+        with transaction.atomic():
+            result = super().save(*args, **kwargs)
+            if deactivation_transition:
+                now = timezone.now()
+                self.device_sessions.filter(revoked_at__isnull=True).update(
+                    revoked_at=now,
+                    updated_at=now,
+                )
+                from rest_framework.authtoken.models import Token
+
+                Token.objects.filter(user=self).delete()
+        return result
 
     @property
     def is_locked(self) -> bool:
