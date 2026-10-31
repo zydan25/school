@@ -154,10 +154,16 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "rest_framework.schemas.openapi.AutoSchema",
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/minute",
+        "login_phone": "5/minute",
+        "login_device": "10/minute",
         "registration": "3/hour",
+        "registration_phone": "3/hour",
         "otp_request": "3/hour",
+        "otp_request_phone": "3/hour",
         "otp_verify": "8/minute",
+        "otp_verify_phone": "5/hour",
         "password_reset": "3/hour",
+        "password_reset_phone": "3/hour",
     },
 }
 
