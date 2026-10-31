@@ -166,3 +166,4 @@ class SchoolSettings(UUIDTimestampedModel):
 
     def __str__(self):
         return f"إعدادات {self.school.name}"
+
