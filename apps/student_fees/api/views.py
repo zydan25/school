@@ -36,11 +36,38 @@ from apps.student_fees.models import (
     StudentInvoiceItem,
     reverse_payment_receipt,
 )
-from apps.students.models import Student
+from apps.students.models import Guardian, Student
+from apps.tenants.models import School
 
 
 def _resolve_school(request):
-    return resolve_active_school(request)
+    school = resolve_active_school(request)
+    if school is not None or getattr(request, "school_context_error", None):
+        return school
+    if not request.user or not request.user.is_authenticated:
+        return None
+
+    # Student/guardian accounts may be profile-linked without a staff-style
+    # membership. Resolve only a school directly linked to that account.
+    school_ids = set(Student.objects.filter(
+        user=request.user, is_archived=False,
+        school__status=School.Status.ACTIVE, school__is_archived=False,
+    ).values_list("school_id", flat=True))
+    school_ids.update(Guardian.objects.filter(
+        user=request.user, is_archived=False,
+        school__status=School.Status.ACTIVE, school__is_archived=False,
+    ).values_list("school_id", flat=True))
+    linked_schools = School.objects.filter(
+        pk__in=school_ids, status=School.Status.ACTIVE, is_archived=False,
+    )
+
+    requested_id = request.headers.get("X-School-ID") or request.query_params.get("school_id")
+    requested_code = request.headers.get("X-School-Code") or request.query_params.get("school_code")
+    if requested_id:
+        return linked_schools.filter(pk=requested_id).first()
+    if requested_code:
+        return linked_schools.filter(code=requested_code.strip().upper()).first()
+    return linked_schools.first() if linked_schools.count() == 1 else None
 
 
 def _scope_student_finance_read(queryset, request, school, permission_codename):
