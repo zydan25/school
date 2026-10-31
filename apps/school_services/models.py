@@ -501,7 +501,10 @@ class StudentBookDistribution(TenantOwnedModel):
                     description=f"كتاب: {locked_dist.book_title} (عدد {locked_dist.quantity})",
                     amount=locked_dist.fee_amount,
                 )
-                post_student_invoice_to_journal(inv)
+                invoice_entry = post_student_invoice_to_journal(inv)
+                if invoice_entry and not inv.journal_entry_id:
+                    inv.journal_entry = invoice_entry
+                    inv.save(update_fields=["journal_entry", "updated_at"])
                 locked_dist.invoice = inv
                 self.invoice = inv
 
