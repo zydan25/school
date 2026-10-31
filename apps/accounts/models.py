@@ -125,6 +125,16 @@ class User(AbstractBaseUser, PermissionsMixin, UUIDTimestampedModel):
             elif previous and previous["status"] != self.status:
                 self.is_active = True
 
+            if (
+                previous
+                and (
+                    previous["status"] != self.status
+                    or previous["is_active"] != self.is_active
+                )
+                and kwargs.get("update_fields") is not None
+            ):
+                kwargs["update_fields"] = set(kwargs["update_fields"]) | {"is_active"}
+
             deactivation_transition = bool(
                 previous
                 and previous["is_active"]
