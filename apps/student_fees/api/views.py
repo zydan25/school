@@ -19,6 +19,7 @@ from apps.accounts.api_permissions import (
     require_school_role_or_permission,
     resolve_active_school,
 )
+from apps.accounts.models import SchoolMembership
 from apps.academics.models import AcademicYear
 from apps.accounting.services.auto_posting import post_student_invoice_to_journal
 from apps.student_fees.api.serializers import (
@@ -57,6 +58,19 @@ def _resolve_school(request):
         user=request.user, is_archived=False,
         school__status=School.Status.ACTIVE, school__is_archived=False,
     ).values_list("school_id", flat=True))
+
+    # A legacy profile may have no membership row; but an existing suspended,
+    # expired or departed membership must never be bypassed by the profile link.
+    membership_rows = SchoolMembership.objects.filter(
+        user=request.user, school_id__in=school_ids,
+    ).values_list("school_id", "status", "expires_at")
+    blocked_school_ids = {
+        school_id for school_id, member_status, expires_at in membership_rows
+        if member_status != SchoolMembership.Status.ACTIVE
+        or (expires_at is not None and expires_at <= timezone.now())
+    }
+    school_ids.difference_update(blocked_school_ids)
+
     linked_schools = School.objects.filter(
         pk__in=school_ids, status=School.Status.ACTIVE, is_archived=False,
     )
