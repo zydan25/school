@@ -137,6 +137,24 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 API_SESSION_LIFETIME_DAYS = int(os.getenv("API_SESSION_LIFETIME_DAYS", "30"))
 PHONE_OTP_DELIVERY_BACKEND = os.getenv("PHONE_OTP_DELIVERY_BACKEND", "").strip()
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@school.local")
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+if REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+            "KEY_PREFIX": "school",
+        },
+    }
+else:
+    # Safe local fallback; production should set REDIS_URL so throttles are
+    # shared between all Gunicorn workers and application instances.
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "school-default",
+        },
+    }
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
