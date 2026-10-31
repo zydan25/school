@@ -136,29 +136,42 @@ class StudentListAPIView(generics.ListCreateAPIView):
             "students.add_student",
         )
         data = serializer.validated_data
+        if data.get("status", Student.Status.ACTIVE) != Student.Status.ACTIVE:
+            raise ValidationError(
+                "ينشأ الطالب بحالة نشطة؛ استخدم إجراءات القيد المخصصة لتغيير الحالة."
+            )
+
         year = get_object_or_404(
             AcademicYear, pk=data["academic_year"].pk, school=school,
             is_archived=False,
         )
         grade = get_object_or_404(
             GradeLevel, pk=data["grade_level"].pk, school=school,
-            is_archived=False,
-        )
-        section = get_object_or_404(
-            Section, pk=data["section"].pk, school=school,
             is_archived=False, is_active=True,
         )
-        if year.status not in {AcademicYear.Status.PLANNING, AcademicYear.Status.ACTIVE}:
-            raise PermissionDenied("لا يمكن تسجيل طالب في سنة دراسية مغلقة أو مؤرشفة.")
-        if not grade.is_active:
-            raise PermissionDenied("لا يمكن تسجيل طالب في صف غير نشط.")
-        if section.grade_id != grade.pk or section.academic_year_id != year.pk:
-            raise PermissionDenied("يجب أن تتبع الشعبة الصف والسنة الدراسية المحددين.")
-        if section.is_full:
-            raise ValidationError("الشعبة ممتلئة؛ افتح شعبة جديدة أو زِد سعتها قبل تسجيل الطالب.")
-        if data.get("status", Student.Status.ACTIVE) != Student.Status.ACTIVE:
-            raise ValidationError("ينشأ الطالب بحالة نشطة؛ استخدم إجراءات القيد المخصصة لتغيير الحالة.")
+        if year.status not in {
+            AcademicYear.Status.PLANNING, AcademicYear.Status.ACTIVE,
+        }:
+            raise PermissionDenied(
+                "لا يمكن تسجيل طالب في سنة دراسية مغلقة أو مؤرشفة."
+            )
+
         with transaction.atomic():
+            # Serialize capacity checks for concurrent registrations in this section.
+            section = get_object_or_404(
+                Section.objects.select_for_update(),
+                pk=data["section"].pk, school=school,
+                is_archived=False, is_active=True,
+            )
+            if section.grade_id != grade.pk or section.academic_year_id != year.pk:
+                raise PermissionDenied(
+                    "يجب أن تتبع الشعبة الصف والسنة الدراسية المحددين."
+                )
+            if section.is_full:
+                raise ValidationError(
+                    "الشعبة ممتلئة؛ افتح شعبة جديدة أو زِد سعتها قبل تسجيل الطالب."
+                )
+
             student = Student(
                 school=school,
                 academic_year=year,
@@ -177,6 +190,7 @@ class StudentListAPIView(generics.ListCreateAPIView):
             student.full_clean()
             student.save()
             serializer.instance = student
+
 
 
 class StudentDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
