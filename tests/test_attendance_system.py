@@ -553,7 +553,8 @@ class AttendanceSystemTests(TestCase):
             {"student_id": self.student_2.id, "status_category": AttendanceStatusType.Category.ABSENT_UNEXCUSED},
         ], recorded_by=self.teacher_user)
 
-        # Approve daily register
+        # Submit then approve through the formal lifecycle.
+        submit_register(reg, submitted_by=self.teacher_user)
         approve_register(reg, approved_by=self.owner_a)
 
         # Check Student 1 period attendances:
@@ -574,3 +575,67 @@ class AttendanceSystemTests(TestCase):
         p3_st2 = PeriodAttendance.objects.get(school=self.school_a, schedule=sched_p3, student=self.student_2, date=sunday_date)
         self.assertEqual(p3_st2.status, PeriodAttendance.Status.ABSENT)
 
+
+
+    def test_register_approval_requires_submission(self):
+        reg, _ = get_or_create_register(
+            school=self.school_a,
+            academic_year=self.year_a,
+            section=self.section_a,
+            date=datetime.date(2026, 9, 25),
+            bypass_calendar_check=True,
+            user=self.teacher_user,
+        )
+        with self.assertRaises(ValidationError):
+            approve_register(reg, approved_by=self.owner_a)
+        submit_register(reg, submitted_by=self.teacher_user)
+        approve_register(reg, approved_by=self.owner_a)
+        reg.refresh_from_db()
+        self.assertEqual(reg.status, AttendanceRegister.Status.APPROVED)
+
+    def test_bulk_record_rejects_student_outside_register(self):
+        reg, _ = get_or_create_register(
+            school=self.school_a,
+            academic_year=self.year_a,
+            section=self.section_a,
+            date=datetime.date(2026, 9, 26),
+            bypass_calendar_check=True,
+            user=self.teacher_user,
+        )
+        with self.assertRaises(ValidationError):
+            bulk_record_attendance(
+                reg,
+                [{"student_id": "00000000-0000-0000-0000-000000000999",
+                  "status_category": AttendanceStatusType.Category.PRESENT}],
+                recorded_by=self.teacher_user,
+            )
+
+    def test_repeated_early_departure_approval_is_rejected(self):
+        request = create_early_departure_request(
+            school=self.school_a,
+            student=self.student_1,
+            guardian=self.guardian,
+            date=datetime.date(2026, 9, 27),
+            departure_time=datetime.time(11, 0),
+            reason="موعد طبي",
+            recipient_name="الأب",
+            recipient_phone="+967771234567",
+            recipient_relationship="الأب",
+        )
+        approve_early_departure(request, approved_by=self.owner_a)
+        with self.assertRaises(ValidationError):
+            approve_early_departure(request, approved_by=self.owner_a)
+
+    def test_repeated_excuse_review_is_rejected(self):
+        request = create_excuse_request(
+            school=self.school_a,
+            student=self.student_1,
+            guardian=self.guardian,
+            request_type=AttendanceExcuseRequest.RequestType.POST_ABSENCE_EXCUSE,
+            start_date=datetime.date(2026, 9, 28),
+            end_date=datetime.date(2026, 9, 28),
+            reason="عذر صحي",
+        )
+        review_excuse_request(request, reviewed_by=self.owner_a, is_approved=False)
+        with self.assertRaises(ValidationError):
+            review_excuse_request(request, reviewed_by=self.owner_a, is_approved=True)
