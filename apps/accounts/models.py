@@ -120,6 +120,70 @@ class User(AbstractBaseUser, PermissionsMixin, UUIDTimestampedModel):
         return bool(self.locked_until and self.locked_until > timezone.now())
 
 
+class DeviceSession(UUIDTimestampedModel):
+    """Revocable per-device API session; only a digest of the bearer secret is stored."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="device_sessions",
+    )
+    token_digest = models.CharField(max_length=64, unique=True, editable=False)
+    device_id = models.CharField(max_length=128)
+    device_name = models.CharField(max_length=120, blank=True)
+    user_agent = models.CharField(max_length=512, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    expires_at = models.DateTimeField(db_index=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        verbose_name = "جلسة جهاز"
+        verbose_name_plural = "جلسات الأجهزة"
+        indexes = [
+            models.Index(fields=["user", "revoked_at", "expires_at"]),
+            models.Index(fields=["user", "device_id", "revoked_at"]),
+        ]
+
+    @property
+    def is_active(self) -> bool:
+        return (
+            self.revoked_at is None
+            and self.expires_at > timezone.now()
+            and self.user.is_active
+            and self.user.status == User.Status.ACTIVE
+        )
+
+
+class PhoneVerificationChallenge(UUIDTimestampedModel):
+    """Short-lived, purpose-bound OTP challenge. The raw code is never persisted."""
+
+    class Purpose(models.TextChoices):
+        VERIFY_PHONE = "verify_phone", "توثيق رقم الهاتف"
+        PASSWORD_RESET = "password_reset", "استعادة كلمة المرور"
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="phone_verification_challenges",
+    )
+    phone = models.CharField(max_length=20, db_index=True)
+    purpose = models.CharField(max_length=20, choices=Purpose.choices, db_index=True)
+    code_digest = models.CharField(max_length=64, editable=False)
+    expires_at = models.DateTimeField(db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    request_ip = models.GenericIPAddressField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "طلب رمز تحقق"
+        verbose_name_plural = "طلبات رموز التحقق"
+        indexes = [
+            models.Index(fields=["user", "purpose", "created_at"]),
+            models.Index(fields=["phone", "purpose", "created_at"]),
+        ]
+
+
 class PlatformAccess(UUIDTimestampedModel):
     class Role(models.TextChoices):
         OWNER = "owner", "مالك المنصة"
@@ -259,7 +323,7 @@ class SchoolInvitation(UUIDTimestampedModel):
         REVOKED = "revoked", "ملغاة"
 
     school = models.ForeignKey("tenants.School", verbose_name="المدرسة", on_delete=models.CASCADE, related_name="invitations")
-    email = models.EmailField("البريد المدعو")
+    email = models.EmailField("البريد المدعو", blank=True)
     phone = models.CharField("رقم الهاتف", max_length=20, blank=True)
     token_digest = models.CharField("بصمة رمز الدعوة", max_length=64, unique=True, editable=False)
     status = models.CharField("حالة الدعوة", max_length=12, choices=Status.choices, default=Status.PENDING, db_index=True)
