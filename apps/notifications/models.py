@@ -269,7 +269,7 @@ class PushDevice(UUIDTimestampedModel):
         constraints = [
             models.UniqueConstraint(fields=["user", "device_id"], name="notifications_push_device_user_device_uniq"),
         ]
-        indexes = [models.Index(fields=["user", "is_active"], name="notifications_push_user_active_idx")]
+        indexes = [models.Index(fields=["user", "is_active"], name="ntf_pd_user_active")]
 
     def __str__(self):
         return f"{self.user} / {self.platform} / {self.device_id}"
@@ -305,7 +305,7 @@ class SchoolConversation(TenantOwnedModel):
         verbose_name = "محادثة مدرسية"
         verbose_name_plural = "المحادثات المدرسية"
         ordering = ["-last_message_at", "-created_at"]
-        indexes = [models.Index(fields=["school", "status", "last_message_at"], name="notifications_conv_school_status_idx")]
+        indexes = [models.Index(fields=["school", "status", "last_message_at"], name="ntf_sc_school_status")]
 
     def __str__(self):
         return f"{self.subject} - {self.school}"
@@ -346,7 +346,7 @@ class ConversationParticipant(TenantOwnedModel):
                 name="notifications_conversation_participant_uniq",
             ),
         ]
-        indexes = [models.Index(fields=["school", "user", "is_active"], name="notifications_conv_user_active_idx")]
+        indexes = [models.Index(fields=["school", "user", "is_active"], name="ntf_cp_user_active")]
 
     def clean(self):
         super().clean()
@@ -388,7 +388,7 @@ class ConversationMessage(TenantOwnedModel):
         verbose_name = "رسالة محادثة"
         verbose_name_plural = "رسائل المحادثات"
         ordering = ["created_at"]
-        indexes = [models.Index(fields=["school", "conversation", "created_at"], name="notifications_conv_msg_time_idx")]
+        indexes = [models.Index(fields=["school", "conversation", "created_at"], name="ntf_cm_conv_time")]
 
     def clean(self):
         super().clean()
