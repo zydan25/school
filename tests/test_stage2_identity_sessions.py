@@ -160,6 +160,39 @@ class IdentitySessionSecurityTests(TestCase):
         )
         self.assertEqual(blocked.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
+    def test_suspending_account_revokes_credentials_permanently(self):
+        from rest_framework.authtoken.models import Token
+
+        user = self.create_user(phone="+967770007712")
+        login = self.client.post(
+            "/api/v1/auth/login/",
+            {
+                "phone": user.phone,
+                "password": "Strong-Password-7701!",
+                "device_id": "suspend-test-device",
+            },
+            format="json",
+        )
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+        old_token = login.data["access_token"]
+        legacy, _ = Token.objects.get_or_create(user=user)
+
+        user.status = User.Status.SUSPENDED
+        user.save(update_fields=["status", "is_active", "updated_at"])
+        self.assertFalse(DeviceSession.objects.filter(
+            user=user, revoked_at__isnull=True,
+        ).exists())
+        self.assertFalse(Token.objects.filter(pk=legacy.pk).exists())
+
+        user.status = User.Status.ACTIVE
+        user.save(update_fields=["status", "is_active", "updated_at"])
+        old_client = APIClient()
+        old_client.credentials(HTTP_AUTHORIZATION=f"Bearer {old_token}")
+        self.assertEqual(
+            old_client.get("/api/v1/me/").status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+
     def test_phone_registration_requires_otp_and_activates_only_after_verification(self):
         from unittest.mock import patch
 
