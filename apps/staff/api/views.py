@@ -52,7 +52,8 @@ class StaffMemberListAPIView(generics.ListCreateAPIView):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        require_school_role_or_permission(request, self.get_school(), HR_ROLES, "staff.view_staffmember")
+        permission = "staff.add_staffmember" if request.method == "POST" else "staff.view_staffmember"
+        require_school_role_or_permission(request, self.get_school(), HR_ROLES, permission)
 
     def get_queryset(self):
         school = self.get_school()
@@ -100,7 +101,14 @@ class StaffMemberDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
-        require_school_role_or_permission(request, self.get_school(), HR_ROLES, "staff.change_staffmember")
+        permission_by_method = {
+            "GET": "staff.view_staffmember",
+            "PUT": "staff.change_staffmember",
+            "PATCH": "staff.change_staffmember",
+            "DELETE": "staff.delete_staffmember",
+        }
+        permission = permission_by_method.get(request.method, "staff.view_staffmember")
+        require_school_role_or_permission(request, self.get_school(), HR_ROLES, permission)
 
     def get_queryset(self):
         return StaffMember.objects.filter(
