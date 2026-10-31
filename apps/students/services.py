@@ -58,7 +58,7 @@ def record_student_movement(
 @transaction.atomic
 def link_student_account(*, student: Student, user: User, actor=None) -> Student:
     """Link a verified phone account to one student profile within a school."""
-    locked_student = Student.objects.select_for_update().select_related(
+    locked_student = Student.objects.select_for_update(of=("self",)).select_related(
         "school", "branch", "academic_year", "grade_level", "section",
     ).get(pk=student.pk, school=student.school, is_archived=False)
     locked_user = User.objects.select_for_update().get(pk=user.pk)
@@ -137,7 +137,7 @@ def link_student_account(*, student: Student, user: User, actor=None) -> Student
 
 @transaction.atomic
 def unlink_student_account(*, student: Student, actor=None) -> Student:
-    locked_student = Student.objects.select_for_update().select_related("school").get(
+    locked_student = Student.objects.select_for_update(of=("self",)).select_related("school").get(
         pk=student.pk, school=student.school, is_archived=False,
     )
     if locked_student.user_id is None:
@@ -202,7 +202,7 @@ def promote_student(
             raise ValidationError("الشعبة المختارة لا تنتمي إلى الصف الدراسي المحدد.")
 
     with transaction.atomic():
-        locked_student = Student.objects.select_for_update().select_related(
+        locked_student = Student.objects.select_for_update(of=("self",)).select_related(
             "school", "branch", "academic_year", "grade_level", "section",
         ).get(pk=student.pk, school=student.school, is_archived=False)
         if locked_student.status != Student.Status.ACTIVE:
@@ -298,7 +298,7 @@ def retain_student(
     _validate_next_year(student, next_academic_year)
 
     with transaction.atomic():
-        locked_student = Student.objects.select_for_update().select_related(
+        locked_student = Student.objects.select_for_update(of=("self",)).select_related(
             "school", "branch", "academic_year", "grade_level", "section",
         ).get(pk=student.pk, school=student.school, is_archived=False)
         if locked_student.status != Student.Status.ACTIVE:
@@ -384,7 +384,7 @@ def retain_student(
 def transfer_student(student: Student, target_section: Section, user=None, reason: str = "") -> Student:
     """Transfer a student to another section in the same active academic year."""
     with transaction.atomic():
-        locked_student = Student.objects.select_for_update().select_related(
+        locked_student = Student.objects.select_for_update(of=("self",)).select_related(
             "school", "branch", "academic_year", "grade_level", "section",
         ).get(pk=student.pk, school=student.school, is_archived=False)
         if locked_student.status != Student.Status.ACTIVE:
@@ -439,7 +439,7 @@ def transfer_student(student: Student, target_section: Section, user=None, reaso
 def graduate_student(student: Student, user=None, notes: str = "") -> Student:
     """Graduate a student once and append the resulting movement."""
     with transaction.atomic():
-        locked_student = Student.objects.select_for_update().select_related(
+        locked_student = Student.objects.select_for_update(of=("self",)).select_related(
             "school", "branch", "academic_year", "grade_level", "section",
         ).get(pk=student.pk, school=student.school, is_archived=False)
         if locked_student.status != Student.Status.ACTIVE:
@@ -474,7 +474,7 @@ def graduate_student(student: Student, user=None, notes: str = "") -> Student:
 def withdraw_student(student: Student, reason: str = "", user=None) -> Student:
     """Withdraw a student once and preserve their current placement in history."""
     with transaction.atomic():
-        locked_student = Student.objects.select_for_update().select_related(
+        locked_student = Student.objects.select_for_update(of=("self",)).select_related(
             "school", "branch", "academic_year", "grade_level", "section",
         ).get(pk=student.pk, school=student.school, is_archived=False)
         if locked_student.status != Student.Status.ACTIVE:
