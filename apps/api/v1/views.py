@@ -1960,7 +1960,7 @@ class VendorInvoiceViewSet(TenantModelViewSet):
 
             voucher = PaymentVoucher.objects.create(
                 school=school,
-                voucher_number=f"PV-VINV-{key_digest[:16].upper()}",
+                voucher_number=f"PV-VINV-{invoice.pk.hex[:8].upper()}-{key_digest[:12].upper()}",
                 date=timezone.localdate(),
                 paid_to=invoice.supplier.name,
                 amount=amount,
