@@ -146,10 +146,18 @@ class StudentListAPIView(generics.ListCreateAPIView):
         )
         section = get_object_or_404(
             Section, pk=data["section"].pk, school=school,
-            is_archived=False,
+            is_archived=False, is_active=True,
         )
+        if year.status not in {AcademicYear.Status.PLANNING, AcademicYear.Status.ACTIVE}:
+            raise PermissionDenied("لا يمكن تسجيل طالب في سنة دراسية مغلقة أو مؤرشفة.")
+        if not grade.is_active:
+            raise PermissionDenied("لا يمكن تسجيل طالب في صف غير نشط.")
         if section.grade_id != grade.pk or section.academic_year_id != year.pk:
             raise PermissionDenied("يجب أن تتبع الشعبة الصف والسنة الدراسية المحددين.")
+        if section.is_full:
+            raise ValidationError("الشعبة ممتلئة؛ افتح شعبة جديدة أو زِد سعتها قبل تسجيل الطالب.")
+        if data.get("status", Student.Status.ACTIVE) != Student.Status.ACTIVE:
+            raise ValidationError("ينشأ الطالب بحالة نشطة؛ استخدم إجراءات القيد المخصصة لتغيير الحالة.")
         with transaction.atomic():
             student = Student(
                 school=school,
@@ -164,7 +172,7 @@ class StudentListAPIView(generics.ListCreateAPIView):
                 national_id=data.get("national_id", ""),
                 birth_date=data.get("birth_date"),
                 enrollment_date=data.get("enrollment_date") or timezone.localdate(),
-                status=data.get("status", Student.Status.ACTIVE),
+                status=Student.Status.ACTIVE,
             )
             student.full_clean()
             student.save()
@@ -195,10 +203,28 @@ class StudentDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
             self.request, school, STUDENT_MANAGE_ROLES,
             "students.change_student",
         )
-        for field in ("academic_year", "grade_level", "section"):
-            obj = serializer.validated_data.get(field)
-            if obj and obj.school_id != school.pk:
-                raise PermissionDenied("لا يمكن ربط الطالب بسجل تابع لمدرسة أخرى.")
+        lifecycle_fields = {
+            "academic_year", "grade_level", "section", "status",
+            "enrollment_date",
+        }
+        changed_lifecycle_fields = []
+        for field in lifecycle_fields:
+            if field not in serializer.validated_data:
+                continue
+            new_value = serializer.validated_data[field]
+            current_value = getattr(serializer.instance, field)
+            old_value = getattr(current_value, "pk", current_value)
+            new_value = getattr(new_value, "pk", new_value)
+            if old_value != new_value:
+                changed_lifecycle_fields.append(field)
+        if changed_lifecycle_fields:
+            raise ValidationError({
+                "detail": (
+                    "لا تغيّر الصف أو الشعبة أو السنة أو حالة القيد من تعديل الملف؛ "
+                    "استخدم إجراءات الترفيع أو إعادة القيد أو التخرج أو الانسحاب."
+                ),
+                "fields": sorted(changed_lifecycle_fields),
+            })
         student = serializer.save()
         student.full_clean()
         student.save()
