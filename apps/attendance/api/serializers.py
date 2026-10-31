@@ -265,6 +265,49 @@ class SchoolCalendarDaySerializer(serializers.ModelSerializer):
         return attrs
 
 
+class AttendanceReopenRequestSerializer(serializers.ModelSerializer):
+    requested_by_name = serializers.SerializerMethodField()
+    reviewed_by_name = serializers.SerializerMethodField()
+    register_date = serializers.DateField(source="register.date", read_only=True)
+    section_name = serializers.CharField(source="register.section.name", read_only=True)
+
+    def get_requested_by_name(self, obj):
+        return str(obj.requested_by)
+
+    def get_reviewed_by_name(self, obj):
+        return str(obj.reviewed_by) if obj.reviewed_by_id else None
+
+    class Meta:
+        model = AttendanceReopenRequest
+        fields = [
+            "id", "register", "register_date", "section_name",
+            "requested_by", "requested_by_name", "reason", "status",
+            "reviewed_by", "reviewed_by_name", "reviewed_at",
+            "review_notes", "created_at",
+        ]
+        read_only_fields = fields
+
+
+class AttendanceAuditLogSerializer(serializers.ModelSerializer):
+    performed_by_name = serializers.SerializerMethodField()
+    student_name = serializers.SerializerMethodField()
+
+    def get_performed_by_name(self, obj):
+        return str(obj.performed_by) if obj.performed_by_id else None
+
+    def get_student_name(self, obj):
+        return str(obj.student_record.student) if obj.student_record_id else None
+
+    class Meta:
+        model = AttendanceAuditLog
+        fields = [
+            "id", "register", "student_record", "student_name",
+            "action", "performed_by", "performed_by_name", "timestamp",
+            "old_value", "new_value", "reason", "ip_address",
+        ]
+        read_only_fields = fields
+
+
 class CalendarEventSerializer(serializers.ModelSerializer):
     class Meta:
         model = CalendarEvent
