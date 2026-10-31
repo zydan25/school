@@ -4,12 +4,21 @@ from apps.students.api.views import (
     StudentDetailAPIView,
     StudentGraduateAPIView,
     StudentListAPIView,
+    StudentAccountBindingAPIView,
+    StudentMovementListAPIView,
+    StudentTransferAPIView,
+    StudentImportPreviewAPIView,
+    StudentImportCommitAPIView,
+    StudentExportAPIView,
     StudentPromoteAPIView,
     StudentRetainAPIView,
     StudentWithdrawAPIView,
 )
 
 urlpatterns = [
+    path("import/preview/", StudentImportPreviewAPIView.as_view(), name="student-import-preview"),
+    path("import/commit/", StudentImportCommitAPIView.as_view(), name="student-import-commit"),
+    path("export/", StudentExportAPIView.as_view(), name="student-export"),
     path("", StudentListAPIView.as_view(), name="student-list"),
     path("<uuid:pk>/", StudentDetailAPIView.as_view(), name="student-detail"),
     path("<uuid:pk>/promote/", StudentPromoteAPIView.as_view(), name="student-promote"),
