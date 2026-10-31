@@ -1794,12 +1794,14 @@ class VendorInvoiceViewSet(TenantModelViewSet):
             amount = Decimal(str(request.data.get("amount")))
         except Exception:
             raise ValidationError({"amount": "المبلغ غير صحيح."})
-        if invoice.status not in [VendorInvoice.Status.APPROVED, VendorInvoice.Status.PARTIAL]:
-            raise ValidationError("الفاتورة يجب أن تكون معتمدة قبل السداد.")
-        if amount <= 0 or amount > invoice.remaining_amount:
-            raise ValidationError({"amount": f"المبلغ يجب أن يكون أكبر من صفر ولا يتجاوز المتبقي {invoice.remaining_amount}."})
-        payment_account = get_object_or_404(Account, pk=request.data.get("payment_account_id"), school=self.get_school(), is_leaf=True, account_type=Account.AccountType.ASSET)
-        from apps.accounting.services.auto_posting import _get_account_or_seed, _get_active_fiscal_period
+        payment_account = get_object_or_404(
+            Account, pk=request.data.get("payment_account_id"),
+            school=self.get_school(), is_leaf=True,
+            account_type=Account.AccountType.ASSET,
+        )
+        from apps.accounting.services.auto_posting import (
+            _get_account_or_seed, _get_active_fiscal_period,
+        )
         with transaction.atomic():
             invoice = get_object_or_404(
                 VendorInvoice.objects.select_for_update(),
@@ -1817,7 +1819,7 @@ class VendorInvoiceViewSet(TenantModelViewSet):
             ap = _get_account_or_seed(self.get_school(), "2101", "ذمم الموردين")
             entry = JournalEntry.objects.create(
                 school=self.get_school(), fiscal_period=period,
-                entry_number=f"JV-VENDOR-PAY-{invoice.pk.hex[:8]}-{timezone.now().strftime('%H%M%S')}",
+                entry_number=f"JV-VENDOR-PAY-{invoice.pk.hex[:8]}-{timezone.now().strftime('%Y%m%d%H%M%S%f')}",
                 date=timezone.localdate(), description=f"سداد فاتورة المورد #{invoice.invoice_number}",
                 status=JournalEntry.Status.DRAFT, source_module="vendor_invoice_payment", source_reference=str(invoice.pk),
             )
