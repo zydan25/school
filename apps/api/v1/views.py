@@ -84,8 +84,10 @@ from apps.api.v1.serializers import (
 )
 
 ADMIN_ROLES = {
-    "school-director", "school_director", "school-admin", "school_admin",
-    "principal", "school-principal", "academic-coordinator", "academic_coordinator",
+    "admin", "school-admin", "school_admin",
+    "school-director", "school_director",
+    "principal", "school-principal",
+    "academic-coordinator", "academic_coordinator",
     "student-affairs", "student_affairs",
 }
 ACADEMIC_ADMIN_ROLES = ADMIN_ROLES | {"academic-head", "academic_head", "exam-controller", "exam_controller"}
@@ -1237,32 +1239,77 @@ class MyWeeklyTimetableAPIView(APIView):
         school = school_for(request)
         student = user_student_profiles(request.user, school).first()
         teacher = user_teacher_profiles(request.user, school).first()
+        guardian = user_guardian_profiles(request.user, school).first()
+        profile_type = (request.query_params.get("profile_type") or "").strip().lower()
         section_id = request.query_params.get("section_id")
-        qs = ClassSchedule.objects.filter(school=school, is_archived=False).select_related(
-            "section", "subject", "teacher__user", "classroom", "bell_schedule"
+
+        available_profiles = []
+        if teacher and has_school_roles(request.user, school, {"teacher"}):
+            available_profiles.append("teacher")
+        if student and has_school_roles(request.user, school, {"student"}):
+            available_profiles.append("student")
+        if guardian and has_school_roles(request.user, school, {"guardian"}):
+            available_profiles.append("guardian")
+
+        if not profile_type:
+            if is_admin(request.user, school):
+                profile_type = "school"
+            elif len(available_profiles) == 1:
+                profile_type = available_profiles[0]
+            elif len(available_profiles) > 1:
+                raise ValidationError({
+                    "profile_type": "حسابك يحمل أكثر من دور؛ حدد teacher أو student أو guardian.",
+                    "available_profiles": available_profiles,
+                })
+            else:
+                raise PermissionDenied("لا يوجد ملف طالب أو معلم أو ولي أمر مرتبط بدور فعال.")
+
+        qs = ClassSchedule.objects.filter(
+            school=school, is_archived=False,
+        ).select_related(
+            "section", "subject", "teacher__user", "classroom", "bell_schedule",
         )
-        if teacher and not is_admin(request.user, school):
+
+        if profile_type == "teacher":
+            if not teacher or not has_school_roles(request.user, school, {"teacher"}):
+                raise PermissionDenied("لا يوجد ملف معلم فعال مرتبط بحسابك.")
             qs = qs.filter(teacher=teacher)
-        elif student:
+        elif profile_type == "student":
+            if not student or not has_school_roles(request.user, school, {"student"}):
+                raise PermissionDenied("لا يوجد ملف طالب فعال مرتبط بحسابك.")
             qs = qs.filter(section_id=student.section_id)
-        elif has_school_roles(request.user, school, {"guardian"}):
-            guardian = user_guardian_profiles(request.user, school).first()
-            children = guardian.children.filter(is_archived=False) if guardian else Student.objects.none()
-            if section_id and (not children.filter(section_id=section_id).exists()):
+        elif profile_type == "guardian":
+            if not guardian or not has_school_roles(request.user, school, {"guardian"}):
+                raise PermissionDenied("لا يوجد ملف ولي أمر فعال مرتبط بحسابك.")
+            children = guardian.children.filter(
+                school=school, is_archived=False,
+            )
+            if section_id and not children.filter(section_id=section_id).exists():
                 raise PermissionDenied("الشعبة المحددة لا تخص أحد الأبناء المرتبطين بحسابك.")
-            qs = qs.filter(section__in=children.values("section_id"))
-        elif is_admin(request.user, school):
-            if section_id:
-                qs = qs.filter(section_id=section_id)
+            qs = qs.filter(section_id__in=children.values_list("section_id", flat=True))
+        elif profile_type == "school":
+            if not is_admin(request.user, school):
+                raise PermissionDenied("عرض جدول الشعبة متاح لإدارة المدرسة فقط.")
+            if not section_id:
+                raise ValidationError({"section_id": "حدد الشعبة عند طلب الجدول المدرسي."})
+            qs = qs.filter(section_id=section_id)
         else:
-            raise PermissionDenied("لا يوجد ملف طالب أو معلم مرتبط بحسابك.")
+            raise ValidationError({
+                "profile_type": "القيمة المدعومة teacher أو student أو guardian أو school.",
+            })
+
         return Response([{
-            "id": str(x.pk), "day_of_week": x.day_of_week,
-            "period_number": x.period_number, "start_time": x.start_time,
-            "end_time": x.end_time, "subject": x.subject.name,
-            "section": x.section.name, "section_id": str(x.section_id),
-            "teacher": x.teacher.user.get_full_name(), "classroom": x.classroom.name if x.classroom_id else None,
-        } for x in qs.order_by("day_of_week", "period_number")])
+            "id": str(item.pk),
+            "day_of_week": item.day_of_week,
+            "period_number": item.period_number,
+            "start_time": item.start_time,
+            "end_time": item.end_time,
+            "subject": item.subject.name,
+            "section": item.section.name,
+            "section_id": str(item.section_id),
+            "teacher": item.teacher.user.get_full_name(),
+            "classroom": item.classroom.name if item.classroom_id else None,
+        } for item in qs.order_by("day_of_week", "period_number")])
 
 
 # ---------------------------------------------------------------------------
