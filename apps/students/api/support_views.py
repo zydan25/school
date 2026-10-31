@@ -527,7 +527,7 @@ class StudentDocumentDownloadAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, pk):
+    def get(self, request, pk, version=None):
         school = get_school(request)
         document = get_object_or_404(
             student_document_queryset_for(request, school),
@@ -591,7 +591,7 @@ class GuardianConsentRespondAPIView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, pk, version=None):
         school = get_school(request)
         serializer = GuardianConsentResponseSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
