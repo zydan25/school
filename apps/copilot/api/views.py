@@ -94,27 +94,29 @@ def _resolve_authorized_student(request) -> Student | None:
 
     # Student self-service: the profile must belong to this account and school.
     own_students = Student.objects.filter(
-            user=request.user, school=school, is_archived=False,
-        ).select_related("school", "grade_level", "section")
+        user=request.user, school=school, is_archived=False,
+    ).select_related("school", "grade_level", "section")
     if requested_student_id:
         matched_student = own_students.filter(pk=requested_student_id).first()
-        return matched_student
-    if own_students.exists():
+        if matched_student is not None:
+            return matched_student
+    elif own_students.exists():
         return own_students.first()
 
     # Guardian access is limited to children explicitly linked in this school.
     guardian = Guardian.objects.filter(
-            user=request.user, school=school, is_archived=False,
-        ).first()
+        user=request.user, school=school, is_archived=False,
+    ).first()
     if guardian is not None:
         children = guardian.children.filter(
             school=school, is_archived=False,
         ).select_related("school", "grade_level", "section")
         if requested_student_id:
-            return children.filter(pk=requested_student_id).first()
-        if children.count() == 1:
+            matched_child = children.filter(pk=requested_student_id).first()
+            if matched_child is not None:
+                return matched_child
+        elif children.count() == 1:
             return children.first()
-        return None
 
     # A teacher may use student-specific AI tools only for an assigned section.
     if has_school_roles(request.user, school, {"teacher"}):
