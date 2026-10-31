@@ -208,12 +208,11 @@ def accept_school_invitation(*, raw_token, user):
                 "status", "joined_at", "is_default", "updated_at",
             ])
 
-            for role in invitation.roles.select_related("school").prefetch_related("permissions__content_type"):
-                if role.school_id != invitation.school_id:
-                    raise ValidationError("تحتوي الدعوة على دور تابع لمدرسة أخرى.")
-                from apps.accounts.services import is_school_permission_allowed
-                if any(not is_school_permission_allowed(permission) for permission in role.permissions.all()):
-                    raise ValidationError("تحتوي الدعوة على دور يتضمن صلاحيات غير مسموحة للمدرسة.")
+            for role in invitation.roles.select_related("school"):
+                if role.school_id != invitation.school_id or not role.is_active or role.is_archived:
+                    raise ValidationError("تحتوي الدعوة على دور غير صالح أو تابع لمدرسة أخرى.")
+                # Permission checks always enforce the school-app whitelist at request
+                # time. Legacy system roles may still contain old inert permission rows.
                 MembershipRole.objects.get_or_create(
                     membership=membership,
                     role=role,
