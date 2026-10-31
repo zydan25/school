@@ -98,6 +98,9 @@ class APILoginView(APIView):
         memberships = SchoolMembership.objects.filter(
             user=user,
             status=SchoolMembership.Status.ACTIVE,
+            school__status="active",
+        ).filter(
+            Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())
         ).select_related("school")
 
         schools_data = []
