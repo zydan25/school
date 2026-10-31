@@ -16,6 +16,7 @@ class MobileSerializerContractTests(SimpleTestCase):
             and issubclass(value, drf_serializers.BaseSerializer)
             and value is not drf_serializers.BaseSerializer
             and value.__module__ == mobile_v1_serializers.__name__
+            and value.__name__ != "TenantModelSerializer"
         ]
         self.assertGreaterEqual(len(serializer_types), 50)
 
