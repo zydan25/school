@@ -340,7 +340,14 @@ class SchoolInvitation(UUIDTimestampedModel):
         indexes = [models.Index(fields=["school", "status", "expires_at"])]
 
     def __str__(self):
-        return f"{self.email} - {self.school}"
+        return f"{self.phone or self.email} - {self.school}"
+
+    def clean(self):
+        super().clean()
+        self.email = (self.email or "").strip().lower()
+        self.phone = normalize_phone(self.phone or "")
+        if not self.email and not self.phone:
+            raise ValidationError("يجب تحديد بريد إلكتروني أو رقم هاتف موثوق للدعوة.")
 
     @classmethod
     def create_invitation(cls, **kwargs):
