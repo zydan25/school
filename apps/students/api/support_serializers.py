@@ -8,7 +8,9 @@ from apps.staff.models import Teacher
 from apps.students.models import (
     AdministrativeSummon,
     Guardian,
+    GuardianConsent,
     SchoolComplaint,
+    StudentDocument,
     Student,
     StudentGuardianRelation,
     StudentIncidentReport,
@@ -200,3 +202,122 @@ class ComplaintReviewSerializer(serializers.Serializer):
         SchoolComplaint.Status.CLOSED,
     ))
     resolution_notes = serializers.CharField(required=False, allow_blank=True, max_length=10000)
+
+
+class StudentDocumentSerializer(StudentSupportTenantSerializer):
+    """Metadata and upload contract; file bytes are served only by the guarded API."""
+
+    file = serializers.FileField(write_only=True)
+    file_name = serializers.SerializerMethodField()
+    file_size = serializers.SerializerMethodField()
+    download_url = serializers.SerializerMethodField()
+    student_name = serializers.CharField(source="student.get_full_name", read_only=True)
+    uploaded_by_name = serializers.CharField(
+        source="uploaded_by.get_full_name", read_only=True
+    )
+
+    class Meta:
+        model = StudentDocument
+        fields = (
+            "id", "student", "student_name", "title", "document_type",
+            "file", "file_name", "file_size", "download_url",
+            "description", "issued_on", "expires_on", "visible_to_guardian",
+            "uploaded_by", "uploaded_by_name", "created_at",
+        )
+        read_only_fields = (
+            "id", "student_name", "file_name", "file_size", "download_url",
+            "uploaded_by", "uploaded_by_name", "created_at",
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        school = self.context.get("school")
+        if school:
+            self.fields["student"].queryset = Student.objects.filter(
+                school=school, is_archived=False
+            )
+
+    def get_file_name(self, obj):
+        return obj.file.name.rsplit("/", 1)[-1] if obj.file else ""
+
+    def get_file_size(self, obj):
+        try:
+            return obj.file.size
+        except (OSError, ValueError):
+            return None
+
+    def get_download_url(self, obj):
+        request = self.context.get("request")
+        if not request:
+            return None
+        from django.urls import reverse
+
+        url = reverse("student-document-download", kwargs={"pk": obj.pk})
+        return request.build_absolute_uri(url)
+
+
+class GuardianConsentSerializer(StudentSupportTenantSerializer):
+    """School-managed consent request; response fields are never client-writable."""
+
+    student_name = serializers.CharField(source="student.get_full_name", read_only=True)
+    guardian_name = serializers.CharField(
+        source="guardian.user.get_full_name", read_only=True
+    )
+
+    class Meta:
+        model = GuardianConsent
+        fields = (
+            "id", "student", "student_name", "guardian", "guardian_name",
+            "consent_type", "title", "details", "status",
+            "requested_at", "expires_at", "responded_at", "responded_by",
+            "response_note", "requested_by", "created_at",
+        )
+        read_only_fields = (
+            "id", "student_name", "guardian_name", "status",
+            "requested_at", "responded_at", "responded_by", "response_note",
+            "requested_by", "created_at",
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        school = self.context.get("school")
+        if school:
+            self.fields["student"].queryset = Student.objects.filter(
+                school=school, is_archived=False
+            )
+            self.fields["guardian"].queryset = Guardian.objects.filter(
+                school=school, is_archived=False,
+                user__is_active=True, user__status=User.Status.ACTIVE,
+            )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        school = self.context.get("school")
+        student = attrs.get("student", getattr(self.instance, "student", None))
+        guardian = attrs.get("guardian", getattr(self.instance, "guardian", None))
+        if school and student and guardian:
+            relation = StudentGuardianRelation.objects.filter(
+                school=school, student=student, guardian=guardian,
+                is_archived=False, guardian__is_archived=False,
+                student__is_archived=False,
+            ).exists()
+            if not relation:
+                raise serializers.ValidationError({
+                    "guardian": "ولي الأمر غير مرتبط بالطالب المحدد."
+                })
+            if not active_school_user_queryset(school).filter(
+                pk=guardian.user_id
+            ).exists():
+                raise serializers.ValidationError({
+                    "guardian": "حساب ولي الأمر لا يملك عضوية نشطة وسارية في المدرسة."
+                })
+        return attrs
+
+
+class GuardianConsentResponseSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(
+        choices=(GuardianConsent.Status.APPROVED, GuardianConsent.Status.REJECTED)
+    )
+    response_note = serializers.CharField(
+        required=False, allow_blank=True, max_length=5000, default=""
+    )
