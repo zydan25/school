@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.api_permissions import has_school_roles, resolve_active_school
+from apps.accounts.models import SchoolMembership
 from apps.academics.models import GradeLevel, Subject
 from apps.staff.models import Teacher, TeacherAssignment
 from apps.tenants.models import School
@@ -53,6 +54,19 @@ def _resolve_school(request):
         user=request.user, is_archived=False,
         school__status=School.Status.ACTIVE, school__is_archived=False,
     ).values_list("school_id", flat=True))
+
+    # Profile-linked legacy accounts may lack a membership row. If a membership
+    # exists, however, it must still be active and unexpired.
+    membership_rows = SchoolMembership.objects.filter(
+        user=request.user, school_id__in=school_ids,
+    ).values_list("school_id", "status", "expires_at")
+    blocked_school_ids = {
+        school_id for school_id, member_status, expires_at in membership_rows
+        if member_status != SchoolMembership.Status.ACTIVE
+        or (expires_at is not None and expires_at <= timezone.now())
+    }
+    school_ids.difference_update(blocked_school_ids)
+
     linked_schools = School.objects.filter(
         pk__in=school_ids, status=School.Status.ACTIVE, is_archived=False,
     )
@@ -117,26 +131,6 @@ def _resolve_authorized_student(request) -> Student | None:
                 return matched_child
         elif children.count() == 1:
             return children.first()
-
-    # A teacher may use student-specific AI tools only for an assigned section.
-    if has_school_roles(request.user, school, {"teacher"}):
-        teacher = Teacher.objects.filter(
-            school=school, user=request.user, is_archived=False,
-            is_active_teaching=True,
-        ).first()
-        if teacher is None or not requested_student_id:
-            return None
-        student = Student.objects.filter(
-            pk=requested_student_id, school=school, is_archived=False,
-        ).select_related("school", "grade_level", "section").first()
-        if student is None or student.section_id is None:
-            return None
-        assigned = teacher.assignments.filter(
-            school=school, section_id=student.section_id,
-            academic_year_id=student.academic_year_id,
-            is_archived=False,
-        ).exists()
-        return student if assigned else None
 
     # Only explicit academic/school administrators may select arbitrary students.
     if has_school_roles(request.user, school, STUDENT_ADMIN_ROLES) and requested_student_id:
