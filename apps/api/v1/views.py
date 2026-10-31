@@ -546,7 +546,7 @@ class TeacherAssignmentViewSet(TenantModelViewSet):
     def get_queryset(self):
         qs = TeacherAssignment.objects.filter(school=self.get_school(), is_archived=False).select_related("teacher__user", "subject", "section", "academic_year")
         if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not is_admin(self.request.user, self.get_school()):
-            teacher = user_teacher_profiles(self.request.user, self.get_school()).first()
+            teacher = user_teacher_profiles(self.request.user, self.get_school()).filter(is_active_teaching=True).first()
             qs = qs.filter(teacher=teacher) if teacher else qs.none()
         year_id = self.request.query_params.get("academic_year_id")
         return qs.filter(academic_year_id=year_id) if year_id else qs
@@ -590,7 +590,7 @@ class HomeworkViewSet(TenantModelViewSet):
         if not is_admin(self.request.user, school):
             allowed = Q(pk__in=[])
             if has_school_roles(self.request.user, school, {"teacher"}):
-                teacher = user_teacher_profiles(self.request.user, school).first()
+                teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
                 if teacher:
                     allowed |= Q(teacher=teacher)
             if has_school_roles(self.request.user, school, {"student"}):
@@ -615,7 +615,7 @@ class HomeworkViewSet(TenantModelViewSet):
 
     def perform_create(self, serializer):
         school = self.get_school()
-        teacher = user_teacher_profiles(self.request.user, school).first()
+        teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
         requested_teacher_id = self.request.data.get("teacher_id")
         if is_admin(self.request.user, school) and requested_teacher_id:
             teacher = get_object_or_404(
@@ -665,7 +665,7 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
                         school=school, is_archived=False,
                     ))
             if has_school_roles(self.request.user, school, {"teacher"}):
-                teacher = user_teacher_profiles(self.request.user, school).first()
+                teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
                 if teacher:
                     allowed |= Q(homework__teacher=teacher)
             qs = qs.filter(allowed)
@@ -737,7 +737,7 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         school = self.get_school()
         submission = self.get_object()
         require_school_role_or_permission(request, school, TEACHER_ROLES)
-        teacher = user_teacher_profiles(request.user, school).first()
+        teacher = user_teacher_profiles(request.user, school).filter(is_active_teaching=True).first()
         if not is_admin(request.user, school):
             if not teacher or submission.homework.teacher_id != teacher.pk:
                 raise PermissionDenied("لا يمكنك تصحيح تسليم واجب لمعلم آخر.")
@@ -821,7 +821,7 @@ class GradeBookViewSet(TenantModelViewSet):
 
     def perform_create(self, serializer):
         school = self.get_school()
-        teacher = user_teacher_profiles(self.request.user, school).first()
+        teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
         data = serializer.validated_data
         academic_year = (
             data["academic_term"].academic_year
@@ -885,7 +885,7 @@ class QuestionBankViewSet(TenantModelViewSet):
 
     def perform_create(self, serializer):
         school = self.get_school()
-        teacher = user_teacher_profiles(self.request.user, school).first()
+        teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
         data = serializer.validated_data
         if not is_admin(self.request.user, school):
             if teacher is None:
@@ -952,7 +952,7 @@ class OnlineExamViewSet(TenantModelViewSet):
 
     def perform_create(self, serializer):
         school = self.get_school()
-        teacher = user_teacher_profiles(self.request.user, school).first()
+        teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
         data = serializer.validated_data
         section = data.get("section")
         academic_year = data["academic_term"].academic_year
@@ -1145,7 +1145,7 @@ class ExamSubmissionViewSet(TenantModelViewSet):
                 StudentOnlineExamSubmission.objects.select_for_update().select_related("exam"),
                 pk=pk, school=school, is_archived=False,
             )
-            teacher = user_teacher_profiles(request.user, school).first()
+            teacher = user_teacher_profiles(request.user, school).filter(is_active_teaching=True).first()
             if not is_admin(request.user, school):
                 if not teacher:
                     raise PermissionDenied("يجب ربط حسابك بملف معلم.")
@@ -1250,7 +1250,7 @@ class ClassScheduleViewSet(TenantModelViewSet):
         if day:
             qs = qs.filter(day_of_week=day)
         if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not is_admin(self.request.user, self.get_school()):
-            profile = user_teacher_profiles(self.request.user, self.get_school()).first()
+            profile = user_teacher_profiles(self.request.user, self.get_school()).filter(is_active_teaching=True).first()
             qs = qs.filter(teacher=profile) if profile else qs.none()
         return qs.order_by("day_of_week", "period_number")
 
@@ -1269,13 +1269,13 @@ class DailyLessonLogViewSet(TenantModelViewSet):
         if section_id:
             qs = qs.filter(schedule__section_id=section_id)
         if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not is_admin(self.request.user, self.get_school()):
-            teacher = user_teacher_profiles(self.request.user, self.get_school()).first()
+            teacher = user_teacher_profiles(self.request.user, self.get_school()).filter(is_active_teaching=True).first()
             qs = qs.filter(schedule__teacher=teacher) if teacher else qs.none()
         return qs
 
     def perform_create(self, serializer):
         school = self.get_school()
-        teacher = user_teacher_profiles(self.request.user, school).first()
+        teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
         schedule = serializer.validated_data["schedule"]
         if not is_admin(self.request.user, school):
             if teacher is None:
@@ -1291,7 +1291,7 @@ class MyWeeklyTimetableAPIView(APIView):
     def get(self, request):
         school = school_for(request)
         student = user_student_profiles(request.user, school).first()
-        teacher = user_teacher_profiles(request.user, school).first()
+        teacher = user_teacher_profiles(request.user, school).filter(is_active_teaching=True).first()
         guardian = user_guardian_profiles(request.user, school).first()
         profile_type = (request.query_params.get("profile_type") or "").strip().lower()
         section_id = request.query_params.get("section_id")
@@ -2500,7 +2500,7 @@ class HomeworkAttachmentDownloadAPIView(APIView):
                 and guardian.children.filter(pk=submission.student_id).exists()
             )
         if has_school_roles(request.user, school, {"teacher"}):
-            teacher = user_teacher_profiles(request.user, school).first()
+            teacher = user_teacher_profiles(request.user, school).filter(is_active_teaching=True).first()
             allowed = allowed or bool(
                 teacher and submission.homework.teacher_id == teacher.pk
             )
