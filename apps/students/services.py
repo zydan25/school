@@ -111,6 +111,10 @@ def link_student_account(*, student: Student, user: User, actor=None) -> Student
     )
     if not student_role.is_active or student_role.is_archived:
         raise ValidationError("دور الطالب غير مفعل في هذه المدرسة.")
+    if student_role.permissions.exists():
+        raise ValidationError(
+            "دور الطالب يحتوي على صلاحيات إدارية؛ أزل صلاحياته قبل ربط حساب طالب."
+        )
     MembershipRole.objects.get_or_create(
         membership=membership,
         role=student_role,
@@ -544,6 +548,10 @@ def ensure_guardian_membership(*, user: User, school, actor=None):
     )
     if not role.is_active or role.is_archived:
         raise ValidationError("دور ولي الأمر غير مفعل في المدرسة.")
+    if role.permissions.exists():
+        raise ValidationError(
+            "دور ولي الأمر يحتوي على صلاحيات إدارية؛ أزل صلاحياته قبل ربط حساب ولي الأمر."
+        )
     MembershipRole.objects.get_or_create(
         membership=membership,
         role=role,
