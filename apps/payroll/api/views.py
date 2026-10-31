@@ -143,13 +143,20 @@ class PayrollRunDisburseAPIView(APIView):
         data = serializer.validated_data
 
         account = get_object_or_404(Account, pk=data["payment_account_id"], school=school)
-        disb_entry, voucher = disburse_payroll_run(
+        disb_entry = disburse_payroll_run(
             payroll_run=run,
             payment_account=account,
             payment_method=data.get("payment_method", "bank_transfer"),
             reference_number=data.get("reference_number", ""),
             user=request.user,
         )
+        from apps.accounting.models import PaymentVoucher
+        voucher = PaymentVoucher.objects.filter(
+            school=school, journal_entry=disb_entry
+        ).first()
+        if voucher is None:
+            raise ValidationError("تم إنشاء قيد الصرف ولكن لم يتم العثور على سند الصرف المرتبط؛ راجع سجل المحاسبة.")
+        run.refresh_from_db()
 
         return Response({
             "message": f"تم صرف مسير الرواتب بنجاح برقم سند {voucher.voucher_number} وقيد صرف {disb_entry.entry_number}.",
