@@ -250,6 +250,21 @@ class StudentEnrollment(TenantOwnedModel):
     final_result = models.CharField("النتيجة الختامية للعام", max_length=20, choices=FinalResult.choices, default=FinalResult.PENDING)
     notes = models.TextField("ملاحظات وسجل الحركة الأكاديمية", blank=True)
 
+    def clean(self):
+        super().clean()
+        if self.student_id and self.student.school_id != self.school_id:
+            raise ValidationError({"student": "ملف الطالب لا يتبع المدرسة المحددة."})
+        if self.academic_year_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة المحددة."})
+        if self.grade_level_id and self.grade_level.school_id != self.school_id:
+            raise ValidationError({"grade_level": "الصف الدراسي لا يتبع المدرسة المحددة."})
+        if self.section_id and self.section.school_id != self.school_id:
+            raise ValidationError({"section": "الشعبة لا تتبع المدرسة المحددة."})
+        if self.section_id and self.grade_level_id and self.section.grade_id != self.grade_level_id:
+            raise ValidationError({"section": "الشعبة لا تنتمي إلى الصف المحدد في سجل القيد."})
+        if self.section_id and self.academic_year_id and self.section.academic_year_id != self.academic_year_id:
+            raise ValidationError({"section": "الشعبة لا تنتمي إلى السنة الدراسية المحددة في سجل القيد."})
+
     class Meta:
         verbose_name = "سجل قيد سنوي لطالب"
         verbose_name_plural = "السجل الأكاديمي وتاريخ قيد الطلاب"
