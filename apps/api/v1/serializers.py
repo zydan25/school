@@ -66,6 +66,19 @@ class TenantModelSerializer(serializers.ModelSerializer):
                 related_school_id = getattr(related, "school_id", None) if related else None
                 if related_school_id is not None and str(related_school_id) != str(school.pk):
                     raise serializers.ValidationError({name: "العنصر المرتبط لا يتبع المدرسة النشطة."})
+
+            # Many-to-many relations (notably OnlineExam.questions) need the same
+            # tenant check; DRF resolves them after validate(), so inspect input.
+            for model_field in model._meta.many_to_many if model else ():
+                name = model_field.name
+                related_items = attrs.get(name)
+                if related_items is None:
+                    continue
+                for related in related_items:
+                    related_school_id = getattr(related, "school_id", None)
+                    if related_school_id is not None and str(related_school_id) != str(school.pk):
+                        raise serializers.ValidationError({name: "يحتوي الحقل على عنصر تابع لمدرسة أخرى."})
+
             if self.instance and str(self.instance.school_id) != str(school.pk):
                 raise serializers.ValidationError("لا يمكن نقل سجل بين المدارس من خلال API.")
         return attrs
@@ -317,22 +330,27 @@ class HomeworkSerializer(TenantModelSerializer):
 
 class HomeworkSubmissionSerializer(TenantModelSerializer):
     student_name = serializers.CharField(source="student.get_full_name", read_only=True)
+    attachment = serializers.FileField(write_only=True, required=False)
     attachment_name = serializers.SerializerMethodField()
+    attachment_available = serializers.SerializerMethodField()
 
     class Meta(TenantModelSerializer.Meta):
         model = HomeworkSubmission
         fields = [
             "id", "homework", "student", "student_name", "submission_text",
-            "attachment", "attachment_name", "submitted_at", "status", "score",
-            "teacher_feedback", "graded_by", "graded_at",
+            "attachment", "attachment_name", "attachment_available",
+            "submitted_at", "status", "score", "teacher_feedback", "graded_by", "graded_at",
         ]
         read_only_fields = TenantModelSerializer.Meta.read_only_fields + (
-            "student", "student_name", "attachment_name", "submitted_at",
-            "status", "score", "teacher_feedback", "graded_by", "graded_at",
+            "student", "student_name", "attachment_name", "attachment_available",
+            "submitted_at", "status", "score", "teacher_feedback", "graded_by", "graded_at",
         )
 
     def get_attachment_name(self, obj):
-        return obj.attachment_name if hasattr(obj, "attachment_name") else (obj.attachment.name.rsplit("/", 1)[-1] if obj.attachment else "")
+        return obj.attachment.name.rsplit("/", 1)[-1] if obj.attachment else ""
+
+    def get_attachment_available(self, obj):
+        return bool(obj.attachment and not obj.is_archived)
 
 
 class AssessmentTypeSerializer(TenantModelSerializer):
@@ -486,6 +504,10 @@ class JournalEntrySerializer(TenantModelSerializer):
     class Meta(TenantModelSerializer.Meta):
         model = JournalEntry
         fields = "__all__"
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + (
+            "status", "posted_at", "posted_by", "is_reversed",
+            "reversed_by_entry", "reversal_reason",
+        )
 
     def get_debit_total(self, obj):
         return str(sum((line.debit for line in obj.lines.all()), Decimal("0.00")))
