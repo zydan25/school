@@ -129,7 +129,7 @@ def issue_school_invitation(*, school, invited_by, email, expires_at, roles=None
 
 
 def accept_school_invitation(*, raw_token, user):
-    """Accept once; an expired state is committed before the error is returned."""
+    """Accept one invitation using its verified contact and activate only a valid membership."""
     from apps.accounts.models import SchoolInvitation
     from apps.auditlog.services import record_event
 
@@ -139,59 +139,105 @@ def accept_school_invitation(*, raw_token, user):
         digest = hashlib.sha256(raw_token.encode()).hexdigest()
         invitation = (
             SchoolInvitation.objects.select_for_update()
-            .filter(token_digest=digest).select_related("school").first()
+            .filter(token_digest=digest)
+            .select_related("school")
+            .first()
         )
         if invitation is None or not invitation.matches_token(raw_token):
             raise ValidationError("رمز الدعوة غير صحيح أو غير موجود.")
         if invitation.status != SchoolInvitation.Status.PENDING:
             raise ValidationError("هذه الدعوة لم تعد صالحة للقبول.")
-        if invitation.expires_at <= timezone.now():
+
+        now = timezone.now()
+        if invitation.expires_at <= now:
             invitation.status = SchoolInvitation.Status.EXPIRED
             invitation.save(update_fields=["status", "updated_at"])
             expired = True
         elif invitation.school.status != "active" or invitation.school.is_archived:
             raise ValidationError("لا يمكن قبول دعوة لمدرسة غير نشطة.")
-        elif invitation.phone:
-            if user.phone != invitation.phone:
-                raise ValidationError("رقم الهاتف لا يطابق رقم الهاتف المحدد في الدعوة.")
-            if user.phone_verified_at is None:
-                raise ValidationError("يجب توثيق رقم الهاتف قبل قبول الدعوة.")
-            if invitation.email and user.email.strip().lower() != invitation.email.strip().lower():
-                raise ValidationError("البريد الإلكتروني لا يطابق الدعوة.")
-        elif invitation.email:
-            if user.email.strip().lower() != invitation.email.strip().lower():
-                raise ValidationError("يجب تسجيل الدخول بالبريد الإلكتروني الذي استلم الدعوة.")
-            if user.email_verified_at is None:
-                raise ValidationError("يجب توثيق البريد الإلكتروني قبل قبول الدعوة.")
-        else:
-            membership, _ = SchoolMembership.objects.get_or_create(
-                school=invitation.school, user=user,
-                defaults={
-                    "status": SchoolMembership.Status.ACTIVE,
-                    "joined_at": timezone.now(),
-                    "invited_by": invitation.invited_by,
-                },
+
+        if not expired:
+            if invitation.phone:
+                if user.phone != invitation.phone:
+                    raise ValidationError("رقم الهاتف لا يطابق رقم الهاتف المحدد في الدعوة.")
+                if user.phone_verified_at is None:
+                    raise ValidationError("يجب توثيق رقم الهاتف قبل قبول الدعوة.")
+                if invitation.email and user.email.strip().lower() != invitation.email.strip().lower():
+                    raise ValidationError("البريد الإلكتروني لا يطابق الدعوة.")
+            elif invitation.email:
+                if user.email.strip().lower() != invitation.email.strip().lower():
+                    raise ValidationError("يجب تسجيل الدخول بالبريد الإلكتروني الذي استلم الدعوة.")
+                if user.email_verified_at is None:
+                    raise ValidationError("يجب توثيق البريد الإلكتروني قبل قبول الدعوة.")
+            else:
+                raise ValidationError("الدعوة لا تحتوي على وسيلة اتصال موثوقة.")
+
+            membership = (
+                SchoolMembership.objects.select_for_update()
+                .filter(school=invitation.school, user=user)
+                .first()
             )
+            if membership:
+                if membership.status in {
+                    SchoolMembership.Status.SUSPENDED,
+                    SchoolMembership.Status.LEFT,
+                }:
+                    raise ValidationError("العضوية الحالية موقوفة أو منتهية؛ لا يمكن إعادة تفعيلها عبر دعوة.")
+                if membership.expires_at and membership.expires_at <= now:
+                    raise ValidationError("انتهت صلاحية العضوية الحالية؛ اطلب من الإدارة تجديدها.")
+            else:
+                has_default = SchoolMembership.objects.filter(
+                    user=user, status=SchoolMembership.Status.ACTIVE,
+                    is_default=True,
+                ).exists()
+                membership = SchoolMembership.objects.create(
+                    school=invitation.school,
+                    user=user,
+                    status=SchoolMembership.Status.INVITED,
+                    is_default=not has_default,
+                    invited_by=invitation.invited_by,
+                )
+
             membership.status = SchoolMembership.Status.ACTIVE
-            membership.joined_at = membership.joined_at or timezone.now()
-            membership.save(update_fields=["status", "joined_at", "updated_at"])
-            for role in invitation.roles.select_related("school"):
+            membership.joined_at = membership.joined_at or now
+            if membership.is_default and SchoolMembership.objects.filter(
+                user=user, status=SchoolMembership.Status.ACTIVE, is_default=True,
+            ).exclude(pk=membership.pk).exists():
+                membership.is_default = False
+            membership.save(update_fields=[
+                "status", "joined_at", "is_default", "updated_at",
+            ])
+
+            for role in invitation.roles.select_related("school").prefetch_related("permissions__content_type"):
                 if role.school_id != invitation.school_id:
                     raise ValidationError("تحتوي الدعوة على دور تابع لمدرسة أخرى.")
+                from apps.accounts.services import is_school_permission_allowed
+                if any(not is_school_permission_allowed(permission) for permission in role.permissions.all()):
+                    raise ValidationError("تحتوي الدعوة على دور يتضمن صلاحيات غير مسموحة للمدرسة.")
                 MembershipRole.objects.get_or_create(
-                    membership=membership, role=role,
-                    defaults={"assigned_by": invitation.invited_by, "valid_from": timezone.localdate()},
+                    membership=membership,
+                    role=role,
+                    defaults={
+                        "assigned_by": invitation.invited_by,
+                        "valid_from": timezone.localdate(),
+                    },
                 )
+
             invitation.status = SchoolInvitation.Status.ACCEPTED
             invitation.accepted_by = user
-            invitation.accepted_at = timezone.now()
-            invitation.save(update_fields=["status", "accepted_by", "accepted_at", "updated_at"])
+            invitation.accepted_at = now
+            invitation.save(update_fields=[
+                "status", "accepted_by", "accepted_at", "updated_at",
+            ])
             record_event(
                 action="school_invitation.accepted",
                 description="قبول دعوة الانضمام إلى المدرسة",
-                actor=user, school=invitation.school, obj=invitation,
+                actor=user,
+                school=invitation.school,
+                obj=invitation,
                 metadata={"membership_id": str(membership.pk)},
             )
+
     if expired:
         raise ValidationError("انتهت صلاحية الدعوة؛ اطلب إرسال دعوة جديدة.")
     return membership
