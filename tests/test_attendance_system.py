@@ -634,8 +634,8 @@ class AttendanceSystemTests(TestCase):
             student=self.student_1,
             guardian=self.guardian,
             request_type=AttendanceExcuseRequest.RequestType.POST_ABSENCE_EXCUSE,
-            start_date=datetime.date(2026, 9, 28),
-            end_date=datetime.date(2026, 9, 28),
+            start_date=datetime.date.today(),
+            end_date=datetime.date.today(),
             reason="عذر صحي",
         )
         review_excuse_request(request, reviewed_by=self.owner_a, is_approved=False)
