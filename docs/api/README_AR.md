@@ -190,6 +190,9 @@ Accept: application/json
 | POST | `/attendance/registers/{register_id}/lock/` | إقفال سجل معتمد |
 | POST | `/attendance/registers/{register_id}/reopen-request/` | طلب إعادة فتح مع السبب |
 | POST | `/attendance/registers/{register_id}/review-reopen/` | اعتماد أو رفض طلب إعادة الفتح |
+| GET | `/attendance/reopen-requests/?status=&register_id=` | قائمة طلبات إعادة الفتح؛ المعلم يرى طلباته والإدارة ترى المدرسة |
+| GET | `/attendance/reopen-requests/{request_id}/` | تفاصيل طلب إعادة فتح |
+| GET | `/attendance/audit-logs/?register_id=&student_id=&action=&from=&to=` | سجل التدقيق الإداري للحضور والتغييرات والاعتماد |
 
 طلب فتح سجل:
 
@@ -280,6 +283,7 @@ Accept: application/json
 | Method | Endpoint | الوظيفة |
 |---|---|---|
 | GET | `/attendance/me/children/records/?student_id=&from=&to=` | عرض حضور الأبناء المرتبطين حصراً بالحساب |
+| GET | `/attendance/me/children/scores/?student_id=&academic_term_id=` | درجات المواظبة الفصلية للأبناء المرتبطين بالحساب |
 
 يمكن تحديد `student_id` و`from` و`to` (صيغة `YYYY-MM-DD`). يعيد المسار قائمة الأبناء المرتبطين بالحساب ومصفوفة سجلاتهم، بحد أقصى 250 سجل في الاستجابة.
 
