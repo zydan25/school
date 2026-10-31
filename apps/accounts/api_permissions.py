@@ -31,10 +31,10 @@ def resolve_active_school(request) -> School | None:
     # Platform operators can access any active school
     if is_platform_operator(request.user):
         if school_id:
-            return School.objects.filter(pk=school_id, status=School.Status.ACTIVE).first()
+            return School.objects.filter(pk=school_id, status=School.Status.ACTIVE, is_archived=False).first()
         if school_code:
-            return School.objects.filter(code=school_code.upper(), status=School.Status.ACTIVE).first()
-        active_schools = School.objects.filter(status=School.Status.ACTIVE)
+            return School.objects.filter(code=school_code.upper(), status=School.Status.ACTIVE, is_archived=False).first()
+        active_schools = School.objects.filter(status=School.Status.ACTIVE, is_archived=False)
         return active_schools.first() if active_schools.count() == 1 else None
 
     # Regular users must have an ACTIVE, NON-EXPIRED membership
@@ -42,6 +42,7 @@ def resolve_active_school(request) -> School | None:
     active_memberships = request.user.school_memberships.filter(
         status=SchoolMembership.Status.ACTIVE,
         school__status=School.Status.ACTIVE,
+        school__is_archived=False,
     ).filter(
         Q(expires_at__isnull=True) | Q(expires_at__gt=now)
     ).select_related("school")
