@@ -576,6 +576,9 @@ class InventoryItemSerializer(TenantModelSerializer):
     class Meta(TenantModelSerializer.Meta):
         model = InventoryItem
         fields = "__all__"
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + (
+            "current_stock", "is_low_stock",
+        )
 
 
 class StockMovementSerializer(TenantModelSerializer):
@@ -590,6 +593,7 @@ class PurchaseOrderItemSerializer(TenantModelSerializer):
     class Meta(TenantModelSerializer.Meta):
         model = PurchaseOrderItem
         fields = "__all__"
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + ("total_price",)
 
 
 class PurchaseOrderSerializer(TenantModelSerializer):
@@ -598,7 +602,9 @@ class PurchaseOrderSerializer(TenantModelSerializer):
     class Meta(TenantModelSerializer.Meta):
         model = PurchaseOrder
         fields = "__all__"
-        read_only_fields = TenantModelSerializer.Meta.read_only_fields + ("status", "approved_by", "items")
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + (
+            "status", "approved_by", "items", "total_amount",
+        )
 
     def get_items(self, obj):
         return PurchaseOrderItemSerializer(obj.items.filter(is_archived=False), many=True, context=self.context).data
