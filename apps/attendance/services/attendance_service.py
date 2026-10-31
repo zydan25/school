@@ -274,7 +274,8 @@ def submit_register(
                 status_category=rec.status_category,
                 late_minutes=rec.late_minutes,
             )
-    return locked_register
+    register.refresh_from_db()
+    return register
 
 
 
@@ -304,7 +305,8 @@ def approve_register(
             ip_address=ip_address,
         )
         cascade_daily_attendance_to_periods(locked_register, user=approved_by)
-    return locked_register
+    register.refresh_from_db()
+    return register
 
 
 
@@ -333,7 +335,8 @@ def lock_register(
             new_value={"status": locked_register.status},
             ip_address=ip_address,
         )
-    return locked_register
+    register.refresh_from_db()
+    return register
 
 
 
