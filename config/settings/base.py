@@ -134,6 +134,10 @@ SECURE_REFERRER_POLICY = "same-origin"
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
+API_SESSION_LIFETIME_DAYS = int(os.getenv("API_SESSION_LIFETIME_DAYS", "30"))
+PHONE_OTP_DELIVERY_BACKEND = os.getenv("PHONE_OTP_DELIVERY_BACKEND", "").strip()
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@school.local")
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "apps.accounts.authentication.BearerOrTokenAuthentication",
