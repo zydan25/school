@@ -410,7 +410,7 @@ class PasswordResetRequestAPIView(APIView):
 class PasswordResetConfirmAPIView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, OTPVerifyPhoneRateThrottle]
     throttle_scope = "otp_verify"
 
     def post(self, request, *args, **kwargs):
