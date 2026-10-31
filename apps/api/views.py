@@ -442,7 +442,6 @@ class PasswordChangeAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        from apps.accounts.models import User
         from rest_framework.authtoken.models import Token
 
         current_password = request.data.get("current_password") or ""
