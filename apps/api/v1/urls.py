@@ -34,7 +34,6 @@ from apps.api.v1.views import (
     InventoryItemViewSet,
     JournalEntryViewSet,
     LeaveTypeViewSet,
-    MeAPIView,
     MembershipRoleViewSet,
     MembershipViewSet,
     MyProfilesAPIView,
@@ -55,14 +54,11 @@ from apps.api.v1.views import (
     SchoolWorkingDayViewSet,
     SchedulePeriodTemplateViewSet,
     SectionViewSet,
-    StaffMemberViewSet,
     StockMovementViewSet,
-    StudentRecordViewSet,
     SubjectViewSet,
     SupplierViewSet,
     TeacherAssignmentViewSet,
     TeacherViewSet,
-    UserNotificationsFeedAPIView,
     VendorInvoiceViewSet,
     WarehouseViewSet,
     WorkShiftViewSet,
@@ -72,7 +68,6 @@ router = DefaultRouter()
 router.register("memberships", MembershipViewSet, basename="app-membership")
 router.register("roles", SchoolRoleViewSet, basename="app-school-role")
 router.register("membership-roles", MembershipRoleViewSet, basename="app-membership-role")
-router.register("students", StudentRecordViewSet, basename="app-student")
 router.register("guardian-relations", GuardianRelationViewSet, basename="app-guardian-relation")
 
 router.register("academic-years", AcademicYearViewSet, basename="app-academic-year")
@@ -87,7 +82,6 @@ router.register("working-days", SchoolWorkingDayViewSet, basename="app-working-d
 
 router.register("teachers", TeacherViewSet, basename="app-teacher")
 router.register("teacher-assignments", TeacherAssignmentViewSet, basename="app-teacher-assignment")
-router.register("staff-members", StaffMemberViewSet, basename="app-staff-member")
 router.register("departments", DepartmentViewSet, basename="app-department")
 router.register("work-shifts", WorkShiftViewSet, basename="app-work-shift")
 router.register("leave-types", LeaveTypeViewSet, basename="app-leave-type")
@@ -132,13 +126,11 @@ router.register("notification-preferences", NotificationPreferenceViewSet, basen
 router.register("conversations", SchoolConversationViewSet, basename="app-conversation")
 
 urlpatterns = [
-    path("account/me/", MeAPIView.as_view(), name="app-me"),
     path("account/profiles/", MyProfilesAPIView.as_view(), name="app-my-profiles"),
     path("account/invitations/", SchoolInvitationAPIView.as_view(), name="app-invitations"),
     path("account/invitations/accept/", AcceptInvitationAPIView.as_view(), name="app-invitation-accept"),
     path("my/children/", GuardianChildrenAPIView.as_view(), name="app-my-children"),
     path("my/timetable/", MyWeeklyTimetableAPIView.as_view(), name="app-my-timetable"),
-    path("notifications/feed/", UserNotificationsFeedAPIView.as_view(), name="app-notification-feed"),
     path("homework-submissions/<uuid:submission_id>/attachment/", HomeworkAttachmentDownloadAPIView.as_view(), name="app-homework-attachment"),
     path("conversation-messages/<uuid:message_id>/attachment/", ConversationAttachmentDownloadAPIView.as_view(), name="app-conversation-attachment"),
     path("", include(router.urls)),
