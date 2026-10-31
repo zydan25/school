@@ -1,0 +1,252 @@
+"""Guardian Requests, Absence Excuses, and Early Departure Gate Exit Services."""
+from __future__ import annotations
+
+import datetime
+from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.utils import timezone
+
+from apps.attendance.models import (
+    AttendanceAuditLog,
+    AttendanceExcuseRequest,
+    AttendancePolicy,
+    AttendanceStatusType,
+    DailyAttendance,
+    EarlyDepartureRequest,
+    StudentAttendanceRecord,
+)
+from apps.attendance.services.notification_service import (
+    notify_early_departure_change,
+    notify_excuse_status_change,
+)
+from apps.students.models import StudentGuardianRelation
+
+
+def create_excuse_request(
+    school,
+    student,
+    guardian,
+    request_type: str,
+    start_date: datetime.date,
+    end_date: datetime.date,
+    reason: str,
+    attachment=None,
+) -> AttendanceExcuseRequest:
+    """إنشاء طلب عذر أو استئذان غياب من ولي الأمر والتحقق من سياسات المدرسة."""
+    if end_date < start_date:
+        raise ValidationError("تاريخ نهاية العذر لا يمكن أن يسبق تاريخ البداية.")
+
+    # Check student relation with guardian
+    is_related = StudentGuardianRelation.objects.filter(
+        school=school,
+        student=student,
+        guardian=guardian,
+        is_archived=False,
+    ).exists()
+    if not is_related:
+        raise ValidationError("ولي الأمر غير مسجل كولي أمر رسمي لهذا الطالب.")
+
+    # Check school policy
+    policy = AttendancePolicy.objects.filter(
+        school=school,
+        is_active=True,
+        is_archived=False,
+    ).first()
+
+    if policy:
+        if request_type == AttendanceExcuseRequest.RequestType.ADVANCE_ABSENCE and not policy.allow_guardian_advance_excuse:
+            raise ValidationError("المدرسة لا تفعل ميزة تقديم استئذان الغياب المسبق عبر التطبيق.")
+        if request_type == AttendanceExcuseRequest.RequestType.POST_ABSENCE_EXCUSE:
+            if not policy.allow_guardian_post_excuse:
+                raise ValidationError("المدرسة لا تفعل ميزة تقديم الأعذار اللاحقة عبر التطبيق.")
+            # Check deadline
+            days_passed = (timezone.localdate() - end_date).days
+            if days_passed > policy.excuse_submission_deadline_days:
+                raise ValidationError(
+                    f"تجاوز الطلب المهلة المحددة في سياسة المدرسة لتقديم الأعذار ({policy.excuse_submission_deadline_days} أيام)."
+                )
+        if policy.require_excuse_attachment and not attachment:
+            raise ValidationError("تنص سياسة المدرسة على ضرورة إرفاق تقرير طبي أو مستند يثبت العذر.")
+
+    req = AttendanceExcuseRequest.objects.create(
+        school=school,
+        student=student,
+        guardian=guardian,
+        request_type=request_type,
+        start_date=start_date,
+        end_date=end_date,
+        reason=reason,
+        attachment=attachment,
+        status=AttendanceExcuseRequest.Status.SUBMITTED,
+    )
+    return req
+
+
+def review_excuse_request(
+    excuse_request: AttendanceExcuseRequest,
+    reviewed_by,
+    is_approved: bool,
+    review_notes: str = "",
+) -> AttendanceExcuseRequest:
+    """مراجعة واعتماد أو رفض عذر الغياب وتحديث السجلات المرصودة بأثر رجعي."""
+    with transaction.atomic():
+        excuse_request.reviewed_by = reviewed_by
+        excuse_request.reviewed_at = timezone.now()
+        excuse_request.review_notes = review_notes
+
+        if is_approved:
+            excuse_request.status = AttendanceExcuseRequest.Status.APPROVED
+
+            # Update student attendance records within range
+            records = StudentAttendanceRecord.objects.filter(
+                school=excuse_request.school,
+                student=excuse_request.student,
+                register__date__gte=excuse_request.start_date,
+                register__date__lte=excuse_request.end_date,
+                is_archived=False,
+            ).select_related("register")
+
+            for rec in records:
+                old_cat = rec.status_category
+                if rec.status_category in [
+                    AttendanceStatusType.Category.ABSENT_UNEXCUSED,
+                    AttendanceStatusType.Category.PRESENT,
+                ]:
+                    rec.status_category = AttendanceStatusType.Category.ABSENT_EXCUSED
+                elif rec.status_category == AttendanceStatusType.Category.LATE:
+                    rec.status_category = AttendanceStatusType.Category.LATE_EXCUSED
+
+                rec.excuse_request = excuse_request
+                rec.save(update_fields=["status_category", "excuse_request", "updated_at"])
+
+                # Update legacy daily attendance if exists
+                DailyAttendance.objects.filter(
+                    school=rec.school,
+                    student=rec.student,
+                    date=rec.register.date,
+                ).update(
+                    status=DailyAttendance.Status.ABSENT_EXCUSED,
+                    excuse_reason=excuse_request.reason,
+                )
+
+                AttendanceAuditLog.objects.create(
+                    school=excuse_request.school,
+                    register=rec.register,
+                    student_record=rec,
+                    action=AttendanceAuditLog.Action.EXCUSE_REVIEWED,
+                    performed_by=reviewed_by,
+                    old_value={"status_category": old_cat},
+                    new_value={"status_category": rec.status_category, "excuse_id": str(excuse_request.id)},
+                    reason=f"تم قبول العذر: {review_notes}",
+                )
+        else:
+            excuse_request.status = AttendanceExcuseRequest.Status.REJECTED
+
+        excuse_request.save()
+        notify_excuse_status_change(excuse_request)
+
+    return excuse_request
+
+
+def create_early_departure_request(
+    school,
+    student,
+    guardian,
+    date: datetime.date,
+    departure_time: datetime.time,
+    reason: str,
+    recipient_name: str,
+    recipient_phone: str,
+    recipient_relationship: str,
+    recipient_national_id: str = "",
+) -> EarlyDepartureRequest:
+    """إنشاء طلب انصراف مبكر والتحقق من هوية وصلاحية الشخص المستلم للطالب."""
+    # Check guardian relation
+    rel = StudentGuardianRelation.objects.filter(
+        school=school,
+        student=student,
+        guardian=guardian,
+        is_archived=False,
+    ).first()
+    if not rel:
+        raise ValidationError("ولي الأمر غير مسجل رسمياً لهذا الطالب.")
+
+    policy = AttendancePolicy.objects.filter(
+        school=school,
+        is_active=True,
+        is_archived=False,
+    ).first()
+    if policy and not policy.allow_guardian_early_departure:
+        raise ValidationError("المدرسة لا تفعل ميزة طلبات الانصراف المبكر الإلكترونية.")
+
+    req = EarlyDepartureRequest.objects.create(
+        school=school,
+        student=student,
+        guardian=guardian,
+        date=date,
+        departure_time=departure_time,
+        reason=reason,
+        recipient_name=recipient_name,
+        recipient_phone=recipient_phone,
+        recipient_relationship=recipient_relationship,
+        recipient_national_id=recipient_national_id,
+        status=EarlyDepartureRequest.Status.PENDING,
+    )
+    return req
+
+
+def approve_early_departure(
+    departure_request: EarlyDepartureRequest,
+    approved_by,
+) -> EarlyDepartureRequest:
+    """اعتماد طلب الانصراف المبكر من قبل إدارة المدرسة وتفويض حارس البوابة."""
+    departure_request.status = EarlyDepartureRequest.Status.APPROVED
+    departure_request.approved_by = approved_by
+    departure_request.approved_at = timezone.now()
+    departure_request.save()
+
+    notify_early_departure_change(departure_request, is_exit=False)
+    return departure_request
+
+
+def confirm_gate_exit(
+    departure_request: EarlyDepartureRequest,
+    confirmed_by,
+    exit_notes: str = "",
+) -> EarlyDepartureRequest:
+    """تأكيد خروج الطالب الفعلي من بوابة المدرسة والتحقق من هوية المستلم."""
+    if departure_request.status != EarlyDepartureRequest.Status.APPROVED:
+        raise ValidationError("لا يمكن تأكيد خروج الطالب قبل اعتماد طلب الانصراف رسمياً من الإدارة.")
+
+    with transaction.atomic():
+        departure_request.status = EarlyDepartureRequest.Status.EXITED
+        departure_request.exit_confirmed_at = timezone.now()
+        departure_request.exit_confirmed_by = confirmed_by
+        departure_request.exit_notes = exit_notes
+        departure_request.save()
+
+        # Update student record for the day to authorized departure
+        records = StudentAttendanceRecord.objects.filter(
+            school=departure_request.school,
+            student=departure_request.student,
+            register__date=departure_request.date,
+            is_archived=False,
+        ).select_related("register")
+
+        for rec in records:
+            rec.status_category = AttendanceStatusType.Category.AUTHORIZED_DEPARTURE
+            rec.notes = f"انصراف مبكر مصرح به مع ({departure_request.recipient_name})"
+            rec.save(update_fields=["status_category", "notes", "updated_at"])
+
+            AttendanceAuditLog.objects.create(
+                school=departure_request.school,
+                register=rec.register,
+                student_record=rec,
+                action=AttendanceAuditLog.Action.EARLY_EXIT_CONFIRMED,
+                performed_by=confirmed_by,
+                reason=exit_notes or "خروج مصرح به من البوابة",
+            )
+
+        notify_early_departure_change(departure_request, is_exit=True)
+
+    return departure_request
