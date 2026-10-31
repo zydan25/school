@@ -185,6 +185,7 @@ class StudentIncidentNotifyParentsAPIView(APIView):
                 guardian__is_archived=False,
             ).select_related("guardian__user")
             sent_count = 0
+            recipient_count = 0
             for relation in relations:
                 recipient = relation.guardian.user
                 valid_membership = SchoolMembership.objects.filter(
@@ -196,6 +197,7 @@ class StudentIncidentNotifyParentsAPIView(APIView):
                 ).exists()
                 if not valid_membership:
                     continue
+                recipient_count += 1
                 notification, created = create_in_app_notification(
                     recipient=recipient,
                     school=school,
@@ -208,7 +210,7 @@ class StudentIncidentNotifyParentsAPIView(APIView):
                 )
                 if created:
                     sent_count += 1
-            if sent_count or incident.parent_notified:
+            if recipient_count:
                 if not incident.parent_notified:
                     incident.parent_notified = True
                     incident.save(update_fields=["parent_notified", "updated_at"])
@@ -217,6 +219,7 @@ class StudentIncidentNotifyParentsAPIView(APIView):
         return Response({
             "incident_id": str(incident.pk),
             "parent_portal_notifications_created": sent_count,
+            "eligible_guardians": recipient_count,
             "published": incident.parent_notified,
         }, status=status.HTTP_200_OK)
 
@@ -231,9 +234,13 @@ class StudentIncidentSeenAPIView(APIView):
             pk=pk, school=school, is_archived=False,
             parent_notified=True,
         )
+        is_family = has_school_roles(request.user, school, FAMILY_ROLES)
         if not (
             is_manager(request.user, school)
-            or incident.student_id in linked_student_ids(request.user, school)
+            or (
+                is_family
+                and incident.student_id in linked_student_ids(request.user, school)
+            )
         ):
             raise PermissionDenied("لا يمكنك تأكيد الاطلاع على بلاغ لا يخص أبناءك.")
         if incident.parent_seen_at is None:
