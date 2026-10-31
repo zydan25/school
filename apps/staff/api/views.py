@@ -78,6 +78,12 @@ class StaffMemberListAPIView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         school = self.get_school()
         user = serializer.validated_data["user"]
+        if not user.is_active or user.status != user.Status.ACTIVE:
+            raise ValidationError("لا يمكن ربط ملف موظف بحساب غير نشط.")
+        if serializer.instance.user_id != user.pk:
+            raise ValidationError("لا يمكن تغيير الحساب المرتبط بملف الموظف؛ استخدم إجراء ربط مخصصاً.")
+        if not user.is_active or user.status != user.Status.ACTIVE:
+            raise ValidationError("لا يمكن إبقاء ملف الموظف مرتبطاً بحساب غير نشط.")
         membership = user.school_memberships.filter(
             school=school, status=SchoolMembership.Status.ACTIVE,
         ).filter(
