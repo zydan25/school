@@ -122,15 +122,6 @@ class StudentDetailSerializer(StudentListSerializer):
         ]
 
 
-class StudentSafeDetailSerializer(StudentListSerializer):
-    """Student detail without national identity data for family and teaching roles."""
-
-    enrollment_history = StudentEnrollmentSerializer(many=True, read_only=True)
-
-    class Meta(StudentListSerializer.Meta):
-        fields = StudentListSerializer.Meta.fields + ["enrollment_history"]
-
-
 class StudentMovementSerializer(serializers.ModelSerializer):
     movement_type_display = serializers.CharField(
         source="get_movement_type_display", read_only=True,
