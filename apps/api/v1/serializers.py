@@ -681,7 +681,10 @@ class SchoolConversationSerializer(serializers.ModelSerializer):
 
 class ConversationMessageSerializer(serializers.ModelSerializer):
     sender_name = serializers.SerializerMethodField()
+    body = serializers.SerializerMethodField()
     attachment_available = serializers.SerializerMethodField()
+    attachment_name = serializers.SerializerMethodField()
+    attachment_size = serializers.SerializerMethodField()
 
     class Meta:
         model = ConversationMessage
@@ -695,8 +698,19 @@ class ConversationMessageSerializer(serializers.ModelSerializer):
     def get_sender_name(self, obj):
         return obj.sender.get_full_name() if obj.sender_id else "النظام"
 
+    def get_body(self, obj):
+        return "" if obj.is_deleted else obj.body
+
     def get_attachment_available(self, obj):
         return bool(obj.attachment and not obj.is_deleted)
+
+    def get_attachment_name(self, obj):
+        if obj.is_deleted:
+            return ""
+        return obj.attachment_name
+
+    def get_attachment_size(self, obj):
+        return 0 if obj.is_deleted else obj.attachment_size
 
 
 class ConversationCreateSerializer(serializers.Serializer):
