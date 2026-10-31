@@ -6,6 +6,7 @@ from rest_framework import serializers
 from apps.accounts.models import (
     MembershipRole, SchoolInvitation, SchoolMembership, SchoolRole, User,
 )
+from apps.accounts.services import school_assignable_permissions
 from apps.academics.models import (
     AcademicTerm, AcademicYear, Classroom, EducationalStage, GradeLevel,
     PeriodDefinition, SchoolWorkingDay, Section, Subject,
@@ -121,6 +122,10 @@ class MembershipSerializer(serializers.ModelSerializer):
 
 
 class SchoolRoleSerializer(serializers.ModelSerializer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["permissions"].queryset = school_assignable_permissions()
+
     class Meta:
         model = SchoolRole
         fields = [
