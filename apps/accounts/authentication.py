@@ -1,38 +1,39 @@
 """
-apps/accounts/authentication.py
-Unified Bearer / Token Authentication for Django REST Framework.
-Supports Authorization headers starting with either 'Token <key>' or 'Bearer <key>'.
+Unified Token/Bearer authentication.
+New sessions are independent per device; legacy DRF tokens remain accepted during migration.
 """
 from rest_framework import exceptions
-from rest_framework.authentication import TokenAuthentication, get_authorization_header
+from rest_framework.authentication import BaseAuthentication, get_authorization_header
+
+from apps.accounts.session_services import authenticate_api_credential
 
 
-class BearerOrTokenAuthentication(TokenAuthentication):
-    """
-    Accepts both standard Django 'Token <key>' and standard OAuth/mobile 'Bearer <key>'
-    in the Authorization header.
-    """
+class BearerOrTokenAuthentication(BaseAuthentication):
+    """Authenticate device-session Bearer tokens and legacy Token/Bearer credentials."""
+
+    keyword_map = {b"token", b"bearer"}
+
     def authenticate(self, request):
-        auth = get_authorization_header(request).split()
-
-        if not auth:
+        parts = get_authorization_header(request).split()
+        if not parts:
             return None
 
-        prefix = auth[0].lower().decode("utf-8", errors="ignore")
-        if prefix not in ["token", "bearer"]:
+        prefix = parts[0].lower()
+        if prefix not in self.keyword_map:
             return None
-
-        if len(auth) == 1:
-            msg = "رمز المصادقة غير صالح. لم يتم تزويد المفتاح."
-            raise exceptions.AuthenticationFailed(msg)
-        elif len(auth) > 2:
-            msg = "رمز المصادقة غير صالح. يجب ألا يحتوي مفتاح الرمز على مسافات."
-            raise exceptions.AuthenticationFailed(msg)
-
+        if len(parts) != 2:
+            raise exceptions.AuthenticationFailed(
+                "ترويسة المصادقة غير صالحة؛ استخدم Bearer أو Token متبوعاً بمفتاح واحد."
+            )
         try:
-            token = auth[1].decode("utf-8")
-        except UnicodeError:
-            msg = "رمز المصادقة غير صالح. يحتوي الرمز على محارف غير صحيحة."
-            raise exceptions.AuthenticationFailed(msg)
+            raw_token = parts[1].decode("utf-8")
+        except UnicodeError as exc:
+            raise exceptions.AuthenticationFailed("مفتاح المصادقة يحتوي على محارف غير صالحة.") from exc
 
-        return self.authenticate_credentials(token)
+        authenticated = authenticate_api_credential(raw_token)
+        if authenticated is None:
+            raise exceptions.AuthenticationFailed("رمز المصادقة غير صالح أو منتهي الصلاحية.")
+        user, auth_object = authenticated
+        if not user.is_active:
+            raise exceptions.AuthenticationFailed("الحساب غير نشط.")
+        return user, auth_object
