@@ -149,20 +149,20 @@ def accept_school_invitation(*, raw_token, user):
             invitation.status = SchoolInvitation.Status.EXPIRED
             invitation.save(update_fields=["status", "updated_at"])
             expired = True
+        elif invitation.school.status != "active" or invitation.school.is_archived:
+            raise ValidationError("لا يمكن قبول دعوة لمدرسة غير نشطة.")
         elif invitation.phone:
             if user.phone != invitation.phone:
                 raise ValidationError("رقم الهاتف لا يطابق رقم الهاتف المحدد في الدعوة.")
             if user.phone_verified_at is None:
                 raise ValidationError("يجب توثيق رقم الهاتف قبل قبول الدعوة.")
-            elif invitation.email and user.email.strip().lower() != invitation.email.strip().lower():
+            if invitation.email and user.email.strip().lower() != invitation.email.strip().lower():
                 raise ValidationError("البريد الإلكتروني لا يطابق الدعوة.")
         elif invitation.email:
             if user.email.strip().lower() != invitation.email.strip().lower():
                 raise ValidationError("يجب تسجيل الدخول بالبريد الإلكتروني الذي استلم الدعوة.")
             if user.email_verified_at is None:
                 raise ValidationError("يجب توثيق البريد الإلكتروني قبل قبول الدعوة.")
-        elif invitation.school.status != "active":
-            raise ValidationError("لا يمكن قبول دعوة لمدرسة غير نشطة.")
         else:
             membership, _ = SchoolMembership.objects.get_or_create(
                 school=invitation.school, user=user,
