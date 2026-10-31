@@ -64,6 +64,31 @@ class StudentListSerializer(serializers.ModelSerializer):
         read_only_fields = ["credit_balance"]
 
 
+class StudentSafeListSerializer(serializers.ModelSerializer):
+    grade_level_name = serializers.CharField(source="grade_level.name", read_only=True)
+    section_name = serializers.CharField(source="section.name", read_only=True)
+    academic_year_name = serializers.CharField(source="academic_year.name", read_only=True)
+    full_name = serializers.CharField(source="get_full_name", read_only=True)
+
+    class Meta:
+        model = Student
+        fields = [
+            "id", "student_id_number", "full_name", "first_name",
+            "middle_name", "last_name", "gender", "grade_level",
+            "grade_level_name", "section", "section_name", "academic_year",
+            "academic_year_name", "status", "enrollment_date",
+        ]
+        read_only_fields = fields
+
+
+class StudentSafeDetailSerializer(StudentSafeListSerializer):
+    enrollment_history = StudentEnrollmentSerializer(many=True, read_only=True)
+
+    class Meta(StudentSafeListSerializer.Meta):
+        fields = StudentSafeListSerializer.Meta.fields + ["enrollment_history"]
+        read_only_fields = fields
+
+
 class StudentDetailSerializer(StudentListSerializer):
     enrollment_history = StudentEnrollmentSerializer(many=True, read_only=True)
 
