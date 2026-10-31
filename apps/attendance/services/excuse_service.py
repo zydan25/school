@@ -177,9 +177,18 @@ def create_early_departure_request(
     ).first()
     if not rel:
         raise ValidationError("ولي الأمر غير مسجل رسمياً لهذا الطالب.")
+    if not rel.can_pickup:
+        raise ValidationError("ولي الأمر غير مخول باستلام الطالب أو طلب انصرافه وفق بيانات المدرسة.")
+    if student.school_id != school.pk or guardian.school_id != school.pk:
+        raise ValidationError("الطالب وولي الأمر يجب أن يتبعا المدرسة المحددة.")
+    if student.academic_year_id:
+        year = student.academic_year
+        if date < year.starts_on or date > year.ends_on:
+            raise ValidationError("تاريخ الانصراف يقع خارج السنة الدراسية الحالية للطالب.")
 
     policy = AttendancePolicy.objects.filter(
         school=school,
+        academic_year=student.academic_year,
         is_active=True,
         is_archived=False,
     ).first()
