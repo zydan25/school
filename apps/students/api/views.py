@@ -536,10 +536,16 @@ def _read_student_import_csv(request):
     for row_number, raw in enumerate(reader, start=2):
         if not raw or not any((value or "").strip() for value in raw.values()):
             continue
-        rows.append((row_number, {
+        normalized = {
             (key or "").strip().lower(): (value or "").strip()
             for key, value in raw.items() if key is not None
-        }))
+        }
+        for optional_date in ("birth_date", "enrollment_date"):
+            if not normalized.get(optional_date):
+                normalized[optional_date] = None
+        if not normalized.get("gender"):
+            normalized["gender"] = Student.Gender.MALE
+        rows.append((row_number, normalized))
         if len(rows) > 500:
             raise ValidationError({"file": "الحد الأقصى 500 طالب في عملية الاستيراد الواحدة."})
     if not rows:
@@ -575,15 +581,15 @@ def _validate_student_import_rows(rows, school):
         seen_ids.add(normalized)
         validated.append((row_number, data))
 
+    existing_query = Q(pk__in=[])
+    for _row, data in validated:
+        existing_query |= Q(student_id_number__iexact=data["student_id_number"])
     existing_ids = {
         value.casefold()
         for value in Student.objects.filter(
             school=school, is_archived=False,
-            student_id_number__in=[
-                data["student_id_number"] for _row, data in validated
-            ],
-        ).values_list("student_id_number", flat=True)
-    }
+        ).filter(existing_query).values_list("student_id_number", flat=True)
+    } if validated else set()
     filtered = []
     for row_number, data in validated:
         if data["student_id_number"].casefold() in existing_ids:
