@@ -1,15 +1,28 @@
 import re
 
+from datetime import timedelta
+from unittest.mock import patch
+
+from django.core.exceptions import ValidationError
+from django.core.cache import cache
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from apps.accounts.models import DeviceSession, User
+from apps.accounts.models import (
+    DeviceSession, PhoneVerificationChallenge, SchoolInvitation, SchoolMembership, User,
+)
+from apps.accounts.services import (
+    accept_school_invitation, issue_school_invitation, school_assignable_permissions,
+)
+from apps.tenants.models import School
+from apps.tenants.services import provision_school
 
 
 class IdentitySessionSecurityTests(TestCase):
     def setUp(self):
+        cache.clear()
         self.client = APIClient()
 
     def create_user(self, phone="+967770007701", **extra):
@@ -198,3 +211,78 @@ class IdentitySessionSecurityTests(TestCase):
             client.credentials(HTTP_AUTHORIZATION=f"{prefix} {token.key}")
             response = client.get("/api/v1/me/")
             self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_failed_otp_attempt_is_persisted_and_locks_after_five_attempts(self):
+        from apps.accounts.session_services import (
+            consume_phone_challenge, issue_phone_challenge,
+        )
+
+        user = self.create_user(phone="+967770007706")
+        with patch("apps.accounts.session_services.send_phone_message", return_value=True):
+            challenge = issue_phone_challenge(
+                user=user,
+                purpose=PhoneVerificationChallenge.Purpose.VERIFY_PHONE,
+            )
+
+        for expected_attempts in range(1, 6):
+            with self.assertRaises(ValidationError):
+                consume_phone_challenge(
+                    user=user,
+                    phone=user.phone,
+                    purpose=PhoneVerificationChallenge.Purpose.VERIFY_PHONE,
+                    code="000000" if challenge.code_digest else "999999",
+                )
+            challenge.refresh_from_db()
+            self.assertEqual(challenge.attempts, expected_attempts)
+
+        self.assertIsNotNone(challenge.consumed_at)
+
+    def test_phone_invitation_requires_verified_contact_and_creates_membership(self):
+        owner = self.create_user(phone="+967770007707")
+        invitee = self.create_user(phone="+967770007708")
+        school = School.objects.create(
+            owner=owner,
+            code="OTP-INV-01",
+            name="مدرسة دعوات الاختبار",
+            status=School.Status.ACTIVE,
+        )
+        provision_school(school)
+        invitation, raw_token = issue_school_invitation(
+            school=school,
+            invited_by=owner,
+            email="",
+            phone=invitee.phone,
+            expires_at=timezone.now() + timedelta(days=1),
+        )
+
+        with self.assertRaises(ValidationError):
+            accept_school_invitation(raw_token=raw_token, user=invitee)
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, SchoolInvitation.Status.PENDING)
+
+        invitee.phone_verified_at = timezone.now()
+        invitee.save(update_fields=["phone_verified_at", "updated_at"])
+        membership = accept_school_invitation(raw_token=raw_token, user=invitee)
+        self.assertEqual(membership.status, SchoolMembership.Status.ACTIVE)
+        self.assertTrue(
+            SchoolMembership.objects.filter(
+                school=school, user=invitee,
+                status=SchoolMembership.Status.ACTIVE,
+            ).exists()
+        )
+        invitation.refresh_from_db()
+        self.assertEqual(invitation.status, SchoolInvitation.Status.ACCEPTED)
+
+    def test_school_assignable_permissions_exclude_global_and_identity_privileges(self):
+        allowed = list(school_assignable_permissions().values_list(
+            "content_type__app_label", "codename",
+        ))
+        self.assertTrue(allowed)
+        self.assertTrue(all(
+            app_label not in {"accounts", "auth", "admin", "contenttypes", "sessions", "tenants"}
+            for app_label, _codename in allowed
+        ))
+        self.assertTrue(all(
+            codename.startswith(("view_", "add_", "change_", "delete_"))
+            for _app_label, codename in allowed
+        ))
