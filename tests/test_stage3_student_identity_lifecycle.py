@@ -1,5 +1,3 @@
-import csv
-import io
 from datetime import date
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -10,13 +8,10 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import MembershipRole, SchoolMembership, User
 from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section
-from apps.students.models import (
-    Guardian, Student, StudentGuardianRelation, StudentMovement,
-)
+from apps.students.models import Guardian, Student, StudentMovement
 from apps.students.services import (
     link_student_account,
     promote_student,
-    record_student_movement,
     transfer_student,
     unlink_student_account,
 )
