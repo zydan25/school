@@ -97,8 +97,11 @@ Accept: application/json
 
 | Method | Endpoint | المدخلات / الوظيفة |
 |---|---|---|
-| GET | `/students/?search=&grade_level=&section=&status=` | قائمة الطلاب والبحث والتصفية |
+| GET | `/students/?search=&grade_level=&section=&academic_year=&status=` | قائمة الطلاب والبحث والتصفية ضمن نطاق الدور |
+| POST | `/students/` | إنشاء ملف طالب جديد |
 | GET | `/students/{student_uuid}/` | تفاصيل الطالب وسجل قيده السنوي |
+| PUT, PATCH | `/students/{student_uuid}/` | تعديل ملف الطالب والتحقق من توافق الصف والشعبة والسنة |
+| DELETE | `/students/{student_uuid}/` | أرشفة ملف الطالب، لا الحذف النهائي |
 | POST | `/students/{student_uuid}/promote/` | ترفيع الطالب |
 | POST | `/students/{student_uuid}/retain/` | إعادة قيد الطالب في الصف |
 | POST | `/students/{student_uuid}/graduate/` | تخريج الطالب |
@@ -106,7 +109,7 @@ Accept: application/json
 
 طلب الترفيع يتضمن `next_academic_year_id` و`next_grade_level_id`، ويمكن أن يتضمن `next_section_id` و`notes`. إعادة القيد تتضمن `next_academic_year_id` واختيارياً `section_id` و`notes`. الانسحاب يستخدم `reason`، والتخريج يقبل `notes`.
 
-معرفات الطلاب UUID. تغيير القيد يتطلب دور مدير المدرسة أو شؤون الطلاب أو المنسق الأكاديمي أو صلاحية نموذج `students.change_student`.
+معرفات الطلاب UUID. إنشاء الطالب أو تعديل ملفه أو أرشفته يتطلب دور إدارة المدرسة/شؤون الطلاب/المسجل أو صلاحية النموذج المقابلة. الرصيد الدائن `credit_balance` لا يقبل التعديل من عقد ملف الطالب؛ يعالج عبر سندات القبض والتخصيص فقط. يستطيع المعلم رؤية طلاب الشعب المسندة إليه، وولي الأمر/الطالب يرى السجلات المرتبطة به فقط. تغيير القيد (ترفيع/إعادة/تخرج/انسحاب) يظل عبر أوامر POST المخصصة أعلاه.
 
 ---
 
@@ -565,6 +568,18 @@ Accept: application/json
 
 إنشاء الاختبار يتضمن `subject`, `academic_term`, `grade_level`, واختيارياً `section`, و`start_time`, `end_time`, `duration_minutes`, `total_marks`, `passing_marks`, `questions`. يجب أن تتبع الشعبة الصف والسنة المختارين، وأن لا تتجاوز درجة النجاح أو مجموع درجات الأسئلة الدرجة العظمى.
 
+تسجيل سداد فاتورة المورد يرسل:
+```json
+{
+  "amount": "1250.00",
+  "payment_account_id": "<cash-or-bank-account-uuid>",
+  "payment_method": "bank_transfer",
+  "reference_number": "BANK-REF-001",
+  "idempotency_key": "unique-client-operation-0001"
+}
+```
+مفتاح `idempotency_key` مطلوب (8 إلى 120 حرفاً). يعيد الخادم نتيجة عملية السداد السابقة عند تكرار المفتاح مع المبلغ نفسه، ويرفض إعادة استخدامه بمبلغ مختلف. تنشأ حركة السداد كقيد مرحّل وسند صرف مرتبط. يجب على Flutter إنشاء المفتاح مرة واحدة لكل محاولة دفع والاحتفاظ به حتى يحصل على نتيجة نهائية؛ لا تولد مفتاحاً جديداً لمجرد انتهاء مهلة HTTP.
+
 مسار `paper` لا يعيد `correct_answer`. التصحيح الموضوعي على الخادم، والتصحيح المقالـي يتم عبر `exam-submissions/{id}/grade/` بحقل `manual_score` و`teacher_feedback`. لا يمكن إنشاء محاولة مباشرة؛ يجب بدء المحاولة من `start`. المحاولة التي تم تسليمها لا تقبل تسليماً ثانياً.
 
 ### 11.7 الجدول الأسبوعي وسجل تنفيذ الدروس
@@ -579,9 +594,12 @@ Accept: application/json
 | GET, PUT, PATCH, DELETE | `class-schedules/{id}/` | إدارة الحصص |
 | GET, POST | `lesson-logs/` | توثيق تنفيذ الدرس |
 | GET, PUT, PATCH, DELETE | `lesson-logs/{id}/` | إدارة سجل الدرس |
-| GET | `my/timetable/` | الجدول الشخصي للمعلم أو الطالب أو ولي الأمر |
+| GET | `my/timetable/?profile_type=teacher` | جدول المعلم |
+| GET | `my/timetable/?profile_type=student` | جدول الطالب |
+| GET | `my/timetable/?profile_type=guardian` | جداول أبناء ولي الأمر |
+| GET | `my/timetable/?profile_type=school&section_id={uuid}` | جدول شعبة للإدارة |
 
-مرشحات: `period-templates/?schedule_id=`, `class-schedules/?academic_year_id=&section_id=&teacher_id=&day_of_week=`, `lesson-logs/?date=&section_id=`. المعلم يرى الحصص المسندة إليه فقط؛ الطالب يرى جدول شعبته؛ ولي الأمر يرى جدول أبناءه. لا تكرر واجهة التوليد الذكي هنا؛ مسار التوليد الرسمي موجود في `/api/v1/timetable/ai-generate/`.
+مرشحات: `period-templates/?schedule_id=`, `class-schedules/?academic_year_id=&section_id=&teacher_id=&day_of_week=`, `lesson-logs/?date=&section_id=`. إذا كان الحساب يحمل أكثر من ملف (مثلاً معلم وولي أمر)، يجب إرسال `profile_type` لاختيار مساحة الجدول؛ وإذا تعددت الملفات ولم يحدد النوع يعيد الخادم خطأ تحقق يبين الأنواع المتاحة. لا تكرر واجهة التوليد الذكي هنا؛ مسار التوليد الرسمي موجود في `/api/v1/timetable/ai-generate/`.
 
 ### 11.8 المحاسبة والقيود والسندات
 
@@ -632,7 +650,7 @@ Accept: application/json
 | CRUD | `vendor-invoices/` | فواتير الموردين |
 | POST | `vendor-invoices/{id}/approve/` | اعتماد فاتورة مورد |
 | POST | `vendor-invoices/{id}/post/` | ترحيل استحقاق المورد |
-| POST | `vendor-invoices/{id}/record-payment/` | تسجيل سداد جزئي/كامل بعد ترحيل الفاتورة |
+| POST | `vendor-invoices/{id}/record-payment/` | تسجيل سداد جزئي/كامل بعد ترحيل الفاتورة مع مفتاح منع تكرار |
 | CRUD | `asset-categories/` | تصنيفات الأصول |
 | CRUD | `fixed-assets/` | الأصول الثابتة |
 | GET, POST | `asset-depreciations/` | سجل إهلاك الأصل |
