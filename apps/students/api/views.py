@@ -648,7 +648,7 @@ class StudentImportCommitAPIView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
 
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
