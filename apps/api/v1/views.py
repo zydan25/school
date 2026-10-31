@@ -346,6 +346,24 @@ class SchoolInvitationAPIView(APIView):
         return Response({"id": str(invitation.pk), "status": invitation.status})
 
 
+class RevokeInvitationAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, invitation_id):
+        school = school_for(request)
+        require_school_role_or_permission(request, school, ADMIN_ROLES)
+        with transaction.atomic():
+            invitation = get_object_or_404(
+                SchoolInvitation.objects.select_for_update(),
+                pk=invitation_id, school=school,
+            )
+            if invitation.status != SchoolInvitation.Status.PENDING:
+                raise ValidationError("لا يمكن إلغاء دعوة لم تعد معلقة.")
+            invitation.status = SchoolInvitation.Status.REVOKED
+            invitation.save(update_fields=["status", "updated_at"])
+        return Response({"id": str(invitation.pk), "status": invitation.status})
+
+
 class AcceptInvitationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
