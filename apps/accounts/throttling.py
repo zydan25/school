@@ -48,7 +48,15 @@ class DeviceScopedRateThrottle(_IdentifierRateThrottle):
             or request.data.get("device_id")
             or ""
         )
-        return str(device_id).strip()[:128]
+        if device_id:
+            return str(device_id).strip()[:128]
+
+        # Older clients may not send a device ID. Keep a stable fallback
+        # fingerprint so they still receive an additional per-client limit.
+        remote_addr = request.META.get("REMOTE_ADDR", "")
+        user_agent = request.headers.get("User-Agent", "")
+        fingerprint = f"{remote_addr}:{user_agent}".strip(":")
+        return fingerprint[:512]
 
 
 class LoginPhoneRateThrottle(PhoneScopedRateThrottle):
