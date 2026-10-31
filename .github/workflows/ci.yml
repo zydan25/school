@@ -2,17 +2,14 @@ name: School ERP CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 jobs:
-  test:
-    name: Test & Lint
+  lint-and-sqlite-tests:
+    name: Lint, Django checks and SQLite tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12"]
     env:
       DATABASE_URL: "sqlite:///:memory:"
       SECRET_KEY: "ci-test-secret-key-for-school-erp-system-checks-only-12345"
@@ -20,27 +17,73 @@ jobs:
       ALLOWED_HOSTS: "localhost,127.0.0.1"
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'pip'
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements/dev.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/dev.txt
 
-    - name: Django System Checks
-      run: |
-        python manage.py check
+      - name: Ruff lint
+        run: ruff check .
 
-    - name: Verify Migrations Consistency (No Drift)
-      run: |
-        python manage.py makemigrations --check --dry-run
+      - name: Django system checks
+        run: python manage.py check
 
-    - name: Run Test Suite
-      run: |
-        python manage.py test tests --verbosity=2
+      - name: Verify migration consistency
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Run test suite on SQLite
+        run: python manage.py test tests --verbosity=2
+
+  postgres-tests:
+    name: PostgreSQL integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: school
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d school"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5432/school"
+      SECRET_KEY: "ci-test-secret-key-for-school-erp-system-checks-only-12345"
+      DEBUG: "False"
+      ALLOWED_HOSTS: "localhost,127.0.0.1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements/dev.txt
+
+      - name: Django system checks
+        run: python manage.py check
+
+      - name: Verify migration consistency
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Run test suite on PostgreSQL
+        run: python manage.py test tests --verbosity=2
