@@ -141,8 +141,8 @@ class DeviceSession(UUIDTimestampedModel):
         verbose_name = "جلسة جهاز"
         verbose_name_plural = "جلسات الأجهزة"
         indexes = [
-            models.Index(fields=["user", "revoked_at", "expires_at"]),
-            models.Index(fields=["user", "device_id", "revoked_at"]),
+            models.Index(fields=["user", "revoked_at", "expires_at"], name="accounts_de_user_id_2ae6bf_idx"),
+            models.Index(fields=["user", "device_id", "revoked_at"], name="accounts_de_user_id_4db35d_idx"),
         ]
 
     @property
@@ -179,8 +179,8 @@ class PhoneVerificationChallenge(UUIDTimestampedModel):
         verbose_name = "طلب رمز تحقق"
         verbose_name_plural = "طلبات رموز التحقق"
         indexes = [
-            models.Index(fields=["user", "purpose", "created_at"]),
-            models.Index(fields=["phone", "purpose", "created_at"]),
+            models.Index(fields=["user", "purpose", "created_at"], name="accounts_ph_user_id_34c2a0_idx"),
+            models.Index(fields=["phone", "purpose", "created_at"], name="accounts_ph_phone__44ac93_idx"),
         ]
 
 
