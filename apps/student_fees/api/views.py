@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, status
@@ -13,6 +14,8 @@ from rest_framework.views import APIView
 
 from apps.accounts.api_permissions import (
     FINANCIAL_ROLES,
+    has_school_permission,
+    has_school_roles,
     require_school_role_or_permission,
     resolve_active_school,
 )
@@ -40,6 +43,35 @@ def _resolve_school(request):
     return resolve_active_school(request)
 
 
+def _scope_student_finance_read(queryset, request, school, permission_codename):
+    """
+    Restrict financial records to the school finance team or the student's own
+    authenticated account / linked guardian. Never trust a requested student ID.
+    """
+    if has_school_roles(request.user, school, FINANCIAL_ROLES | {"cashier"}):
+        return queryset
+    if has_school_permission(
+        user=request.user, school=school, permission=permission_codename,
+    ):
+        return queryset
+
+    related_students = Student.objects.filter(
+        school=school,
+        is_archived=False,
+    ).filter(
+        Q(user=request.user)
+        | Q(
+            guardians__guardian__user=request.user,
+            guardians__school=school,
+            guardians__is_archived=False,
+            guardians__guardian__is_archived=False,
+        )
+    )
+    if not related_students.exists():
+        raise PermissionDenied("لا تملك صلاحية الاطلاع على البيانات المالية لهذا الطالب.")
+    return queryset.filter(student__in=related_students).distinct()
+
+
 class StudentInvoiceListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -49,6 +81,9 @@ class StudentInvoiceListCreateAPIView(APIView):
             raise PermissionDenied("لم يتم تحديد المدرسة أو لا تملك صلاحية الوصول.")
         qs = StudentInvoice.objects.filter(school=school, is_archived=False).select_related(
             "student", "academic_year"
+        )
+        qs = _scope_student_finance_read(
+            qs, request, school, "student_fees.view_studentinvoice",
         )
         student_id = request.query_params.get("student")
         if student_id:
@@ -125,9 +160,12 @@ class StudentInvoiceDetailAPIView(generics.RetrieveAPIView):
         school = _resolve_school(self.request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
-        return StudentInvoice.objects.filter(school=school, is_archived=False).select_related(
-            "student", "academic_year"
-        ).prefetch_related("items__fee_category")
+        queryset = StudentInvoice.objects.filter(
+            school=school, is_archived=False,
+        ).select_related("student", "academic_year").prefetch_related("items__fee_category")
+        return _scope_student_finance_read(
+            queryset, self.request, school, "student_fees.view_studentinvoice",
+        )
 
 
 class PaymentReceiptListCreateAPIView(APIView):
@@ -139,6 +177,9 @@ class PaymentReceiptListCreateAPIView(APIView):
             raise PermissionDenied("لم يتم تحديد المدرسة أو لا تملك صلاحية الوصول.")
         qs = PaymentReceipt.objects.filter(school=school, is_archived=False).select_related(
             "student", "invoice"
+        )
+        qs = _scope_student_finance_read(
+            qs, request, school, "student_fees.view_paymentreceipt",
         )
         student_id = request.query_params.get("student")
         if student_id:
@@ -195,7 +236,12 @@ class PaymentReceiptDetailAPIView(generics.RetrieveAPIView):
         school = _resolve_school(self.request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
-        return PaymentReceipt.objects.filter(school=school, is_archived=False).select_related("student", "invoice")
+        queryset = PaymentReceipt.objects.filter(
+            school=school, is_archived=False,
+        ).select_related("student", "invoice")
+        return _scope_student_finance_read(
+            queryset, self.request, school, "student_fees.view_paymentreceipt",
+        )
 
 
 class PaymentReceiptReverseAPIView(APIView):
