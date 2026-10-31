@@ -90,6 +90,7 @@ ADMIN_ROLES = {
     "academic-coordinator", "academic_coordinator",
     "student-affairs", "student_affairs",
 }
+FINANCE_ADMIN_ROLES = FINANCIAL_ROLES | ADMIN_ROLES
 ACADEMIC_ADMIN_ROLES = ADMIN_ROLES | {"academic-head", "academic_head", "exam-controller", "exam_controller"}
 READ_ROLES = ADMIN_ROLES | {
     "teacher", "guardian", "student", "hr-manager", "hr_manager",
@@ -1318,14 +1319,14 @@ class MyWeeklyTimetableAPIView(APIView):
 # ---------------------------------------------------------------------------
 class FiscalYearViewSet(TenantModelViewSet):
     serializer_class = FiscalYearSerializer
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
 
 
 class FiscalPeriodViewSet(TenantModelViewSet):
     serializer_class = FiscalPeriodSerializer
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("fiscal_year")
@@ -1335,8 +1336,8 @@ class FiscalPeriodViewSet(TenantModelViewSet):
 
 class AccountViewSet(TenantModelViewSet):
     serializer_class = AccountSerializer
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
 
     def get_queryset(self):
         qs = super().get_queryset().select_related("parent").order_by("code")
@@ -1348,26 +1349,26 @@ class AccountViewSet(TenantModelViewSet):
 
 class CostCenterViewSet(TenantModelViewSet):
     serializer_class = CostCenterSerializer
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
 
 
 class ExpenseCategoryViewSet(TenantModelViewSet):
     serializer_class = ExpenseCategorySerializer
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
 
 
 class JournalEntryViewSet(TenantModelViewSet):
     serializer_class = JournalEntrySerializer
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
     action_role_map = {
         "list": FINANCIAL_ROLES | ADMIN_ROLES,
         "retrieve": FINANCIAL_ROLES | ADMIN_ROLES,
-        "create": FINANCIAL_ROLES,
-        "post": FINANCIAL_ROLES,
-        "reverse": FINANCIAL_ROLES,
+        "create": FINANCE_ADMIN_ROLES,
+        "post": FINANCE_ADMIN_ROLES,
+        "reverse": FINANCE_ADMIN_ROLES,
     }
 
     def get_queryset(self):
@@ -1462,8 +1463,8 @@ class JournalEntryViewSet(TenantModelViewSet):
 
 
 class VoucherBaseViewSet(TenantModelViewSet):
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
 
     def perform_create(self, serializer):
         raise MethodNotAllowed(
@@ -1609,7 +1610,7 @@ class ReceiptVoucherViewSet(VoucherBaseViewSet):
 # ---------------------------------------------------------------------------
 class SupplierViewSet(TenantModelViewSet):
     serializer_class = SupplierSerializer
-    read_roles = INVENTORY_ROLES | FINANCIAL_ROLES | ADMIN_ROLES
+    read_roles = INVENTORY_ROLES | FINANCE_ADMIN_ROLES
     write_roles = INVENTORY_ROLES
 
 
@@ -1657,12 +1658,12 @@ class StockMovementViewSet(TenantModelViewSet):
 
 class PurchaseOrderViewSet(TenantModelViewSet):
     serializer_class = PurchaseOrderSerializer
-    read_roles = INVENTORY_ROLES | FINANCIAL_ROLES | ADMIN_ROLES
+    read_roles = INVENTORY_ROLES | FINANCE_ADMIN_ROLES
     write_roles = INVENTORY_ROLES
     action_role_map = {
-        "list": INVENTORY_ROLES | FINANCIAL_ROLES | ADMIN_ROLES,
-        "retrieve": INVENTORY_ROLES | FINANCIAL_ROLES | ADMIN_ROLES,
-        "approve": FINANCIAL_ROLES | ADMIN_ROLES,
+        "list": INVENTORY_ROLES | FINANCE_ADMIN_ROLES,
+        "retrieve": INVENTORY_ROLES | FINANCE_ADMIN_ROLES,
+        "approve": FINANCE_ADMIN_ROLES,
         "receive": INVENTORY_ROLES | ADMIN_ROLES,
     }
 
@@ -1719,7 +1720,7 @@ class PurchaseOrderViewSet(TenantModelViewSet):
 
 class PurchaseOrderItemViewSet(TenantModelViewSet):
     serializer_class = PurchaseOrderItemSerializer
-    read_roles = INVENTORY_ROLES | FINANCIAL_ROLES | ADMIN_ROLES
+    read_roles = INVENTORY_ROLES | FINANCE_ADMIN_ROLES
     write_roles = INVENTORY_ROLES
 
     def get_queryset(self):
@@ -1786,14 +1787,14 @@ class PurchaseOrderItemViewSet(TenantModelViewSet):
 
 class VendorInvoiceViewSet(TenantModelViewSet):
     serializer_class = VendorInvoiceSerializer
-    read_roles = INVENTORY_ROLES | FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = INVENTORY_ROLES | FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
     action_role_map = {
-        "list": INVENTORY_ROLES | FINANCIAL_ROLES | ADMIN_ROLES,
-        "retrieve": INVENTORY_ROLES | FINANCIAL_ROLES | ADMIN_ROLES,
-        "approve": FINANCIAL_ROLES,
-        "post": FINANCIAL_ROLES,
-        "record_payment": FINANCIAL_ROLES,
+        "list": INVENTORY_ROLES | FINANCE_ADMIN_ROLES,
+        "retrieve": INVENTORY_ROLES | FINANCE_ADMIN_ROLES,
+        "approve": FINANCE_ADMIN_ROLES,
+        "post": FINANCE_ADMIN_ROLES,
+        "record_payment": FINANCE_ADMIN_ROLES,
     }
 
     def get_queryset(self):
@@ -1990,14 +1991,14 @@ class VendorInvoiceViewSet(TenantModelViewSet):
 
 class AssetCategoryViewSet(TenantModelViewSet):
     serializer_class = AssetCategorySerializer
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
 
 
 class FixedAssetViewSet(TenantModelViewSet):
     serializer_class = FixedAssetSerializer
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
 
     def get_queryset(self):
         return super().get_queryset().select_related("category", "custodian").order_by("name")
@@ -2005,8 +2006,8 @@ class FixedAssetViewSet(TenantModelViewSet):
 
 class AssetDepreciationViewSet(TenantModelViewSet):
     serializer_class = AssetDepreciationSerializer
-    read_roles = FINANCIAL_ROLES | ADMIN_ROLES
-    write_roles = FINANCIAL_ROLES
+    read_roles = FINANCE_ADMIN_ROLES
+    write_roles = FINANCE_ADMIN_ROLES
 
     def get_queryset(self):
         return super().get_queryset().select_related("asset", "fiscal_year").order_by("-date")
