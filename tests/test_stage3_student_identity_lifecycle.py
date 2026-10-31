@@ -1,5 +1,6 @@
 from datetime import date
 
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
@@ -95,6 +96,20 @@ class StudentIdentityAndLifecycleTests(TestCase):
         user.phone_verified_at = timezone.now()
         user.save(update_fields=["phone_verified_at", "updated_at"])
         return user
+
+    def test_annual_enrollment_rejects_section_from_another_academic_year(self):
+        from apps.students.models import StudentEnrollment
+
+        invalid = StudentEnrollment(
+            school=self.school,
+            student=self.student,
+            academic_year=self.year2,
+            grade_level=self.grade2,
+            section=self.section1,
+            enrollment_date=date(2027, 9, 1),
+        )
+        with self.assertRaises(ValidationError):
+            invalid.save()
 
     def test_link_student_account_requires_verified_phone_and_is_unique_per_school(self):
         unverified = User.objects.create_user(
