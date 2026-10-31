@@ -641,3 +641,25 @@ class AttendanceSystemTests(TestCase):
         review_excuse_request(request, reviewed_by=self.owner_a, is_approved=False)
         with self.assertRaises(ValidationError):
             review_excuse_request(request, reviewed_by=self.owner_a, is_approved=True)
+
+    def test_guardian_without_pickup_permission_cannot_request_early_departure(self):
+        relation = StudentGuardianRelation.objects.get(
+            school=self.school_a,
+            student=self.student_1,
+            guardian=self.guardian,
+        )
+        relation.can_pickup = False
+        relation.save(update_fields=["can_pickup", "updated_at"])
+
+        with self.assertRaises(ValidationError):
+            create_early_departure_request(
+                school=self.school_a,
+                student=self.student_1,
+                guardian=self.guardian,
+                date=datetime.date(2026, 9, 29),
+                departure_time=datetime.time(11, 0),
+                reason="موعد طبي",
+                recipient_name="شخص مستلم",
+                recipient_phone="+967771234567",
+                recipient_relationship="قريب",
+            )
