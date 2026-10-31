@@ -821,7 +821,9 @@ class GradeBookViewSet(TenantModelViewSet):
             data["academic_term"].academic_year
             if data.get("academic_term") else data["student"].academic_year
         )
-        if teacher and not is_admin(self.request.user, school):
+        if not is_admin(self.request.user, school):
+            if teacher is None:
+                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
             assignment = TeacherAssignment.objects.filter(
                 school=school, teacher=teacher, subject=data["subject"],
                 section=data["student"].section, academic_year=academic_year,
@@ -860,7 +862,9 @@ class QuestionBankViewSet(TenantModelViewSet):
         school = self.get_school()
         teacher = user_teacher_profiles(self.request.user, school).first()
         data = serializer.validated_data
-        if teacher and not is_admin(self.request.user, school):
+        if not is_admin(self.request.user, school):
+            if teacher is None:
+                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
             assignments = TeacherAssignment.objects.filter(
                 school=school, teacher=teacher, subject=data["subject"],
                 is_archived=False,
@@ -934,7 +938,9 @@ class OnlineExamViewSet(TenantModelViewSet):
         question_total = sum((q.default_marks for q in questions), Decimal("0.00"))
         if question_total > data["total_marks"]:
             raise ValidationError({"questions": "مجموع درجات الأسئلة يتجاوز الدرجة العظمى للاختبار."})
-        if teacher and not is_admin(self.request.user, school):
+        if not is_admin(self.request.user, school):
+            if teacher is None:
+                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
             assignments = TeacherAssignment.objects.filter(
                 school=school, teacher=teacher, subject=data["subject"],
                 academic_year=academic_year, is_archived=False,
@@ -1029,7 +1035,9 @@ class OnlineExamViewSet(TenantModelViewSet):
                 exam.end_time,
                 submission.started_at + timedelta(minutes=exam.duration_minutes),
             )
-            submission.submitted_at = min(now, deadline)
+            if now > deadline:
+                raise ValidationError("انتهت مهلة الاختبار؛ لا يمكن قبول الإجابات بعد الوقت المحدد.")
+            submission.submitted_at = now
             submission.answers_json = answers
             submission.status = StudentOnlineExamSubmission.Status.SUBMITTED
             submission.auto_score = Decimal("0.00")
