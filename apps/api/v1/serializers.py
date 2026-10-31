@@ -544,6 +544,23 @@ class JournalEntryCreateSerializer(serializers.Serializer):
         return lines
 
 
+class JournalEntryUpdateSerializer(serializers.Serializer):
+    fiscal_period_id = serializers.UUIDField(required=False)
+    date = serializers.DateField(required=False)
+    description = serializers.CharField(required=False)
+    lines = serializers.ListField(
+        child=serializers.DictField(), min_length=2, required=False,
+    )
+
+    def validate_lines(self, lines):
+        return JournalEntryCreateSerializer().validate_lines(lines)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("أرسل حقلاً واحداً على الأقل لتعديل القيد.")
+        return attrs
+
+
 class PaymentVoucherSerializer(TenantModelSerializer):
     class Meta(TenantModelSerializer.Meta):
         model = PaymentVoucher
