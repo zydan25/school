@@ -89,16 +89,26 @@ class StudentSafeDetailSerializer(StudentSafeListSerializer):
         read_only_fields = fields
 
 
-class StudentAdminSafeDetailSerializer(StudentSafeListSerializer):
-    national_id = serializers.CharField(read_only=True)
-    birth_date = serializers.DateField(read_only=True, allow_null=True)
+class StudentAdminSafeDetailSerializer(serializers.ModelSerializer):
+    grade_level_name = serializers.CharField(source="grade_level.name", read_only=True)
+    section_name = serializers.CharField(source="section.name", read_only=True)
+    academic_year_name = serializers.CharField(source="academic_year.name", read_only=True)
+    full_name = serializers.CharField(source="get_full_name", read_only=True)
     enrollment_history = StudentEnrollmentSerializer(many=True, read_only=True)
 
-    class Meta(StudentSafeListSerializer.Meta):
-        fields = StudentSafeListSerializer.Meta.fields + [
-            "national_id", "birth_date", "enrollment_history",
+    class Meta:
+        model = Student
+        fields = [
+            "id", "student_id_number", "full_name", "first_name",
+            "middle_name", "last_name", "gender", "national_id",
+            "birth_date", "grade_level", "grade_level_name", "section",
+            "section_name", "academic_year", "academic_year_name",
+            "status", "enrollment_date", "enrollment_history",
         ]
-        read_only_fields = fields
+        read_only_fields = [
+            "id", "full_name", "grade_level_name", "section_name",
+            "academic_year_name", "status", "enrollment_history",
+        ]
 
 
 class StudentDetailSerializer(StudentListSerializer):
