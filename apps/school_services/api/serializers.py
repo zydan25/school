@@ -89,6 +89,26 @@ class StudentBusSubscriptionSerializer(SchoolServiceSerializer):
         fields = "__all__"
         read_only_fields = SchoolServiceSerializer.Meta.read_only_fields
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        school = self.context.get("school")
+        student = attrs.get("student", getattr(self.instance, "student", None))
+        year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
+        if school and student and year:
+            existing = StudentBusSubscription.objects.filter(
+                school=school,
+                student=student,
+                academic_year=year,
+                is_archived=False,
+            )
+            if self.instance:
+                existing = existing.exclude(pk=self.instance.pk)
+            if existing.exists():
+                raise serializers.ValidationError(
+                    "يوجد اشتراك نقل مسجل لهذا الطالب في العام الدراسي المحدد."
+                )
+        return attrs
+
 
 class LibraryBookSerializer(SchoolServiceSerializer):
     total_copies = serializers.IntegerField(min_value=1)

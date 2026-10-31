@@ -91,6 +91,13 @@ def school_for(request):
 
 class SchoolServiceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
+
+    def save_serializer(self, serializer, **kwargs):
+        try:
+            return serializer.save(**kwargs)
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or exc.messages
+            raise ValidationError(detail) from exc
     read_roles = ADMIN_ROLES
     write_roles = ADMIN_ROLES
     action_role_map = {}
@@ -217,7 +224,7 @@ class StudentBusSubscriptionViewSet(SchoolServiceViewSet):
             )
             if status_value == StudentBusSubscription.Status.ACTIVE:
                 self._check_route_capacity(route)
-            serializer.save(school=self.get_school())
+            self.save_serializer(serializer, school=self.get_school())
 
     def perform_update(self, serializer):
         with transaction.atomic():
@@ -281,7 +288,7 @@ class BookLoanViewSet(SchoolServiceViewSet):
         return personal.distinct().order_by("-borrow_date")
 
     def perform_create(self, serializer):
-        super().perform_create(serializer)
+        self.save_serializer(serializer, school=self.get_school())
 
     @action(detail=True, methods=["post"], url_path="return")
     def return_copy(self, request, pk=None):
@@ -436,8 +443,37 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
         return queryset.filter(requested_by=self.request.user).order_by("-created_at")
 
     def perform_create(self, serializer):
-        serializer.save(
-            school=self.get_school(),
+        school = self.get_school()
+        if (
+            has_school_roles(self.request.user, school, TEACHER_ROLES)
+            and not has_school_roles(self.request.user, school, ACADEMIC_ROLES)
+        ):
+            teacher = Teacher.objects.filter(
+                school=school, user=self.request.user, is_archived=False
+            ).first()
+            if teacher is None:
+                raise PermissionDenied("لا يوجد ملف معلم مرتبط بحسابك في هذه المدرسة.")
+            year = serializer.validated_data["academic_year"]
+            section = serializer.validated_data.get("section")
+            grade = serializer.validated_data.get("grade_level")
+            assignments = teacher.assignments.filter(
+                school=school, academic_year=year, is_archived=False
+            )
+            if section is not None:
+                assignments = assignments.filter(section=section)
+            elif grade is not None:
+                assignments = assignments.filter(section__grade=grade)
+            else:
+                raise PermissionDenied(
+                    "حدد الصف أو الشعبة التي لديك إسناد تدريسي فيها عند إنشاء أمر الصرف."
+                )
+            if not assignments.exists():
+                raise PermissionDenied(
+                    "لا يمكنك إنشاء أمر صرف لصف أو شعبة غير مسندة إليك."
+                )
+        self.save_serializer(
+            serializer,
+            school=school,
             requested_by=self.request.user,
             status=BookRequisitionOrder.Status.DRAFT,
             order_number=f"REQ-{timezone.localdate():%Y%m%d}-{uuid.uuid4().hex[:8].upper()}",
