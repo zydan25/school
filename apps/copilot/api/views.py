@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from apps.accounts.api_permissions import has_school_roles, resolve_active_school
 from apps.academics.models import GradeLevel, Subject
 from apps.staff.models import Teacher, TeacherAssignment
+from apps.tenants.models import School
 
 from apps.copilot.api.serializers import (
     EssayGradingRequestSerializer,
@@ -37,8 +38,35 @@ STUDENT_ADMIN_ROLES = AI_TEACHER_ADMIN_ROLES
 
 def _resolve_school(request):
     school = resolve_active_school(request)
+    if school is not None:
+        return school
+    if getattr(request, "school_context_error", None):
+        raise PermissionDenied("اختيار المدرسة غير صالح أو لا تملك عضوية سارية فيها.")
+
+    # Student and guardian app accounts can be verified through their explicit
+    # school-owned profile links even when no staff-style membership exists.
+    school_ids = set(Student.objects.filter(
+        user=request.user, is_archived=False,
+        school__status=School.Status.ACTIVE, school__is_archived=False,
+    ).values_list("school_id", flat=True))
+    school_ids.update(Guardian.objects.filter(
+        user=request.user, is_archived=False,
+        school__status=School.Status.ACTIVE, school__is_archived=False,
+    ).values_list("school_id", flat=True))
+    linked_schools = School.objects.filter(
+        pk__in=school_ids, status=School.Status.ACTIVE, is_archived=False,
+    )
+
+    requested_id = request.headers.get("X-School-ID") or request.query_params.get("school_id")
+    requested_code = request.headers.get("X-School-Code") or request.query_params.get("school_code")
+    if requested_id:
+        school = linked_schools.filter(pk=requested_id).first()
+    elif requested_code:
+        school = linked_schools.filter(code=requested_code.strip().upper()).first()
+    else:
+        school = linked_schools.first() if linked_schools.count() == 1 else None
     if school is None:
-        raise PermissionDenied("حدد المدرسة النشطة وتأكد من أن عضويتك سارية.")
+        raise PermissionDenied("حدد مدرسة مرتبطة بملفك النشط.")
     return school
 
 
@@ -65,21 +93,20 @@ def _resolve_authorized_student(request) -> Student | None:
         requested_student_id = request.data.get("student_id")
 
     # Student self-service: the profile must belong to this account and school.
-    if has_school_roles(request.user, school, {"student"}):
-        own_students = Student.objects.filter(
+    own_students = Student.objects.filter(
             user=request.user, school=school, is_archived=False,
         ).select_related("school", "grade_level", "section")
-        if requested_student_id:
-            return own_students.filter(pk=requested_student_id).first()
+    if requested_student_id:
+        matched_student = own_students.filter(pk=requested_student_id).first()
+        return matched_student
+    if own_students.exists():
         return own_students.first()
 
     # Guardian access is limited to children explicitly linked in this school.
-    if has_school_roles(request.user, school, {"guardian"}):
-        guardian = Guardian.objects.filter(
+    guardian = Guardian.objects.filter(
             user=request.user, school=school, is_archived=False,
         ).first()
-        if guardian is None:
-            return None
+    if guardian is not None:
         children = guardian.children.filter(
             school=school, is_archived=False,
         ).select_related("school", "grade_level", "section")
