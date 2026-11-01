@@ -38,6 +38,17 @@ class AssessmentType(TenantOwnedModel):
             raise ValidationError({"weight_percentage": "وزن التقييم يجب أن يكون بين 0 و100 بالمئة."})
         if self.default_max_score <= 0:
             raise ValidationError({"default_max_score": "الدرجة العظمى الافتراضية يجب أن تكون أكبر من صفر."})
+        if self.school_id:
+            existing_weight = sum(
+                AssessmentType.objects.filter(
+                    school_id=self.school_id, is_archived=False,
+                ).exclude(pk=self.pk).values_list("weight_percentage", flat=True),
+                Decimal("0.00"),
+            )
+            if existing_weight + self.weight_percentage > Decimal("100.00"):
+                raise ValidationError({
+                    "weight_percentage": "مجموع أوزان أنواع التقييم النشطة لا يمكن أن يتجاوز 100 بالمئة."
+                })
 
 
 class GradeBook(TenantOwnedModel):
@@ -137,6 +148,8 @@ class GradeBook(TenantOwnedModel):
 
     def clean(self):
         super().clean()
+        if self.max_score is not None and self.max_score <= 0:
+            raise ValidationError({"max_score": "الدرجة العظمى يجب أن تكون أكبر من صفر."})
         if self.score is not None and self.max_score is not None and self.score > self.max_score:
             raise ValidationError({"score": "الدرجة المحصلة لا يمكن أن تتجاوز الدرجة العظمى."})
         if self.student_id and self.student.school_id != self.school_id:
@@ -367,6 +380,28 @@ class QuestionBank(TenantOwnedModel):
     def __str__(self) -> str:
         return f"[{self.subject.name} - {self.unit_name}] {self.question_text[:50]}... ({self.get_question_type_display()})"
 
+    def clean(self):
+        super().clean()
+        if self.default_marks <= 0:
+            raise ValidationError({"default_marks": "درجة السؤال يجب أن تكون أكبر من صفر."})
+        if self.subject_id and self.subject.school_id != self.school_id:
+            raise ValidationError({"subject": "المادة لا تتبع المدرسة نفسها."})
+        if self.grade_level_id and self.grade_level.school_id != self.school_id:
+            raise ValidationError({"grade_level": "الصف لا يتبع المدرسة نفسها."})
+        if self.question_type == self.QuestionType.MCQ:
+            option_ids = {
+                str(item.get("id", "")).strip()
+                for item in self.options_json
+                if isinstance(item, dict) and item.get("id") is not None
+            }
+            if len(option_ids) < 2:
+                raise ValidationError({"options_json": "سؤال الاختيار من متعدد يحتاج خيارين صالحين على الأقل."})
+            if str(self.correct_answer).strip() not in option_ids:
+                raise ValidationError({"correct_answer": "الإجابة الصحيحة يجب أن تطابق رمز أحد الخيارات."})
+        elif self.question_type == self.QuestionType.TRUE_FALSE:
+            if str(self.correct_answer).strip().lower() not in {"true", "false", "صح", "خطأ"}:
+                raise ValidationError({"correct_answer": "إجابة الصح والخطأ يجب أن تكون صح أو خطأ."})
+
 
 class OnlineExam(TenantOwnedModel):
     """قوالب الاختبارات الشهرية والنصفيّة وإجراء الامتحانات عن بعد."""
@@ -462,6 +497,9 @@ class OnlineExam(TenantOwnedModel):
                 raise ValidationError({"section": "الشعبة لا تتبع الصف المحدد للاختبار."})
             if self.section.academic_year_id != self.academic_term.academic_year_id:
                 raise ValidationError({"section": "الشعبة لا تتبع السنة الدراسية للفصل المحدد."})
+        if self.student_id and self.exam_id:
+            if self.exam.branch_id and self.student.branch_id and self.exam.branch_id != self.student.branch_id:
+                raise ValidationError({"student": "الطالب يتبع فرعاً مختلفاً عن الاختبار."})
 
 
 class StudentOnlineExamSubmission(TenantOwnedModel):
