@@ -56,7 +56,7 @@ def create_treasury_transfer(
             and existing.destination_account_id == destination_account.pk
             and existing.amount == amount
             and existing.transfer_number == transfer_number
-            and existing.transfer_date == (transfer_date or timezone.localdate())
+            and (transfer_date is None or existing.transfer_date == transfer_date)
         )
         if not same_data:
             raise ValidationError("مفتاح منع التكرار مستخدم لتحويل ببيانات مختلفة.")
@@ -165,18 +165,33 @@ def reverse_treasury_transfer(
     return locked
 
 
-@transaction.atomic
 def complete_bank_reconciliation(
     reconciliation: BankReconciliation,
     *,
     reconciled_by,
 ) -> BankReconciliation:
-    """مطابقة كشف البنك، وتفسير الفروقات بحركات دفتر غير ظاهرة في الكشف."""
+    """مطابقة كشف البنك مع حفظ فروقات المحاولة الفاشلة لأغراض المراجعة."""
+    result, error = _complete_bank_reconciliation(
+        reconciliation,
+        reconciled_by=reconciled_by,
+    )
+    if error:
+        raise ValidationError(error)
+    return result
+
+
+@transaction.atomic
+def _complete_bank_reconciliation(
+    reconciliation: BankReconciliation,
+    *,
+    reconciled_by,
+) -> tuple[BankReconciliation, str | None]:
+    """الجزء الذري: احسب واحفظ نتائج المطابقة قبل إبلاغ المستدعي بالفرق."""
     locked = BankReconciliation.objects.select_for_update().select_related(
         "treasury_account__account",
     ).get(pk=reconciliation.pk)
     if locked.status == BankReconciliation.Status.RECONCILED:
-        return locked
+        return locked, None
 
     lines = list(
         BankStatementLine.objects.select_for_update().filter(
@@ -242,7 +257,7 @@ def complete_bank_reconciliation(
             "book_opening_balance", "book_closing_balance",
             "outstanding_ledger_amount", "difference", "updated_at",
         ])
-        raise ValidationError(
+        return locked, (
             f"كشف البنك غير مطابق لدفتر الأستاذ. الفرق المتبقي: {difference}."
         )
 
@@ -254,4 +269,4 @@ def complete_bank_reconciliation(
         "outstanding_ledger_amount", "difference",
         "status", "reconciled_at", "reconciled_by", "updated_at",
     ])
-    return locked
+    return locked, None
