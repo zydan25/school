@@ -52,8 +52,9 @@ jobs:
             apps/accounting/services/financial_reports.py \
             apps/accounting/services/period_closing.py \
             apps/accounting/services/treasury.py \
-            apps/accounting/migrations/0002_stage8_fiscal_controls.py \
-            apps/accounting/migrations/0003_stage8_treasury.py \
+            apps/accounting/migrations/0004_stage8_fiscal_controls.py \
+            apps/accounting/migrations/0005_stage8_treasury.py \
+            apps/accounting/migrations/0006_stage8_voucher_idempotency.py \
             apps/reports/views.py \
             apps/reports/urls.py \
             apps/payroll/services.py \
