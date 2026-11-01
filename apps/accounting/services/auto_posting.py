@@ -443,6 +443,9 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
         raise ValueError("حسابات سند الصرف لا تنتمي إلى نفس مدرسة السند.")
 
     period = _get_active_fiscal_period(school, voucher.date)
+    debit_branch = voucher.branch_id or voucher.debit_account.branch_id or (voucher.cost_center.branch_id if voucher.cost_center_id else None)
+    credit_branch = voucher.branch_id or voucher.credit_account.branch_id
+    entry_branch_id = debit_branch if debit_branch == credit_branch else None
 
     with transaction.atomic():
         existing = JournalEntry.objects.filter(
@@ -461,6 +464,7 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
         entry_number = f"JV-PAY-{voucher.voucher_number}"
         entry = JournalEntry.objects.create(
             school=school,
+            branch_id=entry_branch_id,
             fiscal_period=period,
             entry_number=entry_number,
             date=voucher.date,
@@ -472,6 +476,7 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
 
         JournalEntryLine.objects.create(
             school=school,
+            branch_id=debit_branch,
             journal_entry=entry,
             account=voucher.debit_account,
             cost_center=voucher.cost_center,
@@ -482,6 +487,7 @@ def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
 
         JournalEntryLine.objects.create(
             school=school,
+            branch_id=credit_branch,
             journal_entry=entry,
             account=voucher.credit_account,
             description=f"خروج نقدية لصالح {voucher.paid_to}",
@@ -513,6 +519,9 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
         raise ValueError("حسابات سند القبض لا تنتمي إلى نفس مدرسة السند.")
 
     period = _get_active_fiscal_period(school, voucher.date)
+    debit_branch = voucher.branch_id or voucher.debit_account.branch_id
+    credit_branch = voucher.branch_id or voucher.credit_account.branch_id or (voucher.cost_center.branch_id if voucher.cost_center_id else None)
+    entry_branch_id = debit_branch if debit_branch == credit_branch else None
 
     with transaction.atomic():
         existing = JournalEntry.objects.filter(
@@ -531,6 +540,7 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
         entry_number = f"JV-REC-GEN-{voucher.voucher_number}"
         entry = JournalEntry.objects.create(
             school=school,
+            branch_id=entry_branch_id,
             fiscal_period=period,
             entry_number=entry_number,
             date=voucher.date,
@@ -542,6 +552,7 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
 
         JournalEntryLine.objects.create(
             school=school,
+            branch_id=debit_branch,
             journal_entry=entry,
             account=voucher.debit_account,
             description=f"قبض نقدية من {voucher.received_from}",
@@ -551,6 +562,7 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
 
         JournalEntryLine.objects.create(
             school=school,
+            branch_id=credit_branch,
             journal_entry=entry,
             account=voucher.credit_account,
             cost_center=voucher.cost_center,
@@ -592,8 +604,10 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
         depreciation_expense = _get_account_or_seed(school, "5209", "مصروف إهلاك الأصول")
         accumulated_depreciation = _get_account_or_seed(school, "1209", "مجمع إهلاك الأصول المتراكم")
 
+        asset_branch_id = entry.branch_id or entry.asset.branch_id
         journal_entry = JournalEntry.objects.create(
             school=school,
+            branch_id=asset_branch_id,
             fiscal_period=period,
             entry_number=f"JV-DEP-{entry.asset.code}-{entry.fiscal_year.name}",
             date=entry.date,
@@ -605,6 +619,7 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
 
         JournalEntryLine.objects.create(
             school=school,
+            branch_id=asset_branch_id,
             journal_entry=journal_entry,
             account=depreciation_expense,
             description=f"مصروف إهلاك أصل [{entry.asset.code}] {entry.asset.name}",
@@ -614,6 +629,7 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
 
         JournalEntryLine.objects.create(
             school=school,
+            branch_id=asset_branch_id,
             journal_entry=journal_entry,
             account=accumulated_depreciation,
             description=f"مجمع إهلاك الأصل [{entry.asset.code}]",
@@ -802,6 +818,7 @@ def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
         entry_number = f"JV-VINV-{vendor_invoice.invoice_number}"
         entry = JournalEntry.objects.create(
             school=school,
+            branch=vendor_invoice.branch,
             fiscal_period=period,
             entry_number=entry_number,
             date=post_date,
@@ -813,6 +830,7 @@ def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
 
         JournalEntryLine.objects.create(
             school=school,
+            branch=vendor_invoice.branch,
             journal_entry=entry,
             account=debit_acc,
             description=f"إثبات بضاعة / مخزون مورد: {vendor_invoice.supplier.name}",
@@ -822,6 +840,7 @@ def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
 
         JournalEntryLine.objects.create(
             school=school,
+            branch=vendor_invoice.branch,
             journal_entry=entry,
             account=credit_acc,
             description=f"استحقاق ذمة المورد: {vendor_invoice.supplier.name} - فاتورة #{vendor_invoice.invoice_number}",
