@@ -1094,14 +1094,23 @@ class GradeBookViewSet(TenantModelViewSet):
     action_role_map = {
         "list": ADMIN_ROLES | {"teacher", "student", "guardian"},
         "retrieve": ADMIN_ROLES | {"teacher", "student", "guardian"},
+        "create": TEACHER_ROLES,
+        "update": TEACHER_ROLES,
+        "partial_update": TEACHER_ROLES,
+        "submit_for_approval": TEACHER_ROLES,
+        "approve": ACADEMIC_ADMIN_ROLES,
         "publish": ACADEMIC_ADMIN_ROLES,
+        "reopen": ACADEMIC_ADMIN_ROLES,
     }
 
     def get_queryset(self):
         school = self.get_school()
         qs = GradeBook.objects.filter(
             school=school, is_archived=False,
-        ).select_related("student", "subject", "academic_term", "assessment_type", "graded_by")
+        ).select_related(
+            "student", "subject", "academic_term", "assessment_type", "graded_by",
+            "submitted_by", "approved_by", "published_by",
+        )
         if not is_admin(self.request.user, school):
             allowed = Q(pk__in=[])
             if has_school_roles(self.request.user, school, {"student"}):
@@ -1137,34 +1146,190 @@ class GradeBookViewSet(TenantModelViewSet):
             qs = qs.filter(academic_term_id=term_id)
         if student_id and is_admin(self.request.user, school):
             qs = qs.filter(student_id=student_id)
+        status_filter = self.request.query_params.get("workflow_status")
+        if status_filter and is_admin(self.request.user, school):
+            qs = qs.filter(workflow_status=status_filter)
         return qs.order_by("-graded_at")
+
+    def _assigned_teacher(self, student, subject, academic_year, school):
+        teacher = user_teacher_profiles(
+            self.request.user, school,
+        ).filter(is_active_teaching=True).first()
+        if not is_admin(self.request.user, school):
+            if teacher is None:
+                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
+            assigned = TeacherAssignment.objects.filter(
+                school=school, teacher=teacher, subject=subject,
+                section=student.section, academic_year=academic_year,
+                is_archived=False,
+            ).exists()
+            if not assigned:
+                raise PermissionDenied("المادة أو شعبة الطالب غير مسندة إليك.")
+        return teacher
 
     def perform_create(self, serializer):
         school = self.get_school()
-        teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
         data = serializer.validated_data
         academic_year = (
             data["academic_term"].academic_year
             if data.get("academic_term") else data["student"].academic_year
         )
-        if not is_admin(self.request.user, school):
-            if teacher is None:
-                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
-            assignment = TeacherAssignment.objects.filter(
-                school=school, teacher=teacher, subject=data["subject"],
-                section=data["student"].section, academic_year=academic_year,
-                is_archived=False,
-            ).exists()
-            if not assignment:
-                raise PermissionDenied("المادة أو شعبة الطالب غير مسندة إليك.")
-        serializer.save(school=school, graded_by=teacher, graded_at=timezone.now())
+        teacher = self._assigned_teacher(
+            data["student"], data["subject"], academic_year, school,
+        )
+        serializer.save(
+            school=school, graded_by=teacher, graded_at=timezone.now(),
+            workflow_status=GradeBook.WorkflowStatus.DRAFT,
+            is_published=False,
+        )
+
+    def perform_update(self, serializer):
+        entry = serializer.instance
+        if entry.workflow_status != GradeBook.WorkflowStatus.DRAFT or entry.is_published:
+            raise ValidationError(
+                "لا يمكن تعديل درجة مرسلة أو معتمدة أو منشورة مباشرة؛ اطلب إعادة فتحها أولاً."
+            )
+        data = serializer.validated_data
+        student = data.get("student", entry.student)
+        subject = data.get("subject", entry.subject)
+        term = data.get("academic_term", entry.academic_term)
+        academic_year = term.academic_year if term else student.academic_year
+        teacher = self._assigned_teacher(student, subject, academic_year, self.get_school())
+        serializer.save(graded_by=teacher, graded_at=timezone.now())
+        record_event(
+            action="gradebook.draft_updated",
+            description="تم تعديل درجة ما زالت في حالة المسودة.",
+            actor=self.request.user, school=self.get_school(), obj=entry,
+            metadata={"student_id": str(student.pk), "subject_id": str(subject.pk)},
+            request=self.request,
+        )
+
+    @action(detail=True, methods=["post"], url_path="submit-for-approval")
+    def submit_for_approval(self, request, pk=None):
+        entry = self.get_object()
+        if not is_admin(request.user, self.get_school()):
+            teacher = user_teacher_profiles(request.user, self.get_school()).filter(
+                is_active_teaching=True,
+            ).first()
+            if not teacher or entry.graded_by_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك إرسال درجة لم تُرصد بواسطة حسابك.")
+        if entry.workflow_status != GradeBook.WorkflowStatus.DRAFT:
+            raise ValidationError("لا يمكن إرسال الدرجة للمراجعة إلا من حالة المسودة.")
+        entry.workflow_status = GradeBook.WorkflowStatus.SUBMITTED
+        entry.submitted_by = request.user
+        entry.submitted_at = timezone.now()
+        entry.approved_by = None
+        entry.approved_at = None
+        entry.published_by = None
+        entry.published_at = None
+        entry.is_published = False
+        entry.save(update_fields=[
+            "workflow_status", "submitted_by", "submitted_at", "approved_by",
+            "approved_at", "published_by", "published_at", "is_published",
+            "updated_at",
+        ])
+        record_event(
+            action="gradebook.submitted_for_approval",
+            description="أرسلت الدرجة للمراجعة والاعتماد.",
+            actor=request.user, school=self.get_school(), obj=entry, request=request,
+        )
+        return Response(self.get_serializer(entry).data)
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None):
+        entry = self.get_object()
+        if entry.workflow_status != GradeBook.WorkflowStatus.SUBMITTED:
+            raise ValidationError("لا يعتمد إلا سجل أرسل للمراجعة.")
+        entry.workflow_status = GradeBook.WorkflowStatus.APPROVED
+        entry.approved_by = request.user
+        entry.approved_at = timezone.now()
+        entry.save(update_fields=[
+            "workflow_status", "approved_by", "approved_at", "updated_at",
+        ])
+        record_event(
+            action="gradebook.approved",
+            description="تم اعتماد الدرجة قبل نشرها.",
+            actor=request.user, school=self.get_school(), obj=entry, request=request,
+        )
+        return Response(self.get_serializer(entry).data)
 
     @action(detail=True, methods=["post"], url_path="publish")
     def publish(self, request, pk=None):
         entry = self.get_object()
-        entry.is_published = bool(request.data.get("is_published", True))
-        entry.save(update_fields=["is_published", "updated_at"])
-        return Response({"id": str(entry.pk), "is_published": entry.is_published})
+        publish = request.data.get("is_published", True)
+        if not isinstance(publish, bool):
+            raise ValidationError({"is_published": "أرسل قيمة منطقية true أو false."})
+        if publish:
+            if entry.workflow_status == GradeBook.WorkflowStatus.PUBLISHED and entry.is_published:
+                return Response({"id": str(entry.pk), "is_published": True})
+            if entry.workflow_status != GradeBook.WorkflowStatus.APPROVED:
+                raise ValidationError("يجب اعتماد الدرجة قبل نشرها.")
+            entry.workflow_status = GradeBook.WorkflowStatus.PUBLISHED
+            entry.is_published = True
+            entry.published_by = request.user
+            entry.published_at = timezone.now()
+            action_name = "gradebook.published"
+            description = "تم نشر الدرجة بعد اعتمادها."
+            metadata = {}
+        else:
+            reason = str(request.data.get("reason", "")).strip()
+            if not reason:
+                raise ValidationError({"reason": "سبب إخفاء الدرجة مطلوب للتدقيق."})
+            if entry.workflow_status != GradeBook.WorkflowStatus.PUBLISHED or not entry.is_published:
+                raise ValidationError("الدرجة ليست منشورة حالياً.")
+            entry.workflow_status = GradeBook.WorkflowStatus.APPROVED
+            entry.is_published = False
+            entry.published_by = None
+            entry.published_at = None
+            action_name = "gradebook.unpublished"
+            description = "تم إخفاء الدرجة المنشورة."
+            metadata = {"reason": reason[:500]}
+        entry.save(update_fields=[
+            "workflow_status", "is_published", "published_by",
+            "published_at", "updated_at",
+        ])
+        record_event(
+            action=action_name, description=description,
+            actor=request.user, school=self.get_school(), obj=entry,
+            metadata=metadata, request=request,
+        )
+        return Response({
+            "id": str(entry.pk), "workflow_status": entry.workflow_status,
+            "is_published": entry.is_published,
+        })
+
+    @action(detail=True, methods=["post"], url_path="reopen")
+    def reopen(self, request, pk=None):
+        entry = self.get_object()
+        reason = str(request.data.get("reason", "")).strip()
+        if not reason:
+            raise ValidationError({"reason": "سبب إعادة فتح الدرجة مطلوب."})
+        if entry.workflow_status not in {
+            GradeBook.WorkflowStatus.APPROVED,
+            GradeBook.WorkflowStatus.PUBLISHED,
+        }:
+            raise ValidationError("يمكن إعادة فتح الدرجة المعتمدة أو المنشورة فقط.")
+        entry.workflow_status = GradeBook.WorkflowStatus.DRAFT
+        entry.is_published = False
+        entry.revision_reason = reason[:500]
+        entry.submitted_by = None
+        entry.submitted_at = None
+        entry.approved_by = None
+        entry.approved_at = None
+        entry.published_by = None
+        entry.published_at = None
+        entry.save(update_fields=[
+            "workflow_status", "is_published", "revision_reason",
+            "submitted_by", "submitted_at", "approved_by", "approved_at",
+            "published_by", "published_at", "updated_at",
+        ])
+        record_event(
+            action="gradebook.reopened",
+            description="أعيد فتح درجة سبق اعتمادها أو نشرها للتصحيح.",
+            actor=request.user, school=self.get_school(), obj=entry,
+            metadata={"reason": reason[:500]}, request=request,
+        )
+        return Response(self.get_serializer(entry).data)
 
 
 class QuestionBankViewSet(TenantModelViewSet):
