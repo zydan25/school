@@ -61,6 +61,11 @@ def create_treasury_transfer(
         if not same_data:
             raise ValidationError("مفتاح منع التكرار مستخدم لتحويل ببيانات مختلفة.")
         if existing.status == TreasuryTransfer.Status.POSTED:
+            if (
+                not existing.journal_entry_id
+                or existing.journal_entry.status != JournalEntry.Status.POSTED
+            ):
+                raise ValidationError("التحويل معلّم كمرحل دون قيد أستاذ مرحّل مرتبط.")
             return existing
         if existing.status == TreasuryTransfer.Status.REVERSED:
             raise ValidationError("تم عكس التحويل السابق ولا يمكن إعادة استخدام مفتاحه.")
@@ -96,7 +101,16 @@ def create_treasury_transfer(
     if transfer.journal_entry_id:
         if transfer.journal_entry.status == JournalEntry.Status.POSTED:
             transfer.status = TreasuryTransfer.Status.POSTED
-            transfer.save(update_fields=["status", "updated_at"])
+            updated = models.QuerySet.update(
+                TreasuryTransfer.objects.filter(
+                    pk=transfer.pk,
+                    status=TreasuryTransfer.Status.DRAFT,
+                ),
+                status=TreasuryTransfer.Status.POSTED,
+                updated_at=timezone.now(),
+            )
+            if updated != 1:
+                raise ValidationError("تعذر استكمال ترحيل التحويل بسبب تغير حالته بالتزامن.")
             return transfer
         raise ValidationError("يوجد قيد تحويل سابق غير مرحل؛ يجب مراجعته قبل المتابعة.")
 
@@ -136,7 +150,19 @@ def create_treasury_transfer(
     entry.post(user=user)
     transfer.journal_entry = entry
     transfer.status = TreasuryTransfer.Status.POSTED
-    transfer.save(update_fields=["journal_entry", "status", "updated_at"])
+    updated_at = timezone.now()
+    updated = models.QuerySet.update(
+        TreasuryTransfer.objects.filter(
+            pk=transfer.pk,
+            status=TreasuryTransfer.Status.DRAFT,
+        ),
+        journal_entry=entry,
+        status=TreasuryTransfer.Status.POSTED,
+        updated_at=updated_at,
+    )
+    if updated != 1:
+        raise ValidationError("تعذر ترحيل التحويل بسبب تغير حالته بالتزامن؛ أعد المحاولة.")
+    transfer.updated_at = updated_at
     return transfer
 
 
