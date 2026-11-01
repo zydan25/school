@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from apps.academics.models import AcademicTerm
 from apps.attendance.models import (
+    AttendancePolicy,
     AttendanceAuditLog,
     AttendanceExcuseRequest,
     AttendanceRegister,
@@ -34,125 +35,82 @@ def get_or_create_register(
     user=None,
     bypass_calendar_check: bool = False,
 ) -> tuple[AttendanceRegister, bool]:
-    """فتح أو جلب سجل الحضور المعتمد مع تهيئة سجلات الطلاب وربط الأعذار المسبقة."""
+    """فتح سجل الحضور بعد التحقق من نطاق الفرع والتقويم والجدول الفعلي."""
     if section.school_id != school.pk or academic_year.school_id != school.pk:
         raise ValidationError("الشعبة والسنة الدراسية يجب أن تتبعا المدرسة المحددة.")
     if section.academic_year_id != academic_year.pk:
         raise ValidationError("الشعبة لا تنتمي إلى السنة الدراسية المحددة.")
     if date < academic_year.starts_on or date > academic_year.ends_on:
         raise ValidationError("تاريخ الحضور يقع خارج حدود السنة الدراسية المحددة.")
-    if schedule and (
-        schedule.school_id != school.pk
-        or schedule.section_id != section.pk
-        or schedule.academic_year_id != academic_year.pk
-    ):
-        raise ValidationError("الحصة المجدولة لا تتبع المدرسة والشعبة والسنة المحددة.")
-    if not bypass_calendar_check and not is_school_day(school, date, academic_year):
-        raise ValidationError("لا يمكن فتح سجل حضور في يوم غير دراسي أو عطلة رسمية وفقاً للتقويم المدرسي.")
-
-    if not academic_term:
-        academic_term = AcademicTerm.objects.filter(
-            academic_year=academic_year,
-            starts_on__lte=date,
-            ends_on__gte=date,
-            is_archived=False,
-        ).first()
+    register_branch = schedule.branch if schedule and schedule.branch_id else section.branch
+    if section.branch_id and register_branch and section.branch_id != register_branch.pk:
+        raise ValidationError("الشعبة والحصة المجدولة تتبعان فرعين مختلفين.")
+    if schedule:
+        if schedule.school_id != school.pk or schedule.section_id != section.pk or schedule.academic_year_id != academic_year.pk:
+            raise ValidationError("الحصة المجدولة لا تتبع المدرسة والشعبة والسنة المحددة.")
+        from apps.timetable.services.workflow import get_effective_class_schedules
+        effective_ids = get_effective_class_schedules(school=school, on_date=date, branch=register_branch, section_id=section.pk).values_list("pk", flat=True)
+        if not effective_ids.filter(pk=schedule.pk).exists():
+            raise ValidationError("الحصة ليست ضمن الجدول المنشور والنافذ في التاريخ المحدد.")
+    if not bypass_calendar_check and not is_school_day(school, date, academic_year, branch=register_branch):
+        raise ValidationError("لا يمكن فتح سجل حضور في يوم غير دراسي أو عطلة رسمية وفق التقويم المعتمد.")
+    if academic_term:
+        if academic_term.school_id != school.pk or academic_term.academic_year_id != academic_year.pk:
+            raise ValidationError("الفصل الدراسي لا يتبع المدرسة والسنة المحددتين.")
+        if not academic_term.starts_on <= date <= academic_term.ends_on:
+            raise ValidationError("تاريخ الحضور خارج حدود الفصل الدراسي المحدد.")
+        if academic_term.branch_id and academic_term.branch_id != getattr(register_branch, "pk", None):
+            raise ValidationError("الفصل الدراسي يتبع فرعاً مختلفاً.")
+    else:
+        terms = AcademicTerm.objects.filter(academic_year=academic_year, starts_on__lte=date, ends_on__gte=date, is_archived=False)
+        academic_term = (terms.filter(branch=register_branch).first() if register_branch else None) or terms.filter(branch__isnull=True).first()
 
     with transaction.atomic():
         if schedule:
             register, created = AttendanceRegister.objects.get_or_create(
-                school=school,
-                schedule=schedule,
-                date=date,
+                school=school, schedule=schedule, date=date,
                 defaults={
-                    "academic_year": academic_year,
-                    "academic_term": academic_term,
-                    "section": section,
-                    "session_type": AttendanceRegister.SessionType.PERIOD,
-                    "event_occurrence": event_occurrence,
-                    "status": AttendanceRegister.Status.OPEN,
+                    "branch": register_branch, "academic_year": academic_year, "academic_term": academic_term,
+                    "section": section, "session_type": AttendanceRegister.SessionType.PERIOD,
+                    "event_occurrence": event_occurrence, "status": AttendanceRegister.Status.OPEN,
                 },
             )
         else:
             register, created = AttendanceRegister.objects.get_or_create(
-                school=school,
-                section=section,
-                date=date,
-                session_type=session_type,
+                school=school, section=section, date=date, session_type=session_type,
                 defaults={
-                    "academic_year": academic_year,
-                    "academic_term": academic_term,
-                    "schedule": None,
-                    "event_occurrence": event_occurrence,
-                    "status": AttendanceRegister.Status.OPEN,
+                    "branch": register_branch, "academic_year": academic_year, "academic_term": academic_term,
+                    "schedule": None, "event_occurrence": event_occurrence, "status": AttendanceRegister.Status.OPEN,
                 },
             )
-
-        # Seed students if register is newly created or missing student records
-        existing_student_ids = set(
-            register.student_records.values_list("student_id", flat=True)
-        )
-        enrolled_students = Student.objects.filter(
-            school=school,
-            section=section,
-            status=Student.Status.ACTIVE,
-            is_archived=False,
-        )
-
-        records_to_create = []
-        for student in enrolled_students:
-            if student.id in existing_student_ids:
+        existing_ids = set(register.student_records.values_list("student_id", flat=True))
+        enrolled = Student.objects.filter(school=school, section=section, status=Student.Status.ACTIVE, is_archived=False)
+        new_records = []
+        for student in enrolled:
+            if student.pk in existing_ids:
                 continue
-
-            # Check for approved advance absence excuse
-            approved_excuse = AttendanceExcuseRequest.objects.filter(
-                school=school,
-                student=student,
-                status=AttendanceExcuseRequest.Status.APPROVED,
-                start_date__lte=date,
-                end_date__gte=date,
-                is_archived=False,
-            ).first()
-
-            if approved_excuse:
-                cat = AttendanceStatusType.Category.ABSENT_EXCUSED
-                excuse_ref = approved_excuse
-            else:
-                cat = AttendanceStatusType.Category.PRESENT
-                excuse_ref = None
-
-            rec = StudentAttendanceRecord(
-                school=school,
-                register=register,
-                student=student,
-                status_category=cat,
-                late_minutes=0,
-                excuse_request=excuse_ref,
-                recorded_by=user,
+            excuses = AttendanceExcuseRequest.objects.filter(
+                school=school, student=student, status=AttendanceExcuseRequest.Status.APPROVED,
+                start_date__lte=date, end_date__gte=date, is_archived=False,
             )
-            records_to_create.append(rec)
-
-        if records_to_create:
-            StudentAttendanceRecord.objects.bulk_create(records_to_create)
-
-            # Sync legacy models for backward compatibility
-            for rec in register.student_records.all():
+            approved_excuse = (excuses.filter(branch=student.branch).first() if student.branch_id else None) or excuses.filter(branch__isnull=True).first()
+            new_records.append(StudentAttendanceRecord(
+                school=school, branch=register.branch, register=register, student=student,
+                status_category=AttendanceStatusType.Category.ABSENT_EXCUSED if approved_excuse else AttendanceStatusType.Category.PRESENT,
+                late_minutes=0, excuse_request=approved_excuse, recorded_by=user,
+            ))
+        if new_records:
+            StudentAttendanceRecord.objects.bulk_create(new_records)
+            for rec in register.student_records.select_related("student", "register"):
                 _sync_legacy_attendance(rec, user)
-
-            cascade_daily_attendance_to_periods(register, user=user)
-
+            if register.schedule_id is None:
+                cascade_daily_attendance_to_periods(register, user=user)
         if created:
             AttendanceAuditLog.objects.create(
-                school=school,
-                register=register,
-                action=AttendanceAuditLog.Action.REGISTER_CREATED,
-                performed_by=user,
-                new_value={"status": register.status, "date": str(date), "session_type": register.session_type},
+                school=school, register=register, action=AttendanceAuditLog.Action.REGISTER_CREATED,
+                performed_by=user, new_value={"status": register.status, "date": str(date), "session_type": register.session_type},
             )
-
     return register, created
-
-
 def bulk_record_attendance(
     register: AttendanceRegister,
     records_data: list[dict],
@@ -450,6 +408,7 @@ def _sync_legacy_attendance(rec: StudentAttendanceRecord, user=None):
             student=rec.student,
             date=register.date,
             defaults={
+                "branch": rec.branch or register.branch,
                 "status": p_status,
                 "notes": rec.notes,
                 "register": register,
@@ -463,6 +422,7 @@ def _sync_legacy_attendance(rec: StudentAttendanceRecord, user=None):
             student=rec.student,
             date=register.date,
             defaults={
+                "branch": rec.branch or register.branch,
                 "status": cat_daily,
                 "late_minutes": rec.late_minutes,
                 "excuse_reason": rec.notes,
@@ -473,115 +433,44 @@ def _sync_legacy_attendance(rec: StudentAttendanceRecord, user=None):
         )
 
 
-def cascade_daily_attendance_to_periods(
-    register: AttendanceRegister,
-    student: Student | None = None,
-    user=None,
-) -> int:
-    """تعميم حالة الحضور اليومي على حصص اليوم المجدولة مع استثناء فترات ما بعد الانصراف المبكر."""
-    from apps.attendance.models import AttendancePolicy, EarlyDepartureRequest
-    from apps.timetable.models import ClassSchedule
-
-    policy = AttendancePolicy.objects.filter(
-        school=register.school,
-        academic_year=register.academic_year,
-        is_active=True,
-        is_archived=False,
-    ).first()
-
+def cascade_daily_attendance_to_periods(register: AttendanceRegister, student: Student | None = None, user=None) -> int:
+    """تعميم الحضور اليومي على الحصص القديمة دون تجاوز سجل حصة مستقل."""
+    if register.schedule_id or register.session_type not in {AttendanceRegister.SessionType.DAILY_MORNING, AttendanceRegister.SessionType.DAILY_FULL, AttendanceRegister.SessionType.DAILY_EVENING}:
+        return 0
+    policy_query = AttendancePolicy.objects.filter(school=register.school, academic_year=register.academic_year, is_active=True, is_archived=False)
+    policy = (policy_query.filter(branch=register.branch).first() if register.branch_id else None) or policy_query.filter(branch__isnull=True).first()
     if policy and not policy.cascade_daily_to_periods:
         return 0
-
-    if register.session_type not in [
-        AttendanceRegister.SessionType.DAILY_MORNING,
-        AttendanceRegister.SessionType.DAILY_FULL,
-        AttendanceRegister.SessionType.DAILY_EVENING,
-    ]:
-        return 0
-
-    # Sunday: 6 -> 1; Monday: 0 -> 2; Tuesday: 1 -> 3; Wednesday: 2 -> 4; Thursday: 3 -> 5; Friday: 4 -> 6; Saturday: 5 -> 7
-    weekday_map = {6: 1, 0: 2, 1: 3, 2: 4, 3: 5, 4: 6, 5: 7}
-    schedule_weekday = weekday_map.get(register.date.weekday(), 1)
-
-    schedules = ClassSchedule.objects.filter(
-        school=register.school,
-        section=register.section,
-        academic_year=register.academic_year,
-        day_of_week=schedule_weekday,
-        is_archived=False,
-    ).order_by("period_number")
-
+    from apps.timetable.services.workflow import get_effective_class_schedules
+    schedules = get_effective_class_schedules(school=register.school, on_date=register.date, branch=register.branch, section_id=register.section_id).order_by("period_number")
     if not schedules.exists():
         return 0
-
-    student_records = register.student_records.all()
+    records = register.student_records.select_related("student")
     if student:
-        student_records = student_records.filter(student=student)
-
-    early_departures = {
-        ed.student_id: ed
-        for ed in EarlyDepartureRequest.objects.filter(
-            school=register.school,
-            date=register.date,
-            status__in=[EarlyDepartureRequest.Status.APPROVED, EarlyDepartureRequest.Status.EXITED],
-            is_archived=False,
-        )
-    }
-
-    synced_count = 0
+        records = records.filter(student=student)
+    departures = {item.student_id: item for item in EarlyDepartureRequest.objects.filter(
+        school=register.school, date=register.date,
+        status__in=[EarlyDepartureRequest.Status.APPROVED, EarlyDepartureRequest.Status.EXITED],
+        is_archived=False,
+    )}
+    count = 0
     with transaction.atomic():
-        for rec in student_records.select_related("student"):
-            st = rec.student
-            departure = early_departures.get(st.id)
-
-            for sched in schedules:
-                if rec.status_category == AttendanceStatusType.Category.PRESENT:
-                    if departure and sched.start_time and sched.start_time >= departure.departure_time:
-                        p_status = PeriodAttendance.Status.EARLY_DEPARTURE
-                        notes = f"انصراف مبكر في الساعة {departure.departure_time.strftime('%H:%M')}"
-                    else:
-                        p_status = PeriodAttendance.Status.PRESENT
-                        notes = "حاضر (وفق اعتماد الحضور اليومي)"
-                elif rec.status_category in [
-                    AttendanceStatusType.Category.ABSENT_UNEXCUSED,
-                    AttendanceStatusType.Category.ABSENT_EXCUSED,
-                ]:
-                    p_status = PeriodAttendance.Status.ABSENT
-                    notes = "غائب (وفق سجل الغياب اليومي)"
-                elif rec.status_category in [
-                    AttendanceStatusType.Category.LATE,
-                    AttendanceStatusType.Category.LATE_EXCUSED,
-                ]:
-                    if sched.period_number == 1:
-                        p_status = PeriodAttendance.Status.LATE
-                        notes = f"متأخر ({rec.late_minutes} دقيقة)"
-                    else:
-                        p_status = PeriodAttendance.Status.PRESENT
-                        notes = "حاضر في الحصة"
-                elif rec.status_category == AttendanceStatusType.Category.AUTHORIZED_DEPARTURE:
-                    if departure and sched.start_time and sched.start_time < departure.departure_time:
-                        p_status = PeriodAttendance.Status.PRESENT
-                        notes = "حاضر قبل الانصراف"
-                    else:
-                        p_status = PeriodAttendance.Status.EARLY_DEPARTURE
-                        notes = "انصراف مبكر مصرح به"
+        for rec in records:
+            departure = departures.get(rec.student_id)
+            for schedule in schedules:
+                if AttendanceRegister.objects.filter(school=register.school, schedule=schedule, date=register.date, is_archived=False).exists():
+                    continue
+                if rec.status_category in {AttendanceStatusType.Category.ABSENT_UNEXCUSED, AttendanceStatusType.Category.ABSENT_EXCUSED}:
+                    period_status, note = PeriodAttendance.Status.ABSENT, "غياب اليوم وفق سجل الحضور اليومي"
+                elif rec.status_category in {AttendanceStatusType.Category.LATE, AttendanceStatusType.Category.LATE_EXCUSED} and schedule.period_number == 1:
+                    period_status, note = PeriodAttendance.Status.LATE, f"تأخر صباحي ({rec.late_minutes} دقيقة)"
+                elif departure and schedule.end_time > departure.departure_time:
+                    period_status, note = PeriodAttendance.Status.EARLY_DEPARTURE, f"انصراف مبكر عند {departure.departure_time.strftime('%H:%M')}"
                 else:
-                    p_status = PeriodAttendance.Status.PRESENT
-                    notes = ""
-
+                    period_status, note = PeriodAttendance.Status.PRESENT, "حاضر وفق سجل الحضور اليومي"
                 PeriodAttendance.objects.update_or_create(
-                    school=register.school,
-                    schedule=sched,
-                    student=st,
-                    date=register.date,
-                    defaults={
-                        "status": p_status,
-                        "notes": notes,
-                        "register": register,
-                        "detailed_record": rec,
-                    },
+                    school=register.school, schedule=schedule, student=rec.student, date=register.date,
+                    defaults={"branch": register.branch, "status": period_status, "notes": note, "register": register, "detailed_record": rec},
                 )
-                synced_count += 1
-
-    return synced_count
-
+                count += 1
+    return count
