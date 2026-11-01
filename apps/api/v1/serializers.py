@@ -536,7 +536,7 @@ class ExamSubmissionReviewSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentOnlineExamSubmission
         fields = "__all__"
-        read_only_fields = "__all__"
+        read_only_fields = [field.name for field in StudentOnlineExamSubmission._meta.fields]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
