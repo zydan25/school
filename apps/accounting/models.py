@@ -1116,23 +1116,37 @@ class BankReconciliation(TenantOwnedModel):
         ):
             raise ValidationError({"reconciled_at": "وقت المطابقة والمسؤول عنها مطلوبان."})
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        original = None
+        treasury_ids = {self.treasury_account_id}
+        if self.pk:
+            original = BankReconciliation.objects.select_for_update().filter(
+                pk=self.pk,
+            ).first()
+            if original:
+                treasury_ids.add(original.treasury_account_id)
+        locked_treasuries = list(
+            TreasuryAccount.objects.select_for_update(of=("self",)).filter(
+                pk__in=treasury_ids,
+            ).order_by("pk")
+        )
+        if len(locked_treasuries) != len(treasury_ids):
+            raise ValidationError("حساب الخزينة المرتبط بالمطابقة غير موجود.")
         if not self.pk and self.status == self.Status.RECONCILED:
             raise ValidationError("اعتماد المطابقة البنكية يجب أن يتم عبر خدمة المطابقة.")
-        if self.pk:
-            original = BankReconciliation.objects.filter(pk=self.pk).first()
-            if original and original.status != self.Status.RECONCILED and self.status == self.Status.RECONCILED:
-                raise ValidationError("اعتماد المطابقة البنكية يجب أن يتم عبر خدمة المطابقة.")
-            if original and original.status == self.Status.RECONCILED:
-                fields = (
-                    "school_id", "treasury_account_id", "start_date", "end_date",
-                    "statement_opening_balance", "statement_closing_balance",
-                    "book_opening_balance", "book_closing_balance",
-                    "outstanding_ledger_amount", "difference", "status",
-                    "reconciled_at", "reconciled_by_id",
-                )
-                if any(getattr(original, field) != getattr(self, field) for field in fields):
-                    raise ValidationError("المطابقة البنكية المعتمدة سجل مالي ثابت لا يقبل التعديل.")
+        if original and original.status != self.Status.RECONCILED and self.status == self.Status.RECONCILED:
+            raise ValidationError("اعتماد المطابقة البنكية يجب أن يتم عبر خدمة المطابقة.")
+        if original and original.status == self.Status.RECONCILED:
+            fields = (
+                "school_id", "treasury_account_id", "start_date", "end_date",
+                "statement_opening_balance", "statement_closing_balance",
+                "book_opening_balance", "book_closing_balance",
+                "outstanding_ledger_amount", "difference", "status",
+                "reconciled_at", "reconciled_by_id",
+            )
+            if any(getattr(original, field) != getattr(self, field) for field in fields):
+                raise ValidationError("المطابقة البنكية المعتمدة سجل مالي ثابت لا يقبل التعديل.")
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
