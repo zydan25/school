@@ -103,10 +103,13 @@ class PhaseSixTeachingAssessmentTests(TestCase):
     def setUp(self):
         self.student_client = APIClient()
         self.student_client.force_authenticate(self.student_user)
+        self.student_client.credentials(HTTP_X_SCHOOL_CODE=self.school.code)
         self.teacher_client = APIClient()
         self.teacher_client.force_authenticate(self.teacher_user)
+        self.teacher_client.credentials(HTTP_X_SCHOOL_CODE=self.school.code)
         self.admin_client = APIClient()
         self.admin_client.force_authenticate(self.admin_user)
+        self.admin_client.credentials(HTTP_X_SCHOOL_CODE=self.school.code)
         self.school_query = {"school_code": self.school.code}
 
     def test_homework_resubmission_preserves_every_attempt_and_requires_teacher_request(self):
