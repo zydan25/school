@@ -126,7 +126,7 @@ class Migration(migrations.Migration):
         migrations.AddConstraint(
             model_name="employeeloanrepayment",
             constraint=models.UniqueConstraint(
-                condition=models.Q(("is_archived", False), ("idempotency_key__gt", "")),
+                condition=models.Q(("idempotency_key__gt", ""), ("is_archived", False)),
                 fields=("school", "idempotency_key"),
                 name="payroll_loan_repay_idem_uniq",
             ),

@@ -38,6 +38,14 @@ jobs:
             apps/tenants/services.py \
             apps/api/views.py \
             apps/payroll/services.py \
+            apps/payroll/models.py \
+            apps/payroll/hr_services.py \
+            apps/payroll/api/serializers.py \
+            apps/payroll/api/views.py \
+            apps/payroll/api/urls.py \
+            apps/payroll/api/hr_serializers.py \
+            apps/payroll/api/hr_views.py \
+            apps/payroll/migrations/0005_stage9_hr_workflows.py \
             apps/student_fees/models.py \
             apps/student_fees/admin.py \
             apps/student_fees/api/serializers.py \

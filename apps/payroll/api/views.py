@@ -21,9 +21,10 @@ from apps.payroll.api.serializers import (
     GeneratePayrollSerializer,
     PayrollRunDetailSerializer,
     PayrollRunListSerializer,
+    PayslipSerializer,
     ReversePayrollSerializer,
 )
-from apps.payroll.models import PayrollRun
+from apps.payroll.models import PayrollRun, Payslip
 from apps.payroll.services import (
     disburse_payroll_run,
     generate_monthly_payroll,
@@ -31,7 +32,6 @@ from apps.payroll.services import (
     reverse_payroll_run,
     approve_payroll_run,
 )
-from apps.payroll.models import Payslip
 from apps.staff.models import StaffMember, Teacher
 
 

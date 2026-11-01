@@ -4,9 +4,8 @@ from decimal import Decimal
 from django.db.models import Q
 from rest_framework import serializers
 
-from apps.accounting.models import Account, PaymentVoucher, ReceiptVoucher
+from apps.accounting.models import PaymentVoucher, ReceiptVoucher
 from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, EmployeeLoanRepayment
-from apps.staff.models import StaffMember, Teacher
 
 
 class EmployeeContractSerializer(serializers.ModelSerializer):
@@ -26,8 +25,10 @@ class EmployeeContractSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "gross_salary", "net_salary", "employee_name", "created_at"]
 
     def get_employee_name(self, obj):
-        user = obj.teacher.user if obj.teacher_id else obj.staff_member.user
-        return user.get_full_name() or user.phone
+        user = obj.teacher.user if obj.teacher_id else (
+            obj.staff_member.user if obj.staff_member_id else None
+        )
+        return (user.get_full_name() or user.phone) if user else ""
 
     def validate(self, attrs):
         instance = self.instance
@@ -112,8 +113,10 @@ class EmployeeLoanAdvanceSerializer(serializers.ModelSerializer):
         ]
 
     def get_employee_name(self, obj):
-        user = obj.teacher.user if obj.teacher_id else obj.staff_member.user
-        return user.get_full_name() or user.phone
+        user = obj.teacher.user if obj.teacher_id else (
+            obj.staff_member.user if obj.staff_member_id else None
+        )
+        return (user.get_full_name() or user.phone) if user else ""
 
 
 class CreateEmployeeLoanAdvanceSerializer(serializers.Serializer):

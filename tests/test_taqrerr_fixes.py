@@ -39,6 +39,13 @@ from apps.payroll.services import (
     generate_monthly_payroll,
     post_payroll_to_accounting,
 )
+from apps.payroll.hr_services import (
+    approve_employee_loan,
+    disburse_employee_loan,
+    record_employee_loan_repayment,
+)
+from apps.payroll.api.serializers import PayrollRunDetailSerializer
+from apps.payroll.models import Payslip
 from apps.reports.selectors.financial_reports import get_billing_ledger_reconciliation_report
 from apps.school_services.models import StudentBookDistribution
 from apps.staff.models import StaffAttendance, Teacher
@@ -570,6 +577,154 @@ class TaqrerrFixesVerificationTests(TestCase):
         self.assertEqual(loan.repaid_amount, Decimal("0.00"))
         self.assertFalse(run.journal_entry_id)
         self.assertEqual(run.status, PayrollRun.Status.APPROVED)
+
+    def test_employee_loan_approval_disbursement_and_manual_repayment_are_idempotent(self):
+        """دورة طلب السلفة واعتمادها وصرفها وسدادها اليدوي مع الأثر المحاسبي مرة واحدة."""
+        loan = EmployeeLoanAdvance.objects.create(
+            school=self.school,
+            teacher=self.teacher_profile,
+            loan_number="LN-STAGE9-01",
+            amount=Decimal("1000.00"),
+            monthly_installment=Decimal("200.00"),
+            start_date=date(2026, 11, 1),
+            requested_by=self.teacher_user,
+        )
+        self.assertEqual(loan.status, EmployeeLoanAdvance.Status.PENDING)
+
+        approved = approve_employee_loan(loan=loan, approved_by=self.owner)
+        self.assertEqual(approved.status, EmployeeLoanAdvance.Status.APPROVED)
+        self.assertEqual(approved.approved_by_id, self.owner.pk)
+        self.assertIsNotNone(approved.approved_at)
+
+        cash_account = Account.objects.get(school=self.school, code="1101")
+        voucher = disburse_employee_loan(
+            loan=approved,
+            payment_account=cash_account,
+            disbursed_by=self.owner,
+            reference_number="LN-STAGE9-BANK",
+        )
+        loan.refresh_from_db()
+        voucher.refresh_from_db()
+        self.assertEqual(loan.status, EmployeeLoanAdvance.Status.ACTIVE)
+        self.assertEqual(loan.disbursement_voucher_id, voucher.pk)
+        self.assertEqual(voucher.status, "posted")
+        self.assertIsNotNone(voucher.journal_entry_id)
+        self.assertEqual(
+            voucher.journal_entry.lines.get(account__code="1105").debit,
+            Decimal("1000.00"),
+        )
+        self.assertEqual(
+            voucher.journal_entry.lines.get(account=cash_account).credit,
+            Decimal("1000.00"),
+        )
+
+        repayment = record_employee_loan_repayment(
+            loan=loan,
+            amount=Decimal("125.00"),
+            payment_account=cash_account,
+            idempotency_key="STAGE9-LOAN-REP-001",
+            recorded_by=self.owner,
+        )
+        replay = record_employee_loan_repayment(
+            loan=loan,
+            amount=Decimal("125.00"),
+            payment_account=cash_account,
+            idempotency_key="STAGE9-LOAN-REP-001",
+            recorded_by=self.owner,
+        )
+        self.assertEqual(repayment.pk, replay.pk)
+        self.assertEqual(
+            EmployeeLoanRepayment.objects.filter(
+                school=self.school, idempotency_key="STAGE9-LOAN-REP-001",
+            ).count(),
+            1,
+        )
+        loan.refresh_from_db()
+        self.assertEqual(loan.repaid_amount, Decimal("125.00"))
+        self.assertEqual(loan.remaining_amount, Decimal("875.00"))
+        self.assertEqual(repayment.receipt_voucher.status, "posted")
+        self.assertEqual(
+            repayment.receipt_voucher.journal_entry.lines.get(account=cash_account).debit,
+            Decimal("125.00"),
+        )
+        self.assertEqual(
+            repayment.receipt_voucher.journal_entry.lines.get(account__code="1105").credit,
+            Decimal("125.00"),
+        )
+
+    def test_my_payslip_api_returns_only_the_current_employee_slips(self):
+        """مسار الخدمة الذاتية لا يعرض إلا قسائم حساب الموظف الحالي."""
+        run = PayrollRun.objects.create(
+            school=self.school,
+            name="مسير اختبار الخدمة الذاتية",
+            year=2026,
+            month=10,
+        )
+        own_slip = Payslip.objects.create(
+            school=self.school,
+            payroll_run=run,
+            teacher=self.teacher_profile,
+            basic_salary=Decimal("3000.00"),
+            net_salary=Decimal("3000.00"),
+        )
+        other_user = User.objects.create_user(
+            phone="+967770009988",
+            password="OtherPassword123!",
+            first_name="موظف",
+            last_name="آخر",
+        )
+        other_teacher = Teacher.objects.create(
+            school=self.school,
+            user=other_user,
+            employee_number="TCH-OTHER-01",
+            specialization="رياضيات",
+        )
+        other_slip = Payslip.objects.create(
+            school=self.school,
+            payroll_run=run,
+            teacher=other_teacher,
+            basic_salary=Decimal("2500.00"),
+            net_salary=Decimal("2500.00"),
+        )
+
+        serializer_data = PayrollRunDetailSerializer(run).data
+        self.assertEqual(len(serializer_data["payslips"]), 2)
+        self.assertIn("gross_salary", serializer_data["payslips"][0])
+        self.assertNotIn("employee_contract", serializer_data["payslips"][0])
+
+        client = APIClient()
+        token, _ = Token.objects.get_or_create(user=self.teacher_user)
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {token.key}",
+            HTTP_X_SCHOOL_ID=str(self.school.pk),
+        )
+        response = client.get("/api/v1/payroll/me/payslips/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([item["id"] for item in response.data], [str(own_slip.pk)])
+        own_detail = client.get(f"/api/v1/payroll/me/payslips/{own_slip.pk}/")
+        other_detail = client.get(f"/api/v1/payroll/me/payslips/{other_slip.pk}/")
+        self.assertEqual(own_detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(other_detail.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_employee_contract_rejects_overlapping_active_contracts(self):
+        """منع وجود عقدين نشطين متداخلين للموظف نفسه."""
+        EmployeeContract.objects.create(
+            school=self.school,
+            teacher=self.teacher_profile,
+            contract_number="CNT-STAGE9-01",
+            basic_salary=Decimal("3000.00"),
+            start_date=date(2026, 1, 1),
+            is_active=True,
+        )
+        with self.assertRaises(ValidationError):
+            EmployeeContract.objects.create(
+                school=self.school,
+                teacher=self.teacher_profile,
+                contract_number="CNT-STAGE9-02",
+                basic_salary=Decimal("3500.00"),
+                start_date=date(2026, 10, 1),
+                is_active=True,
+            )
 
     # -------------------------------------------------------------------------
     # Phase 4 & 5: Security, Permissions, OpenAPI & Bearer Auth Tests

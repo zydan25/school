@@ -74,10 +74,10 @@ class EmployeeContract(TenantOwnedModel):
             raise ValidationError({"teacher": "المعلم لا ينتمي إلى نفس المدرسة."})
         if self.staff_member_id and self.staff_member.school_id != self.school_id:
             raise ValidationError({"staff_member": "الموظف الإداري لا ينتمي إلى نفس المدرسة."})
-        if self.teacher_id and not self.teacher.is_active_teaching:
-            raise ValidationError({"teacher": "لا يمكن إنشاء عقد لمعلم غير نشط تدريسياً."})
-        if self.staff_member_id and not self.staff_member.is_active:
-            raise ValidationError({"staff_member": "لا يمكن إنشاء عقد لموظف غير نشط."})
+        if self.is_active and self.teacher_id and not self.teacher.is_active_teaching:
+            raise ValidationError({"teacher": "لا يمكن إنشاء عقد نشط لمعلم غير نشط تدريسياً."})
+        if self.is_active and self.staff_member_id and not self.staff_member.is_active:
+            raise ValidationError({"staff_member": "لا يمكن إنشاء عقد نشط لموظف غير نشط."})
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValidationError({"end_date": "تاريخ نهاية العقد لا يمكن أن يسبق تاريخ بدايته."})
         salary_fields = (

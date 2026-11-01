@@ -48,11 +48,12 @@ def generate_monthly_payroll(
                 "status": PayrollRun.Status.DRAFT,
             },
         )
+        run = PayrollRun.objects.select_for_update().get(pk=run.pk)
         if not created:
-            # Delete previous draft payslips to regenerate fresh
+            # Only an unapproved draft may be regenerated.
             if run.status != PayrollRun.Status.DRAFT:
-                raise ValueError("لا يمكن إعادة توليد مسير رواتب معتمد أو مدفوع.")
-            run.payslips.all().delete()
+                raise ValidationError("لا يمكن إعادة توليد مسير رواتب معتمد أو مرحل أو مدفوع.")
+            run.payslips.filter(is_archived=False).delete()
 
         # Fetch contracts active during this payroll month
         contracts = EmployeeContract.objects.filter(
@@ -62,7 +63,7 @@ def generate_monthly_payroll(
             start_date__lte=month_end,
         ).filter(
             Q(end_date__isnull=True) | Q(end_date__gte=month_start)
-        ).select_related("teacher", "staff_member")
+        ).select_related("teacher", "staff_member").select_for_update(of=("self",))
 
         t_basic = Decimal("0.00")
         t_allowances = Decimal("0.00")
@@ -98,6 +99,10 @@ def generate_monthly_payroll(
                 loans_qs = loans_qs.filter(staff_member=staff_member)
             else:
                 loans_qs = loans_qs.none()
+            if c.branch_id:
+                loans_qs = loans_qs.filter(
+                    Q(branch_id=c.branch_id) | Q(branch__isnull=True)
+                )
 
             loan_ded = Decimal("0.00")
             for loan in loans_qs:
@@ -143,9 +148,10 @@ def generate_monthly_payroll(
                     target.add(current_day)
                     current_day += datetime.timedelta(days=1)
 
-            absence_dates = (unexcused_dates - paid_leave_dates) | (
-                unpaid_leave_dates & attendance_dates
-            )
+            absence_dates = (
+                (unexcused_dates - paid_leave_dates)
+                | (unpaid_leave_dates & attendance_dates)
+            ) - paid_leave_dates
             daily_rate = (basic / Decimal("30")).quantize(Decimal("0.01"))
             absence_ded = (
                 Decimal(len(absence_dates)) * daily_rate
