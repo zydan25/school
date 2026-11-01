@@ -55,10 +55,14 @@ jobs:
             apps/accounting/migrations/0004_stage8_fiscal_controls.py \
             apps/accounting/migrations/0005_stage8_treasury.py \
             apps/accounting/migrations/0006_stage8_voucher_idempotency.py \
+            apps/accounting/migrations/0007_stage8_treasury_defaults.py \
             apps/reports/views.py \
             apps/reports/urls.py \
             apps/payroll/services.py \
             tests/test_stage8_accounting.py \
+            tests/test_finance_and_attendance.py \
+            tests/test_report2_fixes.py \
+            tests/test_audit_fixes.py \
             tests/test_stage7_student_fees.py \
             apps/school_services/models.py \
             apps/tenants/admin.py \
