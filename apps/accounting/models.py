@@ -8,10 +8,10 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
-from apps.core.models import TenantOwnedModel
+from apps.core.models import TenantOwnedModel, TenantQuerySet
 
 
-class FiscalYearQuerySet(models.QuerySet):
+class FiscalYearQuerySet(TenantQuerySet):
     def update(self, **kwargs):
         protected = {"is_closed", "closed_at", "closed_by", "closing_entry", "closing_entry_id", "opening_entry", "opening_entry_id", "start_date", "end_date", "school"}
         if protected.intersection(kwargs) and self.filter(is_closed=True).exists():
@@ -78,7 +78,7 @@ class FiscalYear(TenantOwnedModel):
         return f"{self.name} ({'مقفلة' if self.is_closed else 'مفتوحة'})"
 
 
-class FiscalPeriodQuerySet(models.QuerySet):
+class FiscalPeriodQuerySet(TenantQuerySet):
     def update(self, **kwargs):
         protected = {"is_closed", "closed_at", "closed_by", "start_date", "end_date", "fiscal_year", "fiscal_year_id", "period_number", "school"}
         if protected.intersection(kwargs) and self.filter(is_closed=True).exists():
@@ -773,7 +773,7 @@ class TreasuryAccount(TenantOwnedModel):
         return f"{self.code} - {self.name}"
 
 
-class TreasuryTransferQuerySet(models.QuerySet):
+class TreasuryTransferQuerySet(TenantQuerySet):
     def update(self, **kwargs):
         protected = {
             "school", "school_id", "branch", "branch_id", "transfer_number",
@@ -886,7 +886,7 @@ class TreasuryTransfer(TenantOwnedModel):
         return f"{self.transfer_number} - {self.amount}"
 
 
-class BankReconciliationQuerySet(models.QuerySet):
+class BankReconciliationQuerySet(TenantQuerySet):
     def update(self, **kwargs):
         protected = {
             "school", "school_id", "treasury_account", "treasury_account_id",
@@ -986,7 +986,7 @@ class BankReconciliation(TenantOwnedModel):
         return f"{self.treasury_account} - {self.start_date} إلى {self.end_date}"
 
 
-class BankStatementLineQuerySet(models.QuerySet):
+class BankStatementLineQuerySet(TenantQuerySet):
     def update(self, **kwargs):
         if self.filter(reconciliation__status=BankReconciliation.Status.RECONCILED).exists():
             raise ValidationError("لا يمكن تعديل حركات كشف بنك بعد اعتماد المطابقة.")
