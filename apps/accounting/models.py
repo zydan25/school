@@ -64,14 +64,21 @@ class FiscalYear(TenantOwnedModel):
             raise ValidationError({"is_closed": "يجب تسجيل وقت الإقفال والمسؤول عنه قبل إقفال السنة المالية."})
 
     def save(self, *args, **kwargs):
+        if not self.pk and self.is_closed:
+            raise ValidationError("إنشاء سنة مالية مقفلة مباشرة غير مسموح؛ استخدم خدمة إقفال السنة.")
         if self.pk:
             original = FiscalYear.objects.filter(pk=self.pk).first()
+            if original and not original.is_closed and self.is_closed:
+                raise ValidationError("إقفال السنة المالية يجب أن يتم عبر خدمة إقفال السنة.")
             if original and original.is_closed:
                 if not self.is_closed:
                     raise ValidationError("السنة المالية المقفلة لا يعاد فتحها بتعديل مباشر.")
-                fields = ("school_id", "start_date", "end_date", "name")
+                fields = (
+                    "school_id", "start_date", "end_date", "name",
+                    "closed_at", "closed_by_id", "closing_entry_id", "opening_entry_id",
+                )
                 if any(getattr(original, field) != getattr(self, field) for field in fields):
-                    raise ValidationError("لا يمكن تغيير بيانات سنة مالية مقفلة.")
+                    raise ValidationError("لا يمكن تغيير بيانات أو سجل إقفال سنة مالية مقفلة.")
         return super().save(*args, **kwargs)
 
     def __str__(self) -> str:
@@ -145,14 +152,21 @@ class FiscalPeriod(TenantOwnedModel):
             raise ValidationError({"closed_at": "تاريخ الإقفال والمسؤول عنه مطلوبان عند إقفال الفترة."})
 
     def save(self, *args, **kwargs):
+        if not self.pk and self.is_closed:
+            raise ValidationError("إنشاء فترة مالية مقفلة مباشرة غير مسموح؛ استخدم خدمة إقفال الفترة.")
         if self.pk:
             original = FiscalPeriod.objects.filter(pk=self.pk).first()
+            if original and not original.is_closed and self.is_closed:
+                raise ValidationError("إقفال الفترة المالية يجب أن يتم عبر خدمة إقفال الفترة.")
             if original and original.is_closed:
                 if not self.is_closed:
                     raise ValidationError("الفترة المالية المقفلة لا يعاد فتحها بتعديل مباشر.")
-                fields = ("school_id", "fiscal_year_id", "period_number", "start_date", "end_date")
+                fields = (
+                    "school_id", "fiscal_year_id", "period_number", "name",
+                    "start_date", "end_date", "closed_at", "closed_by_id",
+                )
                 if any(getattr(original, field) != getattr(self, field) for field in fields):
-                    raise ValidationError("لا يمكن تغيير بيانات فترة مالية مقفلة.")
+                    raise ValidationError("لا يمكن تغيير بيانات أو سجل إقفال فترة مالية مقفلة.")
         return super().save(*args, **kwargs)
 
 
