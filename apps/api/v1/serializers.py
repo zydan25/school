@@ -503,9 +503,24 @@ class QuestionBankTeacherSerializer(TenantModelSerializer):
 
 
 class ExamPaperQuestionSerializer(serializers.ModelSerializer):
+    options_json = serializers.SerializerMethodField()
+
     class Meta:
         model = QuestionBank
         fields = ["id", "question_text", "question_type", "difficulty", "default_marks", "options_json", "unit_name", "topic"]
+
+    def get_options_json(self, obj):
+        # Never expose arbitrary option metadata such as is_correct/correct_answer.
+        if not isinstance(obj.options_json, list):
+            return []
+        return [
+            {
+                "id": str(option.get("id", "")),
+                "text": str(option.get("text", "")),
+            }
+            for option in obj.options_json
+            if isinstance(option, dict) and option.get("id") is not None
+        ]
 
 
 class OnlineExamSerializer(TenantModelSerializer):
