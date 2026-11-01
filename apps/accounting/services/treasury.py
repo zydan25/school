@@ -185,9 +185,21 @@ def reverse_treasury_transfer(
         reason=reason,
         reversed_by=reversed_by,
     )
+    updated_at = timezone.now()
+    updated = models.QuerySet.update(
+        TreasuryTransfer.objects.filter(
+            pk=locked.pk,
+            status=TreasuryTransfer.Status.POSTED,
+        ),
+        status=TreasuryTransfer.Status.REVERSED,
+        reversed_by_entry=reversal,
+        updated_at=updated_at,
+    )
+    if updated != 1:
+        raise ValidationError("تعذر عكس التحويل بسبب تغير حالته بالتزامن.")
     locked.status = TreasuryTransfer.Status.REVERSED
     locked.reversed_by_entry = reversal
-    locked.save(update_fields=["status", "reversed_by_entry", "updated_at"])
+    locked.updated_at = updated_at
     return locked
 
 
