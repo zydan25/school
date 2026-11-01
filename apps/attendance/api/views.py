@@ -1003,6 +1003,12 @@ class AttendanceReportsView(APIView):
             raise PermissionDenied("لم يتم تحديد المدرسة.")
         return school
 
+    def _uuid_param(self, value, field_name):
+        try:
+            return UUID(str(value))
+        except (TypeError, ValueError, AttributeError):
+            raise ValidationError({field_name: "أرسل معرفاً صحيحاً بصيغة UUID."})
+
     def get(self, request, report_type):
         school = self.get_school()
         require_school_role_or_permission(request, school, ATTENDANCE_ADMIN_ROLES)
@@ -1010,62 +1016,75 @@ class AttendanceReportsView(APIView):
 
         if report_type == "daily-summary":
             date_str = request.query_params.get("date", timezone.localdate().isoformat())
-            section_id = request.query_params.get("section_id")
             try:
-                date = datetime.date.fromisoformat(date_str)
+                report_date = datetime.date.fromisoformat(date_str)
             except (TypeError, ValueError):
-                raise ValidationError("صيغة التاريخ غير صحيحة؛ استخدم YYYY-MM-DD.")
-
-            summaries = get_daily_section_summary(school, date, section_id=section_id)
+                raise ValidationError({"date": "صيغة التاريخ غير صحيحة؛ استخدم YYYY-MM-DD."})
+            section_id = request.query_params.get("section_id")
+            if section_id:
+                section_uuid = self._uuid_param(section_id, "section_id")
+                get_object_or_404(Section, pk=section_uuid, school=school, is_archived=False)
+            summaries = get_daily_section_summary(school, report_date, section_id=section_id)
             if export_format == "csv":
                 csv_data = export_daily_summary_to_csv(summaries)
                 response = HttpResponse(csv_data, content_type="text/csv; charset=utf-8")
-                response["Content-Disposition"] = f'attachment; filename="attendance_daily_{date}.csv"'
+                response["Content-Disposition"] = f'attachment; filename="attendance_daily_{report_date}.csv"'
                 return response
-            return Response({"date": str(date), "summaries": summaries})
+            return Response({"date": report_date.isoformat(), "summaries": summaries})
 
-        elif report_type == "monthly-matrix":
+        if report_type == "monthly-matrix":
             section_id = request.query_params.get("section_id")
+            if not section_id:
+                raise ValidationError({"section_id": "section_id مطلوب لكشف الحضور الشهري."})
+            section_uuid = self._uuid_param(section_id, "section_id")
+            section = get_object_or_404(Section, pk=section_uuid, school=school, is_archived=False)
             try:
                 year = int(request.query_params.get("year", timezone.localdate().year))
                 month = int(request.query_params.get("month", timezone.localdate().month))
             except (TypeError, ValueError):
                 raise ValidationError("السنة والشهر يجب أن يكونا أرقاماً صحيحة.")
-            if not section_id:
-                raise ValidationError("section_id مطلوب لكشف الحضور الشهري.")
+            if year < 1 or year > 9999:
+                raise ValidationError({"year": "السنة خارج النطاق الصحيح."})
             if month < 1 or month > 12:
-                raise ValidationError("الشهر يجب أن يكون بين 1 و12.")
-
-            matrix = get_monthly_attendance_matrix(school, int(section_id), year, month)
+                raise ValidationError({"month": "الشهر يجب أن يكون بين 1 و12."})
+            matrix = get_monthly_attendance_matrix(school, section.pk, year, month)
             return Response(matrix)
 
-        elif report_type == "term-summary":
+        if report_type == "term-summary":
             term_id = request.query_params.get("academic_term_id")
-            section_id = request.query_params.get("section_id")
             if not term_id:
-                raise ValidationError("academic_term_id مطلوب.")
+                raise ValidationError({"academic_term_id": "academic_term_id مطلوب."})
+            term_uuid = self._uuid_param(term_id, "academic_term_id")
+            term = get_object_or_404(AcademicTerm, pk=term_uuid, school=school, is_archived=False)
+            section_id = request.query_params.get("section_id")
+            section_uuid = None
+            if section_id:
+                section_uuid = self._uuid_param(section_id, "section_id")
+                section = get_object_or_404(Section, pk=section_uuid, school=school, is_archived=False)
+                if section.academic_year_id != term.academic_year_id:
+                    raise ValidationError({"section_id": "الشعبة لا تتبع السنة الدراسية للفصل المحدد."})
             try:
-                term_id_value = int(term_id)
-                section_id_value = int(section_id) if section_id else None
-            except (TypeError, ValueError):
-                raise ValidationError("معرف الفصل أو الشعبة غير صحيح.")
+                results = get_term_attendance_summary(school, term.pk, section_id=section_uuid)
+            except ValueError as exc:
+                raise ValidationError(detail=str(exc))
+            return Response({"results": results})
 
-            res = get_term_attendance_summary(school, term_id_value, section_id=section_id_value)
-            return Response({"results": res})
-
-        elif report_type == "chronic-absenteeism":
+        if report_type == "chronic-absenteeism":
             year_id = request.query_params.get("academic_year_id")
+            if not year_id:
+                raise ValidationError({"academic_year_id": "academic_year_id مطلوب لكشف الإنذار المبكر."})
+            year_uuid = self._uuid_param(year_id, "academic_year_id")
+            academic_year = get_object_or_404(AcademicYear, pk=year_uuid, school=school, is_archived=False)
             try:
-                year_id_value = int(year_id) if year_id else None
                 threshold = float(request.query_params.get("threshold", 10.0))
             except (TypeError, ValueError):
-                raise ValidationError("السنة والحد النسبي يجب أن يكونا رقماً صحيحاً.")
-            if not year_id_value:
-                raise ValidationError("academic_year_id مطلوب لكشف الإنذار المبكر.")
-            if threshold < 0 or threshold > 100:
-                raise ValidationError("حد الغياب المزمن يجب أن يكون بين 0 و100 بالمائة.")
-
-            cases = get_chronic_absenteeism_report(school, year_id_value, threshold_percentage=threshold)
+                raise ValidationError({"threshold": "حد الغياب المزمن يجب أن يكون رقماً."})
+            if not 0 <= threshold <= 100:
+                raise ValidationError({"threshold": "حد الغياب المزمن يجب أن يكون بين 0 و100 بالمائة."})
+            try:
+                cases = get_chronic_absenteeism_report(school, academic_year.pk, threshold_percentage=threshold)
+            except ValueError as exc:
+                raise ValidationError(detail=str(exc))
             if export_format == "csv":
                 csv_data = export_chronic_absenteeism_to_csv(cases)
                 response = HttpResponse(csv_data, content_type="text/csv; charset=utf-8")
@@ -1073,5 +1092,4 @@ class AttendanceReportsView(APIView):
                 return response
             return Response({"cases": cases, "count": len(cases)})
 
-        else:
-            raise ValidationError("نوع التقرير غير مدعوم.")
+        raise ValidationError({"report_type": "نوع التقرير غير مدعوم."})
