@@ -1,4 +1,7 @@
 from django.contrib import admin
+from django.db import models
+from django.core.exceptions import ValidationError
+from decimal import Decimal
 from django.utils import timezone
 from unfold.admin import ModelAdmin
 
@@ -48,11 +51,16 @@ class GradeBookAdmin(AuditedAdminMixin, ModelAdmin):
             ])
         return tuple(dict.fromkeys(fields))
 
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.workflow_status != GradeBook.WorkflowStatus.DRAFT:
+            return False
+        return super().has_delete_permission(request, obj)
+
     @admin.action(description="اعتماد الدرجات المرسلة للمراجعة")
     def approve_selected(self, request, queryset):
         updated = 0
         for entry in queryset.filter(workflow_status=GradeBook.WorkflowStatus.SUBMITTED):
-            entry.workflow_status = GradeBookModel.WorkflowStatus.APPROVED
+            entry.workflow_status = GradeBook.WorkflowStatus.APPROVED
             entry.approved_by = request.user
             entry.approved_at = timezone.now()
             entry.save(update_fields=["workflow_status", "approved_by", "approved_at", "updated_at"])
@@ -67,8 +75,8 @@ class GradeBookAdmin(AuditedAdminMixin, ModelAdmin):
     @admin.action(description="نشر الدرجات المعتمدة")
     def publish_selected(self, request, queryset):
         updated = 0
-        for entry in queryset.filter(workflow_status=GradeBookModel.WorkflowStatus.APPROVED):
-            entry.workflow_status = GradeBookModel.WorkflowStatus.PUBLISHED
+        for entry in queryset.filter(workflow_status=GradeBook.WorkflowStatus.APPROVED):
+            entry.workflow_status = GradeBook.WorkflowStatus.PUBLISHED
             entry.is_published = True
             entry.published_by = request.user
             entry.published_at = timezone.now()
@@ -122,6 +130,19 @@ class QuestionBankAdmin(AuditedAdminMixin, ModelAdmin):
         return obj.question_text[:50] + ("..." if len(obj.question_text) > 50 else "")
     question_text_short.short_description = "نص السؤال"
 
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj and obj.included_in_exams.filter(
+            models.Q(is_published=True) | models.Q(submissions__is_archived=False),
+            is_archived=False,
+        ).distinct().exists():
+            fields.extend([
+                "subject", "grade_level", "unit_name", "topic", "question_text",
+                "question_type", "difficulty", "default_marks", "options_json",
+                "correct_answer", "model_answer_explanation",
+            ])
+        return tuple(dict.fromkeys(fields))
+
 
 @admin.register(OnlineExam)
 class OnlineExamAdmin(AuditedAdminMixin, ModelAdmin):
@@ -146,11 +167,25 @@ class OnlineExamAdmin(AuditedAdminMixin, ModelAdmin):
             ])
         return tuple(dict.fromkeys(fields))
 
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.submissions.filter(is_archived=False).exists():
+            return False
+        return super().has_delete_permission(request, obj)
+
     @admin.action(description="نشر الاختبارات المكتملة")
     def publish_selected(self, request, queryset):
         published = 0
         for exam in queryset.filter(is_published=False):
-            if not exam.questions.exists():
+            questions = list(exam.questions.all())
+            if not questions:
+                continue
+            if any(question.school_id != exam.school_id or question.subject_id != exam.subject_id for question in questions):
+                continue
+            if sum((question.default_marks for question in questions), Decimal("0.00")) > exam.total_marks:
+                continue
+            try:
+                exam.full_clean()
+            except ValidationError:
                 continue
             exam.is_published = True
             exam.published_by = request.user
@@ -183,6 +218,9 @@ class StudentOnlineExamSubmissionAdmin(AuditedAdminMixin, ModelAdmin):
         "result_published", "result_published_at", "result_published_by",
         "result_revision_reason",
     )
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     @admin.action(description="نشر نتائج المحاولات المصححة")
     def publish_results(self, request, queryset):
