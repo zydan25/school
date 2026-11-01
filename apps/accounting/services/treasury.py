@@ -187,9 +187,13 @@ def _complete_bank_reconciliation(
     reconciled_by,
 ) -> tuple[BankReconciliation, str | None]:
     """الجزء الذري: احسب واحفظ نتائج المطابقة قبل إبلاغ المستدعي بالفرق."""
-    locked = BankReconciliation.objects.select_for_update(of=("self",)).select_related(
-        "treasury_account__account",
-    ).get(pk=reconciliation.pk)
+    locked = BankReconciliation.objects.select_for_update(of=("self",)).get(
+        pk=reconciliation.pk,
+    )
+    treasury = TreasuryAccount.objects.select_for_update(of=("self",)).select_related(
+        "account",
+    ).get(pk=locked.treasury_account_id)
+    locked.treasury_account = treasury
     if locked.status == BankReconciliation.Status.RECONCILED:
         return locked, None
 
