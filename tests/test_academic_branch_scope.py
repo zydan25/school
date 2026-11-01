@@ -276,3 +276,8 @@ class AcademicBranchApiTests(TestCase):
             f"/api/v1/app/stages/{self.school_query}&branch_id={self.other_branch.pk}"
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        malformed = self.client.get(
+            f"/api/v1/app/stages/{self.school_query}&branch_id=not-a-uuid"
+        )
+        self.assertEqual(malformed.status_code, status.HTTP_400_BAD_REQUEST)

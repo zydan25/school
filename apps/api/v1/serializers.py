@@ -221,6 +221,7 @@ class BranchSerializer(serializers.ModelSerializer):
             "id", "school", "created_at", "updated_at", "is_archived",
             "archived_at", "archived_by",
         )
+        validators = []  # School-scoped uniqueness is validated with the server-supplied school.
 
     def validate(self, attrs):
         attrs = super().validate(attrs)

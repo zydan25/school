@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+from uuid import UUID
 from decimal import Decimal
 from datetime import timedelta
 
@@ -32,9 +33,7 @@ from apps.accounts.services import (
     accept_school_invitation, active_membership, issue_school_invitation,
 )
 from apps.accounts.session_services import send_phone_message
-from apps.academics.models import (
-    AcademicTerm, AcademicYear,
-)
+from apps.academics.models import AcademicYear
 from apps.accounting.models import (
     Account, CostCenter, FiscalPeriod, JournalEntry, JournalEntryLine,
     PaymentVoucher, ReceiptVoucher,
@@ -185,13 +184,14 @@ class AcademicStructureViewSet(TenantModelViewSet):
         if not branch_id:
             return queryset
         try:
-            branch = Branch.objects.filter(
-                pk=branch_id,
-                school=self.get_school(),
-                is_archived=False,
-            ).first()
-        except (TypeError, ValueError):
-            branch = None
+            branch_uuid = UUID(str(branch_id))
+        except (TypeError, ValueError, AttributeError):
+            raise ValidationError({"branch_id": "أرسل معرف فرع صحيحاً بصيغة UUID."})
+        branch = Branch.objects.filter(
+            pk=branch_uuid,
+            school=self.get_school(),
+            is_archived=False,
+        ).first()
         if branch is None:
             raise ValidationError({"branch_id": "الفرع غير موجود أو لا يتبع المدرسة النشطة."})
         return queryset.filter(Q(branch_id=branch.pk) | Q(branch__isnull=True))
