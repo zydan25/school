@@ -1072,8 +1072,12 @@ class BankReconciliation(TenantOwnedModel):
             raise ValidationError({"reconciled_at": "وقت المطابقة والمسؤول عنها مطلوبان."})
 
     def save(self, *args, **kwargs):
+        if not self.pk and self.status == self.Status.RECONCILED:
+            raise ValidationError("اعتماد المطابقة البنكية يجب أن يتم عبر خدمة المطابقة.")
         if self.pk:
             original = BankReconciliation.objects.filter(pk=self.pk).first()
+            if original and original.status != self.Status.RECONCILED and self.status == self.Status.RECONCILED:
+                raise ValidationError("اعتماد المطابقة البنكية يجب أن يتم عبر خدمة المطابقة.")
             if original and original.status == self.Status.RECONCILED:
                 fields = (
                     "school_id", "treasury_account_id", "start_date", "end_date",
@@ -1097,14 +1101,34 @@ class BankReconciliation(TenantOwnedModel):
 
 class BankStatementLineQuerySet(TenantQuerySet):
     def update(self, **kwargs):
-        if self.filter(reconciliation__status=BankReconciliation.Status.RECONCILED).exists():
-            raise ValidationError("لا يمكن تعديل حركات كشف بنك بعد اعتماد المطابقة.")
-        return super().update(**kwargs)
+        if {"reconciliation", "reconciliation_id"}.intersection(kwargs):
+            raise ValidationError("نقل حركة كشف بنك يتم بتعديل السجل نفسه وليس عبر QuerySet.update().")
+        with transaction.atomic():
+            reconciliation_ids = list(
+                self.order_by().values_list("reconciliation_id", flat=True).distinct()
+            )
+            reconciliations = list(
+                BankReconciliation.objects.select_for_update().filter(
+                    pk__in=reconciliation_ids,
+                ).order_by("pk")
+            )
+            if any(item.status == BankReconciliation.Status.RECONCILED for item in reconciliations):
+                raise ValidationError("لا يمكن تعديل حركات كشف بنك بعد اعتماد المطابقة.")
+            return super().update(**kwargs)
 
     def delete(self):
-        if self.filter(reconciliation__status=BankReconciliation.Status.RECONCILED).exists():
-            raise ValidationError("لا يمكن حذف حركات كشف بنك بعد اعتماد المطابقة.")
-        return super().delete()
+        with transaction.atomic():
+            reconciliation_ids = list(
+                self.order_by().values_list("reconciliation_id", flat=True).distinct()
+            )
+            reconciliations = list(
+                BankReconciliation.objects.select_for_update().filter(
+                    pk__in=reconciliation_ids,
+                ).order_by("pk")
+            )
+            if any(item.status == BankReconciliation.Status.RECONCILED for item in reconciliations):
+                raise ValidationError("لا يمكن حذف حركات كشف بنك بعد اعتماد المطابقة.")
+            return super().delete()
 
 
 class BankStatementLine(TenantOwnedModel):
@@ -1160,8 +1184,11 @@ class BankStatementLine(TenantOwnedModel):
             line = self.journal_line
             if line.school_id != self.school_id:
                 raise ValidationError({"journal_line": "سطر الأستاذ لا يتبع المدرسة نفسها."})
-            if line.account_id != self.reconciliation.treasury_account.account_id:
+            treasury = self.reconciliation.treasury_account
+            if line.account_id != treasury.account_id:
                 raise ValidationError({"journal_line": "سطر الأستاذ لا يخص الحساب البنكي المحدد."})
+            if treasury.branch_id and line.branch_id != treasury.branch_id:
+                raise ValidationError({"journal_line": "سطر الأستاذ لا يخص فرع الحساب البنكي المحدد."})
             if line.journal_entry.status != JournalEntry.Status.POSTED:
                 raise ValidationError({"journal_line": "لا يمكن مطابقة حركة مع قيد غير مرحّل."})
             if line.journal_entry.date != self.transaction_date:
@@ -1169,8 +1196,33 @@ class BankStatementLine(TenantOwnedModel):
             if line.debit - line.credit != self.amount:
                 raise ValidationError({"journal_line": "قيمة سطر الأستاذ لا تطابق قيمة حركة كشف البنك."})
 
+    @transaction.atomic
+    def save(self, *args, **kwargs):
+        reconciliation_ids = {self.reconciliation_id}
+        if self.pk:
+            previous_id = BankStatementLine.objects.filter(pk=self.pk).values_list(
+                "reconciliation_id", flat=True,
+            ).first()
+            if previous_id:
+                reconciliation_ids.add(previous_id)
+        reconciliations = list(
+            BankReconciliation.objects.select_for_update().filter(
+                pk__in=reconciliation_ids,
+            ).order_by("pk")
+        )
+        if len(reconciliations) != len(reconciliation_ids):
+            raise ValidationError("محضر المطابقة البنكية المرتبط بالحركة غير موجود.")
+        if any(item.status == BankReconciliation.Status.RECONCILED for item in reconciliations):
+            raise ValidationError("لا يمكن إضافة أو تعديل حركة بعد اعتماد المطابقة.")
+        self._state.fields_cache.pop("reconciliation", None)
+        return super().save(*args, **kwargs)
+
+    @transaction.atomic
     def delete(self, *args, **kwargs):
-        if self.reconciliation.status == BankReconciliation.Status.RECONCILED:
+        reconciliation = BankReconciliation.objects.select_for_update().get(
+            pk=self.reconciliation_id,
+        )
+        if reconciliation.status == BankReconciliation.Status.RECONCILED:
             raise ValidationError("لا يمكن حذف حركة من مطابقة بنكية معتمدة.")
         return super().delete(*args, **kwargs)
 
