@@ -171,167 +171,172 @@ def post_payroll_to_accounting(
     posted_by=None,
     user=None,
 ) -> JournalEntry:
-    """
-    ترحيل مسير الرواتب المعتمد إلى دفتر الأستاذ العام وإنشاء قيد الاستحقاق المزدوج:
-    مدين: مصروف الرواتب والأجور (Gross Salary 5101)
-    دائن: الرواتب المستحقة للموظفين (Net 2103) + أمانات التأمينات (2104) والسلف (1105) وجزاءات الغياب (4201).
-    """
+    """ترحيل مسير الرواتب بعد مطابقة الإجماليات وتخصيص كل استقطاع سلفة فعلياً."""
     if user is not None and posted_by is None:
         posted_by = user
-    if payroll_run.journal_entry:
-        return payroll_run.journal_entry
-
-    if payroll_run.status != PayrollRun.Status.APPROVED:
-        raise ValidationError("لا يمكن ترحيل مسير رواتب محاسبياً قبل اعتماده رسمياً من الإدارة.")
-
     from apps.accounting.services.auto_posting import (
         _get_account_or_seed,
         _get_active_fiscal_period,
     )
-    school = payroll_run.school
 
     with transaction.atomic():
-        locked_run = PayrollRun.objects.select_for_update().get(pk=payroll_run.pk)
-        if locked_run.journal_entry:
-            return locked_run.journal_entry
+        locked_run = PayrollRun.objects.select_for_update(of=("self",)).get(pk=payroll_run.pk)
+        if locked_run.journal_entry_id:
+            if (
+                locked_run.journal_entry.status == JournalEntry.Status.POSTED
+                and locked_run.status in (PayrollRun.Status.POSTED, PayrollRun.Status.PAID)
+            ):
+                payroll_run.journal_entry = locked_run.journal_entry
+                return locked_run.journal_entry
+            raise ValidationError("مسير الرواتب مرتبط بقيد غير مرحّل أو بحالة غير متوافقة؛ يجب مراجعته.")
         if locked_run.status != PayrollRun.Status.APPROVED:
             raise ValidationError("لا يمكن ترحيل مسير رواتب محاسبياً قبل اعتماده رسمياً من الإدارة.")
 
-        if expense_account is None:
-            expense_account = _get_account_or_seed(school, "5101", "رواتب وأجور الكادر والموظفين")
-        elif expense_account.school_id != school.pk:
-            raise ValidationError("حساب مصروف الرواتب لا يتبع نفس المدرسة.")
-
-        if payable_account is None:
-            payable_account = _get_account_or_seed(school, "2103", "الرواتب والأجور المستحقة")
-        elif payable_account.school_id != school.pk:
-            raise ValidationError("حساب مستحقات الرواتب لا يتبع نفس المدرسة.")
-
-        loans_acc = _get_account_or_seed(school, "1105", "سلف وقروض الموظفين")
-        insurance_acc = _get_account_or_seed(school, "2104", "أمانات التأمينات الاجتماعية")
-        absence_acc = _get_account_or_seed(school, "4201", "إيرادات جزاءات واستقطاعات غياب الموظفين")
-
+        school = locked_run.school
         last_day_num = calendar.monthrange(locked_run.year, locked_run.month)[1]
         post_date = datetime.date(locked_run.year, locked_run.month, last_day_num)
         period = _get_active_fiscal_period(school, post_date)
+        payslips = list(
+            locked_run.payslips.select_for_update(of=("self",))
+            .filter(is_archived=False).order_by("pk")
+        )
+        if not payslips:
+            raise ValidationError("لا يمكن ترحيل مسير رواتب بلا قسائم رواتب.")
 
-        entry_number = f"PAY-{locked_run.year}{locked_run.month:02d}-{locked_run.id.hex[:6].upper()}"
-        
+        gross_total = sum((slip.total_earnings for slip in payslips), Decimal("0.00"))
+        net_total = sum((slip.net_salary for slip in payslips), Decimal("0.00"))
+        loans_total = sum((slip.loan_deduction for slip in payslips), Decimal("0.00"))
+        insurance_total = sum((slip.insurance_deduction for slip in payslips), Decimal("0.00"))
+        absence_total = sum((slip.absence_deduction for slip in payslips), Decimal("0.00"))
+        deductions_total = loans_total + insurance_total + absence_total
+        run_gross = locked_run.total_basic + locked_run.total_allowances
+        if gross_total != run_gross:
+            raise ValidationError(
+                f"إجمالي استحقاقات القسائم ({gross_total}) لا يطابق إجمالي المسير ({run_gross})."
+            )
+        if deductions_total != locked_run.total_deductions:
+            raise ValidationError("إجمالي الاستقطاعات في القسائم لا يطابق إجمالي الاستقطاعات في المسير.")
+        if net_total != locked_run.total_net:
+            raise ValidationError("صافي القسائم لا يطابق صافي المسير المسجل.")
+        if gross_total - deductions_total != net_total:
+            raise ValidationError("مسير الرواتب غير متوازن: الاستحقاقات ناقص الاستقطاعات لا يساوي الصافي.")
+        if any(value < Decimal("0.00") for value in (
+            gross_total, net_total, loans_total, insurance_total, absence_total,
+        )):
+            raise ValidationError("لا تقبل المحاسبة مبالغ رواتب أو استقطاعات سالبة.")
+
+        if expense_account is None:
+            expense_account = _get_account_or_seed(
+                school, "5101", "رواتب وأجور الكادر والموظفين",
+            )
+        if payable_account is None:
+            payable_account = _get_account_or_seed(
+                school, "2103", "الرواتب والأجور المستحقة",
+            )
+        for account in (expense_account, payable_account):
+            if account.school_id != school.pk or not account.is_leaf or account.is_archived:
+                raise ValidationError("حساب مصروف الرواتب أو المستحقات غير صالح لهذه المدرسة.")
+        if expense_account.account_type != Account.AccountType.EXPENSE:
+            raise ValidationError("حساب مصروف الرواتب يجب أن يكون من نوع المصروفات.")
+        if payable_account.account_type != Account.AccountType.LIABILITY:
+            raise ValidationError("حساب مستحقات الرواتب يجب أن يكون من نوع الالتزامات.")
+        loans_acc = _get_account_or_seed(school, "1105", "سلف وقروض الموظفين")
+        insurance_acc = _get_account_or_seed(school, "2104", "أمانات التأمينات الاجتماعية")
+        absence_acc = _get_account_or_seed(
+            school, "4201", "إيرادات جزاءات واستقطاعات غياب الموظفين",
+        )
+
+        repayment_plan = []
+        for payslip in payslips:
+            remaining = payslip.loan_deduction
+            if remaining <= Decimal("0.00"):
+                continue
+            if bool(payslip.teacher_id) == bool(payslip.staff_member_id):
+                raise ValidationError("قسيمة استقطاع السلفة يجب أن ترتبط بمعلم أو موظف إداري واحد فقط.")
+            loans_qs = EmployeeLoanAdvance.objects.select_for_update(of=("self",)).filter(
+                school=school,
+                status=EmployeeLoanAdvance.Status.ACTIVE,
+                start_date__lte=post_date,
+                is_archived=False,
+            )
+            if payslip.teacher_id:
+                loans_qs = loans_qs.filter(teacher_id=payslip.teacher_id)
+            else:
+                loans_qs = loans_qs.filter(staff_member_id=payslip.staff_member_id)
+            if payslip.branch_id:
+                loans_qs = loans_qs.filter(
+                    Q(branch_id=payslip.branch_id) | Q(branch__isnull=True)
+                )
+            for loan in loans_qs.order_by("start_date", "created_at", "pk"):
+                if remaining <= Decimal("0.00"):
+                    break
+                installment = min(
+                    remaining, loan.monthly_installment, loan.remaining_amount,
+                )
+                if installment <= Decimal("0.00"):
+                    continue
+                repayment_plan.append((payslip, loan, installment))
+                remaining -= installment
+            if remaining > Decimal("0.00"):
+                raise ValidationError(
+                    f"استقطاع السلفة في قسيمة {payslip.pk} يتجاوز الأقساط المتاحة للسلف النشطة بمبلغ {remaining}."
+                )
+
+        source_reference = str(locked_run.pk)
+        if JournalEntry.objects.filter(
+            school=school, source_module="payroll",
+            source_reference=source_reference, is_archived=False,
+        ).exists():
+            raise ValidationError("يوجد قيد رواتب سابق غير مرتبط بمسير الرواتب؛ راجع سجل التدقيق.")
+
         entry = JournalEntry.objects.create(
             school=school,
             fiscal_period=period,
-            entry_number=entry_number,
+            entry_number=f"PAY-{locked_run.year}{locked_run.month:02d}-{locked_run.pk.hex[:6].upper()}",
             date=post_date,
             description=f"إثبات استحقاق مسير الرواتب: {locked_run.name}",
             status=JournalEntry.Status.DRAFT,
             source_module="payroll",
-            source_reference=str(locked_run.id),
+            source_reference=source_reference,
         )
-
-        gross_total = locked_run.total_basic + locked_run.total_allowances
-        
-        # 1. Debit: Salaries & Wages Expense
         JournalEntryLine.objects.create(
-            school=school,
-            journal_entry=entry,
-            account=expense_account,
-            debit=gross_total,
-            credit=Decimal("0.00"),
+            school=school, journal_entry=entry, account=expense_account,
+            debit=gross_total, credit=Decimal("0.00"),
             description=f"إجمالي استحقاقات {locked_run.name}",
         )
-
-        # 2. Credit: Accrued Salaries Payable (Net)
-        JournalEntryLine.objects.create(
-            school=school,
-            journal_entry=entry,
-            account=payable_account,
-            debit=Decimal("0.00"),
-            credit=locked_run.total_net,
-            description="صافي الرواتب المستحقة للصرف",
-        )
-
-        # 3. Credit: Total Loans Deductions
-        total_loans_ded = sum(p.loan_deduction for p in locked_run.payslips.all())
-        if total_loans_ded > Decimal("0.00"):
-            JournalEntryLine.objects.create(
-                school=school,
-                journal_entry=entry,
-                account=loans_acc,
-                debit=Decimal("0.00"),
-                credit=total_loans_ded,
-                description="استقطاعات سلف الموظفين المحصلة من الرواتب",
-            )
-
-        # 4. Credit: Total Insurance deductions
-        total_insurance_ded = sum(p.insurance_deduction for p in locked_run.payslips.all())
-        if total_insurance_ded > Decimal("0.00"):
-            JournalEntryLine.objects.create(
-                school=school,
-                journal_entry=entry,
-                account=insurance_acc,
-                debit=Decimal("0.00"),
-                credit=total_insurance_ded,
-                description="أمانات التأمينات الاجتماعية المستقطعة من الرواتب",
-            )
-
-        # 5. Credit: Total Absence Deductions
-        total_absence_ded = sum(p.absence_deduction for p in locked_run.payslips.all())
-        if total_absence_ded > Decimal("0.00"):
-            JournalEntryLine.objects.create(
-                school=school,
-                journal_entry=entry,
-                account=absence_acc,
-                debit=Decimal("0.00"),
-                credit=total_absence_ded,
-                description="استقطاعات وجزاءات الغياب من الرواتب",
-            )
-
+        for amount, account, description in (
+            (net_total, payable_account, "صافي الرواتب المستحقة للصرف"),
+            (loans_total, loans_acc, "استقطاعات سلف الموظفين المحصلة من الرواتب"),
+            (insurance_total, insurance_acc, "أمانات التأمينات الاجتماعية المستقطعة من الرواتب"),
+            (absence_total, absence_acc, "استقطاعات وجزاءات الغياب من الرواتب"),
+        ):
+            if amount > Decimal("0.00"):
+                JournalEntryLine.objects.create(
+                    school=school, journal_entry=entry, account=account,
+                    debit=Decimal("0.00"), credit=amount, description=description,
+                )
         entry.post(user=posted_by)
 
-        # Update specific active loans for each employee and record EmployeeLoanRepayment
-        for p in locked_run.payslips.filter(loan_deduction__gt=0):
-            needed_ded = p.loan_deduction
-            loans_qs = EmployeeLoanAdvance.objects.filter(
-                school=school,
-                status=EmployeeLoanAdvance.Status.ACTIVE,
-                is_archived=False,
+        for payslip, loan, installment in repayment_plan:
+            balance_before = loan.remaining_amount
+            loan.repaid_amount += installment
+            balance_after = loan.remaining_amount
+            if loan.repaid_amount >= loan.amount:
+                loan.status = EmployeeLoanAdvance.Status.FULLY_REPAID
+            loan.save(update_fields=["repaid_amount", "status", "updated_at"])
+            EmployeeLoanRepayment.objects.create(
+                school=school, branch=payslip.branch, loan=loan,
+                payslip=payslip, payroll_run=locked_run,
+                amount=installment, balance_before=balance_before,
+                balance_after=balance_after, repaid_at=post_date,
             )
-            if p.teacher_id:
-                loans_qs = loans_qs.filter(teacher_id=p.teacher_id)
-            elif p.staff_member_id:
-                loans_qs = loans_qs.filter(staff_member_id=p.staff_member_id)
-            else:
-                loans_qs = loans_qs.none()
-
-            for loan in loans_qs.order_by("start_date", "created_at"):
-                if needed_ded <= Decimal("0.00"):
-                    break
-                pay_installment = min(needed_ded, min(loan.monthly_installment, loan.remaining_amount))
-                bal_before = loan.remaining_amount
-                loan.repaid_amount += pay_installment
-                bal_after = loan.remaining_amount
-                needed_ded -= pay_installment
-                if loan.repaid_amount >= loan.amount:
-                    loan.status = EmployeeLoanAdvance.Status.FULLY_REPAID
-                loan.save(update_fields=["repaid_amount", "status", "updated_at"])
-
-                EmployeeLoanRepayment.objects.create(
-                    school=school,
-                    loan=loan,
-                    payslip=p,
-                    payroll_run=locked_run,
-                    amount=pay_installment,
-                    balance_before=bal_before,
-                    balance_after=bal_after,
-                    repaid_at=post_date,
-                )
 
         locked_run.journal_entry = entry
         locked_run.status = PayrollRun.Status.POSTED
         locked_run.save(update_fields=["journal_entry", "status", "updated_at"])
-
+        payroll_run.journal_entry = entry
+        payroll_run.status = PayrollRun.Status.POSTED
         return entry
-
 
 def reverse_payroll_run(payroll_run: PayrollRun, reason: str, reversed_by=None) -> PayrollRun:
     """
