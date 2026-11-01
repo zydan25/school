@@ -161,6 +161,28 @@ class Account(TenantOwnedModel):
             models.Index(fields=["school", "is_leaf"]),
         ]
 
+    def clean(self):
+        super().clean()
+        if self.parent_id:
+            parent = self.parent
+            if parent.school_id != self.school_id:
+                raise ValidationError({"parent": "الحساب الأب لا يتبع المدرسة نفسها."})
+            if parent.is_leaf:
+                raise ValidationError({"parent": "لا يمكن إضافة حساب فرعي تحت حساب تفصيلي."})
+            if parent.account_type != self.account_type:
+                raise ValidationError({"account_type": "نوع الحساب يجب أن يطابق نوع الحساب الأب."})
+            if parent.branch_id and parent.branch_id != self.branch_id:
+                raise ValidationError({"parent": "الحساب الأب يتبع فرعاً مختلفاً."})
+            ancestor = parent
+            while ancestor:
+                if self.pk and ancestor.pk == self.pk:
+                    raise ValidationError({"parent": "لا يمكن إنشاء حلقة في شجرة الحسابات."})
+                ancestor = ancestor.parent
+        if self.is_leaf and self.pk and self.children.exists():
+            raise ValidationError({"is_leaf": "لا يمكن تحويل حساب له حسابات فرعية إلى حساب تفصيلي."})
+        if not self.is_leaf and self.pk and self.journal_lines.filter(journal_entry__status=JournalEntry.Status.POSTED).exists():
+            raise ValidationError({"is_leaf": "لا يمكن تحويل حساب مستخدم في قيود مرحلة إلى حساب تجميعي."})
+
     def __str__(self) -> str:
         return f"{self.code} - {self.name}"
 
@@ -180,6 +202,11 @@ class CostCenter(TenantOwnedModel):
                 name="accounting_cost_center_uniq",
             )
         ]
+
+    def clean(self):
+        super().clean()
+        if self.branch_id and self.branch.school_id != self.school_id:
+            raise ValidationError({"branch": "مركز التكلفة يجب أن يتبع المدرسة نفسها."})
 
     def __str__(self) -> str:
         return f"{self.code} - {self.name}"
@@ -256,6 +283,7 @@ class JournalEntry(TenantOwnedModel):
         ]
         indexes = [
             models.Index(fields=["school", "date", "status"]),
+            models.Index(fields=["school", "source_module", "source_reference"]),
         ]
 
     def __str__(self) -> str:
@@ -263,13 +291,22 @@ class JournalEntry(TenantOwnedModel):
 
     def clean(self):
         super().clean()
+        if self.status == self.Status.POSTED and not self.fiscal_period_id:
+            raise ValidationError({"fiscal_period": "لا يمكن ترحيل قيد دون ربطه بفترة مالية."})
         if self.fiscal_period_id:
             if self.fiscal_period.school_id != self.school_id:
                 raise ValidationError({"fiscal_period": "الفترة المحاسبية لا تتبع نفس المدرسة."})
-            if self.fiscal_period.is_closed:
+            is_year_close_entry = (
+                self.source_module == "fiscal_year_close"
+                and self.source_reference == str(self.fiscal_period.fiscal_year_id)
+                and self.date == self.fiscal_period.fiscal_year.end_date
+            )
+            if self.fiscal_period.is_closed and not is_year_close_entry:
                 raise ValidationError({"fiscal_period": "لا يمكن الترحيل على فترة محاسبية مقفلة."})
             if self.fiscal_period.fiscal_year.is_closed:
                 raise ValidationError({"fiscal_period": "السنة المالية التابعة لها هذه الفترة مقفلة."})
+            if self.date < self.fiscal_period.start_date or self.date > self.fiscal_period.end_date:
+                raise ValidationError({"date": "تاريخ القيد خارج حدود الفترة المالية."})
 
     def save(self, *args, **kwargs):
         if self.pk:
@@ -302,52 +339,86 @@ class JournalEntry(TenantOwnedModel):
         return super().delete(*args, **kwargs)
 
     def post(self, user=None):
-        """
-        التحقق الصارم وترحيل القيد اليومي نهائياً إلى دفتر الأستاذ العام.
-        يتحقق من توازن المدين والدائن، وتطابق المدرسة مع أسطر القيد وحسابات الدليل،
-        وحالة الفترة المحاسبية.
-        """
-        if self.status == self.Status.POSTED:
-            raise ValidationError("القيد مرحّل مسبقاً.")
-        if self.fiscal_period and self.fiscal_period.is_closed:
-            raise ValidationError("لا يمكن ترحيل القيد على فترة محاسبية مقفلة.")
-        if self.fiscal_period and self.fiscal_period.fiscal_year.is_closed:
-            raise ValidationError("السنة المالية التابعة لها هذه الفترة مقفلة.")
-        if self.fiscal_period:
-            if self.date < self.fiscal_period.start_date or self.date > self.fiscal_period.end_date:
-                raise ValidationError(f"تاريخ القيد ({self.date}) يقع خارج حدود الفترة المحاسبية المحددة ({self.fiscal_period.start_date} إلى {self.fiscal_period.end_date}).")
+        """ترحيل ذري ومقفل للقيد بعد التحقق من الفترة والمصدر والمدين والدائن."""
+        with transaction.atomic():
+            locked = JournalEntry.objects.select_for_update().select_related(
+                "fiscal_period__fiscal_year",
+            ).get(pk=self.pk)
+            if locked.status == self.Status.POSTED:
+                raise ValidationError("القيد مرحّل مسبقاً.")
+            if not locked.fiscal_period_id:
+                raise ValidationError("لا يمكن ترحيل قيد دون فترة مالية مفتوحة.")
+            period = FiscalPeriod.objects.select_for_update().select_related(
+                "fiscal_year",
+            ).get(pk=locked.fiscal_period_id)
+            if period.school_id != locked.school_id:
+                raise ValidationError("الفترة المالية لا تتبع مدرسة القيد.")
+            if period.fiscal_year.is_closed:
+                raise ValidationError("السنة المالية التابعة للفترة مقفلة.")
+            is_year_close_entry = (
+                locked.source_module == "fiscal_year_close"
+                and locked.source_reference == str(period.fiscal_year_id)
+                and locked.date == period.fiscal_year.end_date
+                and period.is_closed
+                and not period.fiscal_year.is_closed
+            )
+            if period.is_closed and not is_year_close_entry:
+                raise ValidationError("لا يمكن الترحيل على فترة مالية مقفلة.")
+            if locked.date < period.start_date or locked.date > period.end_date:
+                raise ValidationError("تاريخ القيد يقع خارج حدود الفترة المالية المحددة.")
 
-        lines = list(self.lines.all())
-        if not lines:
-            raise ValidationError("لا يمكن ترحيل قيد محاسبي بدون أسطر تفصيلية.")
-        total_debit = sum(line.debit for line in lines)
-        total_credit = sum(line.credit for line in lines)
-        if total_debit != total_credit:
-            raise ValidationError(f"القيد غير متوازن: إجمالي المدين ({total_debit}) لا يساوي إجمالي الدائن ({total_credit}).")
-        if total_debit <= Decimal("0.00"):
-            raise ValidationError("يجب أن يحتوي القيد على مبالغ محاسبية أكبر من الصفر.")
-        for line in lines:
-            if line.school_id != self.school_id or line.account.school_id != self.school_id:
-                raise ValidationError("عدم تطابق المدرسة: يجب أن تتبع كافة أسطر القيد وحساباتها نفس مدرسة القيد.")
-            if not line.account.is_leaf:
-                raise ValidationError(f"لا يمكن الترحيل على الحساب '{line.account.name}' لأنه حساب رئيسي تجميعي؛ يرجى اختيار حساب فرعي تفصيلي.")
-            if line.account.is_archived:
-                raise ValidationError(f"الحساب '{line.account.name}' معطل وموقوف عن العمليات.")
-            if line.debit < Decimal("0.00") or line.credit < Decimal("0.00"):
-                raise ValidationError("لا يمكن إدخال مبالغ سالبة في أسطر القيد المحاسبي.")
-            if line.debit == Decimal("0.00") and line.credit == Decimal("0.00"):
-                raise ValidationError("يجب إدخال مبلغ مدين أو دائن أكبر من الصفر في كل سطر من أسطر القيد.")
-            if line.debit > Decimal("0.00") and line.credit > Decimal("0.00"):
-                raise ValidationError("لا يمكن أن يكون السطر مديناً ودائناً في نفس الوقت.")
-            if line.cost_center and line.cost_center.school_id != self.school_id:
-                raise ValidationError("مركز التكلفة المحدد في سطر القيد لا يتبع نفس المدرسة.")
+            if locked.source_module and locked.source_reference:
+                duplicate_source = JournalEntry.objects.filter(
+                    school_id=locked.school_id,
+                    source_module=locked.source_module,
+                    source_reference=locked.source_reference,
+                    is_archived=False,
+                ).exclude(pk=locked.pk).exists()
+                if duplicate_source:
+                    raise ValidationError("يوجد قيد آخر مسجل للمستند المصدر نفسه؛ يمنع تكرار الترحيل.")
 
-        self.status = self.Status.POSTED
-        self.posted_at = timezone.now()
-        if user:
-            self.posted_by = user
-        self.save(update_fields=["status", "posted_at", "posted_by", "updated_at"])
-        return self
+            lines = list(
+                JournalEntryLine.objects.select_for_update().filter(
+                    journal_entry=locked, is_archived=False,
+                ).select_related("account", "cost_center")
+            )
+            if not lines:
+                raise ValidationError("لا يمكن ترحيل قيد محاسبي بدون أسطر تفصيلية.")
+            total_debit = sum((line.debit for line in lines), Decimal("0.00"))
+            total_credit = sum((line.credit for line in lines), Decimal("0.00"))
+            if total_debit <= Decimal("0.00") or total_debit != total_credit:
+                raise ValidationError(
+                    f"القيد غير متوازن: إجمالي المدين ({total_debit}) لا يساوي إجمالي الدائن ({total_credit})."
+                )
+            for line in lines:
+                if line.school_id != locked.school_id or line.account.school_id != locked.school_id:
+                    raise ValidationError("يجب أن تتبع كافة أسطر القيد وحساباته مدرسة القيد نفسها.")
+                if line.account.branch_id and line.branch_id != line.account.branch_id:
+                    raise ValidationError("فرع سطر القيد لا يطابق فرع الحساب.")
+                if locked.branch_id and line.branch_id and line.branch_id != locked.branch_id:
+                    raise ValidationError("فرع سطر القيد لا يطابق فرع القيد.")
+                if line.cost_center and line.cost_center.school_id != locked.school_id:
+                    raise ValidationError("مركز التكلفة لا يتبع مدرسة القيد.")
+                if line.cost_center and line.cost_center.branch_id and line.branch_id != line.cost_center.branch_id:
+                    raise ValidationError("مركز التكلفة لا يتبع فرع سطر القيد.")
+                if not line.account.is_leaf or line.account.is_archived:
+                    raise ValidationError(f"الحساب '{line.account.name}' تجميعي أو مؤرشف ولا يقبل الترحيل.")
+                if (
+                    line.debit < Decimal("0.00")
+                    or line.credit < Decimal("0.00")
+                    or (line.debit == Decimal("0.00") and line.credit == Decimal("0.00"))
+                    or (line.debit > Decimal("0.00") and line.credit > Decimal("0.00"))
+                ):
+                    raise ValidationError("كل سطر يجب أن يكون مديناً أو دائناً فقط وبقيمة موجبة.")
+
+            locked.status = self.Status.POSTED
+            locked.posted_at = timezone.now()
+            locked.posted_by = user
+            locked.save(update_fields=["status", "posted_at", "posted_by", "updated_at"])
+            self.status = locked.status
+            self.posted_at = locked.posted_at
+            self.posted_by = locked.posted_by
+            return self
 
 
 class JournalEntryLineQuerySet(models.QuerySet):
