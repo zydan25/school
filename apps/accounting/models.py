@@ -315,7 +315,7 @@ class JournalEntry(TenantOwnedModel):
         ]
         indexes = [
             models.Index(fields=["school", "date", "status"]),
-            models.Index(fields=["school", "source_module", "source_reference"]),
+            models.Index(fields=["school", "source_module", "source_reference"], name="acct_journal_source_idx"),
         ]
 
     def __str__(self) -> str:
@@ -708,7 +708,7 @@ class ReceiptVoucher(TenantOwnedModel):
         CANCELLED = "cancelled", "ملغى"
 
     voucher_number = models.CharField("رقم سند القبض العام", max_length=50, db_index=True)
-    idempotency_key = models.CharField("مفتاح منع تكرار السند", max_length=100, blank=True)
+    idempotency_key = models.CharField("مفتاح منع تكرار السند", max_length=100, blank=True, default="")
     date = models.DateField("تاريخ القبض", default=timezone.localdate)
     received_from = models.CharField("قُبض من (الجهة / الشخص)", max_length=200)
     amount = models.DecimalField("المبلغ المقبوض", max_digits=14, decimal_places=2)
