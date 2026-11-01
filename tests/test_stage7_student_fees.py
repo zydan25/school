@@ -165,10 +165,10 @@ class Stage7StudentFeesTests(TestCase):
 
     def test_fee_structures_support_global_and_branch_overrides(self):
         branch_a = Branch.objects.create(
-            school=self.school, code="A", name="الفرع أ",
+            school=self.school, code="BR-A", name="الفرع أ",
         )
         branch_b = Branch.objects.create(
-            school=self.school, code="B", name="الفرع ب",
+            school=self.school, code="BR-B", name="الفرع ب",
         )
         global_structure = FeeStructure.objects.create(
             school=self.school, academic_year=self.academic_year,
