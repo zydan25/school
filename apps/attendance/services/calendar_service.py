@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import datetime
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 
 from apps.academics.models import SchoolWorkingDay
 from apps.attendance.models import (
@@ -106,11 +108,14 @@ def is_school_day(school, date: datetime.date, academic_year=None, branch=None) 
     if academic_year:
         query = query.filter(calendar__academic_year=academic_year)
     if branch:
-        query = query.filter(Q(calendar__branch=branch) | Q(calendar__branch__isnull=True))
+        branch_day = query.filter(calendar__branch=branch).first()
+        if branch_day is not None:
+            return branch_day.is_school_day
+        query = query.filter(calendar__branch__isnull=True)
     else:
         query = query.filter(calendar__branch__isnull=True)
 
-    day_record = query.order_by("calendar__branch_id").first()
+    day_record = query.first()
     if day_record is not None:
         return day_record.is_school_day
 

@@ -245,14 +245,8 @@ class BranchSerializer(serializers.ModelSerializer):
         return attrs
 
 
-class AcademicStructureSerializer(TenantModelSerializer):
-    """Tenant serializer that allows a validated branch for academic structure only."""
-
-    class Meta(TenantModelSerializer.Meta):
-        read_only_fields = tuple(
-            field for field in TenantModelSerializer.Meta.read_only_fields
-            if field != "branch"
-        )
+class AcademicStructureBranchMixin:
+    """Mixin for allowing a school-owned branch on academic serializers only."""
 
     def get_fields(self):
         fields = super().get_fields()
@@ -265,62 +259,70 @@ class AcademicStructureSerializer(TenantModelSerializer):
         return fields
 
 
-class AcademicYearSerializer(AcademicStructureSerializer):
-    class Meta(AcademicStructureSerializer.Meta):
+class AcademicYearSerializer(AcademicStructureBranchMixin, TenantModelSerializer):
+    class Meta(TenantModelSerializer.Meta):
         model = AcademicYear
         fields = "__all__"
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch")
 
 
-class AcademicTermSerializer(AcademicStructureSerializer):
-    class Meta(AcademicStructureSerializer.Meta):
+class AcademicTermSerializer(AcademicStructureBranchMixin, TenantModelSerializer):
+    class Meta(TenantModelSerializer.Meta):
         model = AcademicTerm
         fields = "__all__"
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch")
 
 
-class EducationalStageSerializer(AcademicStructureSerializer):
-    class Meta(AcademicStructureSerializer.Meta):
+class EducationalStageSerializer(AcademicStructureBranchMixin, TenantModelSerializer):
+    class Meta(TenantModelSerializer.Meta):
         model = EducationalStage
         fields = "__all__"
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch")
 
 
-class GradeLevelSerializer(AcademicStructureSerializer):
-    class Meta(AcademicStructureSerializer.Meta):
+class GradeLevelSerializer(AcademicStructureBranchMixin, TenantModelSerializer):
+    class Meta(TenantModelSerializer.Meta):
         model = GradeLevel
         fields = "__all__"
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch")
 
 
-class ClassroomSerializer(AcademicStructureSerializer):
-    class Meta(AcademicStructureSerializer.Meta):
+class ClassroomSerializer(AcademicStructureBranchMixin, TenantModelSerializer):
+    class Meta(TenantModelSerializer.Meta):
         model = Classroom
         fields = "__all__"
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch")
 
 
-class SectionSerializer(AcademicStructureSerializer):
+class SectionSerializer(AcademicStructureBranchMixin, TenantModelSerializer):
     student_count = serializers.IntegerField(source="current_student_count", read_only=True)
     available_seats = serializers.IntegerField(read_only=True)
 
-    class Meta(AcademicStructureSerializer.Meta):
+    class Meta(TenantModelSerializer.Meta):
         model = Section
         fields = "__all__"
-        read_only_fields = AcademicStructureSerializer.Meta.read_only_fields + ("student_count", "available_seats")
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch") + ("student_count", "available_seats")
 
 
-class SubjectSerializer(AcademicStructureSerializer):
-    class Meta(AcademicStructureSerializer.Meta):
+class SubjectSerializer(AcademicStructureBranchMixin, TenantModelSerializer):
+    class Meta(TenantModelSerializer.Meta):
         model = Subject
         fields = "__all__"
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch")
 
 
-class PeriodDefinitionSerializer(AcademicStructureSerializer):
-    class Meta(AcademicStructureSerializer.Meta):
+class PeriodDefinitionSerializer(AcademicStructureBranchMixin, TenantModelSerializer):
+    class Meta(TenantModelSerializer.Meta):
         model = PeriodDefinition
         fields = "__all__"
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch")
 
 
-class SchoolWorkingDaySerializer(AcademicStructureSerializer):
-    class Meta(AcademicStructureSerializer.Meta):
+class SchoolWorkingDaySerializer(AcademicStructureBranchMixin, TenantModelSerializer):
+    class Meta(TenantModelSerializer.Meta):
         model = SchoolWorkingDay
         fields = "__all__"
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch")
 
 
 class TeacherSerializer(TenantModelSerializer):

@@ -18,6 +18,10 @@ from apps.academics.models import (
 )
 from apps.tenants.models import Branch, School
 from apps.tenants.services import provision_school
+from apps.students.models import Student, StudentEnrollment
+from apps.students.services import promote_student
+from apps.attendance.models import SchoolCalendar, SchoolCalendarDay
+from apps.attendance.services.calendar_service import is_school_day, seed_default_calendar
 
 
 class AcademicBranchModelTests(TestCase):
@@ -169,6 +173,100 @@ class AcademicBranchModelTests(TestCase):
                 code="N-0", name="شعبة بلا سعة", capacity=0,
             )
 
+    def test_student_enrollment_and_transitions_remain_inside_its_branch(self):
+        year_north = AcademicYear.objects.create(
+            school=self.school, branch=self.branch_a, code="STU-N-2026",
+            name="سنة شمال", starts_on=date(2026, 9, 1),
+            ends_on=date(2027, 6, 30), status=AcademicYear.Status.ACTIVE,
+        )
+        stage_north = EducationalStage.objects.create(
+            school=self.school, branch=self.branch_a,
+            code="STU-N-PRI", name="ابتدائية شمال", sequence=1,
+        )
+        grade_north = GradeLevel.objects.create(
+            school=self.school, branch=self.branch_a, stage=stage_north,
+            code="STU-N-G1", name="الأول شمال", sequence=1,
+        )
+        section_north = Section.objects.create(
+            school=self.school, branch=self.branch_a,
+            academic_year=year_north, grade=grade_north,
+            code="STU-N-1-A", name="الأول أ شمال",
+        )
+        student = Student.objects.create(
+            school=self.school, branch=self.branch_a,
+            academic_year=year_north, grade_level=grade_north,
+            section=section_north, student_id_number="BR-STU-001",
+            first_name="طالب", last_name="الشمال",
+            gender=Student.Gender.MALE, enrollment_date=date(2026, 9, 1),
+        )
+        enrollment = StudentEnrollment.objects.get(
+            school=self.school, student=student, academic_year=year_north,
+        )
+        self.assertEqual(enrollment.branch_id, self.branch_a.pk)
+
+        year_south = AcademicYear.objects.create(
+            school=self.school, branch=self.branch_b, code="STU-S-2027",
+            name="سنة جنوب", starts_on=date(2027, 9, 1),
+            ends_on=date(2028, 6, 30), status=AcademicYear.Status.ACTIVE,
+        )
+        with self.assertRaises(ValidationError):
+            promote_student(
+                student=student,
+                next_academic_year=year_south,
+                next_grade_level=grade_north,
+            )
+
+    def test_calendar_seed_uses_branch_working_days_and_branch_calendar_overrides_shared(self):
+        year = AcademicYear.objects.create(
+            school=self.school, branch=self.branch_a, code="CAL-N-2026",
+            name="تقويم شمال", starts_on=date(2026, 9, 1),
+            ends_on=date(2026, 9, 5), status=AcademicYear.Status.ACTIVE,
+        )
+        SchoolWorkingDay.objects.create(
+            school=self.school, weekday=1, is_working=False, sequence=1,
+        )
+        SchoolWorkingDay.objects.create(
+            school=self.school, branch=self.branch_a,
+            weekday=4, is_working=True, sequence=1,
+        )
+        calendar = seed_default_calendar(
+            school=self.school, academic_year=year, branch=self.branch_a,
+        )
+        days = {
+            item.date: item
+            for item in SchoolCalendarDay.objects.filter(calendar=calendar)
+        }
+        self.assertFalse(days[date(2026, 9, 1)].is_school_day)
+        self.assertTrue(days[date(2026, 9, 4)].is_school_day)
+        self.assertEqual(days[date(2026, 9, 4)].branch_id, self.branch_a.pk)
+
+        shared_year = AcademicYear.objects.create(
+            school=self.school, code="CAL-SHARED-2026", name="سنة مشتركة",
+            starts_on=date(2026, 9, 1), ends_on=date(2026, 9, 5),
+            status=AcademicYear.Status.ACTIVE,
+        )
+        shared_calendar = SchoolCalendar.objects.create(
+            school=self.school, academic_year=shared_year,
+            name="تقويم عام", is_active=True,
+        )
+        branch_calendar = SchoolCalendar.objects.create(
+            school=self.school, branch=self.branch_a,
+            academic_year=shared_year, name="تقويم فرع شمال", is_active=True,
+        )
+        SchoolCalendarDay.objects.create(
+            school=self.school, calendar=shared_calendar,
+            date=date(2026, 9, 4), day_type=SchoolCalendarDay.DayType.WEEKEND,
+            is_school_day=False,
+        )
+        SchoolCalendarDay.objects.create(
+            school=self.school, branch=self.branch_a, calendar=branch_calendar,
+            date=date(2026, 9, 4), day_type=SchoolCalendarDay.DayType.REGULAR,
+            is_school_day=True,
+        )
+        self.assertTrue(is_school_day(
+            self.school, date(2026, 9, 4),
+            academic_year=shared_year, branch=self.branch_a,
+        ))
 
 class AcademicBranchApiTests(TestCase):
     @classmethod
@@ -222,7 +320,7 @@ class AcademicBranchApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        self.assertEqual(response.data["school"], str(self.school.pk))
+        self.assertEqual(str(response.data["school"]), str(self.school.pk))
 
     def test_academic_api_accepts_only_a_branch_from_the_active_school(self):
         payload = {
@@ -239,7 +337,7 @@ class AcademicBranchApiTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
-        self.assertEqual(response.data["branch"], str(self.branch_b.pk))
+        self.assertEqual(str(response.data["branch"]), str(self.branch_b.pk))
 
         payload["code"] = "2028-2029"
         payload["branch"] = str(self.other_branch.pk)
