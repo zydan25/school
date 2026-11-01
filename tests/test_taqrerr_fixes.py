@@ -91,6 +91,14 @@ class TaqrerrFixesVerificationTests(TestCase):
             start_date=date(2026, 10, 1),
             end_date=date(2026, 10, 31),
         )
+        FiscalPeriod.objects.create(
+            school=cls.school,
+            fiscal_year=cls.fiscal_year,
+            period_number=11,
+            name="فترة 11/2026",
+            start_date=date(2026, 11, 1),
+            end_date=date(2026, 11, 30),
+        )
 
         # 3. Academic Structure
         cls.academic_year = AcademicYear.objects.create(
