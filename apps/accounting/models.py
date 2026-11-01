@@ -713,7 +713,7 @@ class TreasuryAccount(TenantOwnedModel):
             ),
         ]
         indexes = [
-            models.Index(fields=["school", "kind", "is_active"]),
+            models.Index(fields=["school", "kind", "is_active"], name="acct_tr_kind_active"),
         ]
 
     def clean(self):
