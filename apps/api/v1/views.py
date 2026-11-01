@@ -1094,6 +1094,7 @@ class GradeBookViewSet(TenantModelViewSet):
     action_role_map = {
         "list": ADMIN_ROLES | {"teacher", "student", "guardian"},
         "retrieve": ADMIN_ROLES | {"teacher", "student", "guardian"},
+        "weighted_summary": ADMIN_ROLES | {"teacher", "student", "guardian"},
         "create": TEACHER_ROLES,
         "update": TEACHER_ROLES,
         "partial_update": TEACHER_ROLES,
@@ -1203,6 +1204,95 @@ class GradeBookViewSet(TenantModelViewSet):
             metadata={"student_id": str(student.pk), "subject_id": str(subject.pk)},
             request=self.request,
         )
+
+    @action(detail=False, methods=["get"], url_path="weighted-summary")
+    def weighted_summary(self, request):
+        school = self.get_school()
+        student = None
+        student_id = request.query_params.get("student_id")
+        if has_school_roles(request.user, school, {"student"}):
+            student = user_student_profiles(request.user, school).first()
+            if not student:
+                raise PermissionDenied("لا يوجد ملف طالب نشط مرتبط بحسابك.")
+        elif has_school_roles(request.user, school, {"guardian"}):
+            guardian = user_guardian_profiles(request.user, school).first()
+            student = guardian.children.filter(
+                pk=student_id, school=school, is_archived=False,
+            ).first() if guardian and student_id else None
+            if not student:
+                raise PermissionDenied("حدد أحد الأبناء المرتبطين بحسابك.")
+        else:
+            student = get_object_or_404(
+                Student, pk=student_id, school=school, is_archived=False,
+            ) if student_id else None
+        if student is None:
+            raise ValidationError({"student_id": "معرف الطالب مطلوب لهذا التقرير."})
+        subject_id = request.query_params.get("subject_id")
+        if not subject_id:
+            raise ValidationError({"subject_id": "معرف المادة مطلوب."})
+        entries = GradeBook.objects.filter(
+            school=school, student=student, subject_id=subject_id,
+            is_archived=False, is_published=True,
+        ).select_related("assessment_type")
+        term_id = request.query_params.get("academic_term_id")
+        if term_id:
+            entries = entries.filter(academic_term_id=term_id)
+
+        grouped = {}
+        unweighted = []
+        for entry in entries:
+            if not entry.assessment_type_id:
+                unweighted.append(entry)
+                continue
+            component = grouped.setdefault(entry.assessment_type_id, {
+                "type": entry.assessment_type,
+                "score": Decimal("0.00"),
+                "max_score": Decimal("0.00"),
+                "count": 0,
+            })
+            component["score"] += entry.score
+            component["max_score"] += entry.max_score
+            component["count"] += 1
+
+        components = []
+        weighted_sum = Decimal("0.00")
+        included_weight = Decimal("0.00")
+        for component in grouped.values():
+            assessment_type = component["type"]
+            weight = assessment_type.weight_percentage
+            percentage = (
+                component["score"] / component["max_score"] * Decimal("100.00")
+                if component["max_score"] else Decimal("0.00")
+            )
+            weighted_sum += percentage * weight
+            included_weight += weight
+            components.append({
+                "assessment_type_id": str(assessment_type.pk),
+                "assessment_type": assessment_type.name,
+                "weight_percentage": str(weight),
+                "average_percentage": str(percentage.quantize(Decimal("0.01"))),
+                "weighted_contribution": str(
+                    (percentage * weight / Decimal("100.00")).quantize(Decimal("0.01"))
+                ),
+                "records_count": component["count"],
+            })
+        weighted_score = (
+            weighted_sum / included_weight
+            if included_weight else None
+        )
+        return Response({
+            "student_id": str(student.pk),
+            "student_name": student.get_full_name(),
+            "subject_id": str(subject_id),
+            "academic_term_id": str(term_id) if term_id else None,
+            "weighted_score_percentage": (
+                str(weighted_score.quantize(Decimal("0.01")))
+                if weighted_score is not None else None
+            ),
+            "included_weight_percentage": str(included_weight),
+            "components": components,
+            "unweighted_records_count": len(unweighted),
+        })
 
     @action(detail=True, methods=["post"], url_path="submit-for-approval")
     def submit_for_approval(self, request, pk=None):
