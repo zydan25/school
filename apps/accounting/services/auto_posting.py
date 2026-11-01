@@ -7,6 +7,7 @@ apps/accounting/services/auto_posting.py
 from __future__ import annotations
 
 import datetime
+import uuid
 from datetime import date
 from decimal import Decimal
 
@@ -863,84 +864,149 @@ def disburse_vendor_payment(
     reference_number: str = "",
     payment_method: str = "bank_transfer",
     user=None,
+    idempotency_key: str = "",
 ) -> tuple[JournalEntry, PaymentVoucher]:
-    """
-    سداد دفعة نقدية أو بنكية لفاتورة مورد وتخفيض رصيد الذمم الدائنة.
-    الطرف المدين: ذمم الموردين والشركات الدائنة (2101).
-    الطرف الدائن: الصندوق أو الحساب البنكي المسدد منه.
-    """
+    """سداد المورد بقيد واحد مع مفتاح اختياري يمنع تكرار طلب السداد نفسه."""
     from apps.inventory.models import VendorInvoice
+    from apps.tenants.models import School
 
     if amount <= Decimal("0.00"):
         raise ValidationError("مبلغ السداد يجب أن يكون أكبر من الصفر.")
-
+    if idempotency_key and len(idempotency_key.strip()) < 8:
+        raise ValidationError("مفتاح منع التكرار يجب ألا يقل عن 8 أحرف.")
     school = vendor_invoice.school
     if payment_account.school_id != school.pk:
         raise ValidationError("حساب السداد لا يتبع نفس المدرسة الخاصة بالفاتورة.")
-    if payment_account.account_type != Account.AccountType.ASSET:
-        raise ValidationError("حساب السداد يجب أن يكون حساب أصول (صندوق أو بنك).")
+    if payment_account.account_type != Account.AccountType.ASSET or not payment_account.is_leaf:
+        raise ValidationError("حساب السداد يجب أن يكون حساب أصول تفصيلياً (صندوق أو بنك).")
 
     with transaction.atomic():
+        School.objects.select_for_update().get(pk=school.pk)
         locked_invoice = VendorInvoice.objects.select_for_update().get(pk=vendor_invoice.pk)
-        if amount > locked_invoice.remaining_amount:
-            raise ValidationError(
-                f"المبلغ المراد سداده ({amount}) أكبر من المبلغ المتبقي على الفاتورة ({locked_invoice.remaining_amount})."
+        vendor_payable_acc = _get_account_or_seed(
+            school, "2101", "ذمم الموردين والشركات الدائنة",
+        )
+
+        if idempotency_key:
+            existing = PaymentVoucher.objects.select_for_update().filter(
+                school=school,
+                idempotency_key=idempotency_key,
+                is_archived=False,
+            ).select_related("journal_entry").first()
+            if existing:
+                same_data = (
+                    existing.amount == amount
+                    and existing.credit_account_id == payment_account.pk
+                    and existing.debit_account_id == vendor_payable_acc.pk
+                    and existing.paid_to == locked_invoice.supplier.name
+                    and existing.reference_number == reference_number
+                )
+                if not same_data:
+                    raise ValidationError("مفتاح منع التكرار مستخدم لسداد ببيانات مختلفة.")
+                if existing.status == PaymentVoucher.Status.POSTED and existing.journal_entry_id:
+                    return existing.journal_entry, existing
+                if existing.status != PaymentVoucher.Status.DRAFT:
+                    raise ValidationError("سند السداد السابق ليس مسودة قابلة للاستكمال.")
+                payment_voucher = existing
+            else:
+                payment_voucher = None
+        else:
+            payment_voucher = None
+
+        if payment_voucher is None:
+            if amount > locked_invoice.remaining_amount:
+                raise ValidationError(
+                    f"المبلغ المراد سداده ({amount}) أكبر من المبلغ المتبقي على الفاتورة ({locked_invoice.remaining_amount})."
+                )
+            payment_date = timezone.localdate()
+            invoice_branch_id = locked_invoice.branch_id
+            payment_branch_id = payment_account.branch_id
+            payable_branch_id = vendor_payable_acc.branch_id
+            debit_branch_id = payable_branch_id or invoice_branch_id
+            credit_branch_id = payment_branch_id or invoice_branch_id
+            entry_branch_id = (
+                debit_branch_id
+                if debit_branch_id == credit_branch_id
+                else None
             )
+            voucher_number = f"PV-VINV-{locked_invoice.pk.hex[:8]}-{uuid.uuid4().hex[:10].upper()}"
+            payment_voucher = PaymentVoucher.objects.create(
+                school=school,
+                branch_id=entry_branch_id,
+                voucher_number=voucher_number,
+                idempotency_key=idempotency_key,
+                date=payment_date,
+                paid_to=locked_invoice.supplier.name,
+                amount=amount,
+                credit_account=payment_account,
+                debit_account=vendor_payable_acc,
+                payment_method=payment_method,
+                reference_number=reference_number,
+                description=f"سداد دفعة من فاتورة المورد #{locked_invoice.invoice_number}",
+                status=PaymentVoucher.Status.DRAFT,
+            )
+            debit_branch_id = payable_branch_id or invoice_branch_id
+            credit_branch_id = payment_branch_id or invoice_branch_id
+        else:
+            payment_date = payment_voucher.date
+            debit_branch_id = payment_voucher.debit_account.branch_id or payment_voucher.branch_id
+            credit_branch_id = payment_voucher.credit_account.branch_id or payment_voucher.branch_id
+            entry_branch_id = (
+                debit_branch_id
+                if debit_branch_id == credit_branch_id
+                else None
+            )
+            if amount > locked_invoice.remaining_amount:
+                raise ValidationError(
+                    f"المبلغ المراد سداده ({amount}) أكبر من المبلغ المتبقي على الفاتورة ({locked_invoice.remaining_amount})."
+                )
 
-        post_date = timezone.localdate()
-        period = _get_active_fiscal_period(school, post_date)
-        vendor_payable_acc = _get_account_or_seed(school, "2101", "ذمم الموردين والشركات الدائنة")
-
-        voucher_number = f"PV-VINV-{locked_invoice.invoice_number}-{timezone.now().strftime('%Y%m%d%H%M%S')}"
-        payment_voucher = PaymentVoucher.objects.create(
+        period = _get_active_fiscal_period(school, payment_date)
+        entry_number = f"JV-VPAY-{payment_voucher.voucher_number}"
+        entry = JournalEntry.objects.filter(
             school=school,
-            voucher_number=voucher_number,
-            date=post_date,
-            paid_to=locked_invoice.supplier.name,
-            amount=amount,
-            credit_account=payment_account,
-            debit_account=vendor_payable_acc,
-            payment_method=payment_method,
-            reference_number=reference_number,
-            description=f"سداد دفعة من فاتورة المورد #{locked_invoice.invoice_number}",
-            status=PaymentVoucher.Status.POSTED,
-        )
-
-        entry_number = f"JV-VPAY-{voucher_number}"
-        entry = JournalEntry.objects.create(
-            school=school,
-            fiscal_period=period,
-            entry_number=entry_number,
-            date=post_date,
-            status=JournalEntry.Status.DRAFT,
             source_module="vendor_payment",
-            source_reference=voucher_number,
-            description=f"سند صرف سداد فاتورة المورد #{locked_invoice.invoice_number} ({locked_invoice.supplier.name})",
-        )
+            source_reference=payment_voucher.voucher_number,
+            is_archived=False,
+        ).first()
+        if entry:
+            if entry.status != JournalEntry.Status.POSTED:
+                raise ValidationError("يوجد قيد سداد مورد سابق غير مرحّل؛ يجب مراجعته.")
+        else:
+            entry = JournalEntry.objects.create(
+                school=school,
+                branch_id=entry_branch_id,
+                fiscal_period=period,
+                entry_number=entry_number,
+                date=payment_date,
+                status=JournalEntry.Status.DRAFT,
+                source_module="vendor_payment",
+                source_reference=payment_voucher.voucher_number,
+                description=f"سند صرف سداد فاتورة المورد #{locked_invoice.invoice_number} ({locked_invoice.supplier.name})",
+            )
+            JournalEntryLine.objects.create(
+                school=school,
+                branch_id=debit_branch_id,
+                journal_entry=entry,
+                account=vendor_payable_acc,
+                description=f"سداد ذمة المورد: {locked_invoice.supplier.name} - فاتورة #{locked_invoice.invoice_number}",
+                debit=amount,
+                credit=Decimal("0.00"),
+            )
+            JournalEntryLine.objects.create(
+                school=school,
+                branch_id=credit_branch_id,
+                journal_entry=entry,
+                account=payment_account,
+                description=f"صرف سداد من حساب {payment_account.name} للمورد {locked_invoice.supplier.name}",
+                debit=Decimal("0.00"),
+                credit=amount,
+            )
+            entry.post(user=user)
 
-        # Debit: Accounts payable
-        JournalEntryLine.objects.create(
-            school=school,
-            journal_entry=entry,
-            account=vendor_payable_acc,
-            description=f"سداد ذمة المورد: {locked_invoice.supplier.name} - فاتورة #{locked_invoice.invoice_number}",
-            debit=amount,
-            credit=Decimal("0.00"),
-        )
-
-        # Credit: Bank / Cash
-        JournalEntryLine.objects.create(
-            school=school,
-            journal_entry=entry,
-            account=payment_account,
-            description=f"صرف سداد من حساب {payment_account.name} للمورد {locked_invoice.supplier.name}",
-            debit=Decimal("0.00"),
-            credit=amount,
-        )
-
-        entry.post(user=user)
         payment_voucher.journal_entry = entry
-        payment_voucher.save(update_fields=["journal_entry", "updated_at"])
+        payment_voucher.status = PaymentVoucher.Status.POSTED
+        payment_voucher.save(update_fields=["journal_entry", "status", "updated_at"])
 
         locked_invoice.paid_amount += amount
         if locked_invoice.paid_amount >= locked_invoice.total_amount:
@@ -948,5 +1014,4 @@ def disburse_vendor_payment(
         else:
             locked_invoice.status = VendorInvoice.Status.PARTIAL
         locked_invoice.save(update_fields=["paid_amount", "status", "updated_at"])
-
         return entry, payment_voucher
