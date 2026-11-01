@@ -536,7 +536,7 @@ class TaqrerrFixesVerificationTests(TestCase):
     def test_payroll_rejects_loan_deduction_without_real_loan_balance(self):
         EmployeeContract.objects.create(
             school=self.school,
-            staff_member=self.staff_member,
+            teacher=self.teacher_profile,
             contract_number="CNT-LOAN-SHORT",
             contract_type=EmployeeContract.ContractType.FULL_TIME,
             basic_salary=Decimal("3000.00"),
@@ -545,7 +545,7 @@ class TaqrerrFixesVerificationTests(TestCase):
         )
         loan = EmployeeLoanAdvance.objects.create(
             school=self.school,
-            staff_member=self.staff_member,
+            teacher=self.teacher_profile,
             loan_number="LN-LOAN-SHORT",
             amount=Decimal("100.00"),
             monthly_installment=Decimal("100.00"),
@@ -553,7 +553,7 @@ class TaqrerrFixesVerificationTests(TestCase):
             status=EmployeeLoanAdvance.Status.ACTIVE,
         )
         run = generate_monthly_payroll(self.school, year=2026, month=10)
-        slip = run.payslips.get(staff_member=self.staff_member)
+        slip = run.payslips.get(teacher=self.teacher_profile)
         slip.loan_deduction = Decimal("150.00")
         slip.net_salary -= Decimal("50.00")
         slip.save(update_fields=["loan_deduction", "net_salary", "updated_at"])
