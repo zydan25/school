@@ -184,3 +184,96 @@ def get_balance_sheet(
         "liabilities_breakdown": [{"name": k, "amount": float(v)} for k, v in liabilities_breakdown.items()],
         "equity_breakdown": [{"name": k, "amount": float(v)} for k, v in equity_breakdown.items()],
     }
+
+
+def get_general_ledger(
+    account: Account,
+    start_date: datetime.date | None = None,
+    end_date: datetime.date | None = None,
+) -> dict[str, Any]:
+    """كشف حركة حساب تفصيلي مع رصيد افتتاحي ورصيد متحرك لكل حركة."""
+    if account.is_archived:
+        raise ValueError("لا يمكن عرض دفتر أستاذ لحساب مؤرشف.")
+    if not account.is_leaf:
+        raise ValueError("يجب اختيار حساب تفصيلي لعرض دفتر الأستاذ.")
+
+    if end_date is None:
+        end_date = timezone.localdate()
+    if start_date is None:
+        start_date = datetime.date.min
+    if start_date > end_date:
+        raise ValueError("تاريخ بداية التقرير يجب ألا يتجاوز تاريخ نهايته.")
+
+    base_lines = JournalEntryLine.objects.filter(
+        school=account.school,
+        account=account,
+        journal_entry__school=account.school,
+        journal_entry__status=JournalEntry.Status.POSTED,
+        is_archived=False,
+    )
+    opening_totals = base_lines.filter(
+        journal_entry__date__lt=start_date,
+    ).aggregate(debit=Sum("debit"), credit=Sum("credit"))
+    opening_debit = opening_totals["debit"] or Decimal("0.00")
+    opening_credit = opening_totals["credit"] or Decimal("0.00")
+    opening_balance = opening_debit - opening_credit
+    running_balance = opening_balance
+
+    lines = base_lines.filter(
+        journal_entry__date__range=(start_date, end_date),
+    ).select_related(
+        "journal_entry", "branch", "cost_center",
+    ).order_by(
+        "journal_entry__date", "journal_entry__created_at", "journal_entry_id", "created_at", "pk",
+    )
+
+    movements = []
+    period_debit = Decimal("0.00")
+    period_credit = Decimal("0.00")
+    for line in lines:
+        period_debit += line.debit
+        period_credit += line.credit
+        running_balance += line.debit - line.credit
+        movements.append({
+            "line_id": str(line.pk),
+            "date": line.journal_entry.date.isoformat(),
+            "entry_number": line.journal_entry.entry_number,
+            "description": line.description or line.journal_entry.description,
+            "source_module": line.journal_entry.source_module,
+            "source_reference": line.journal_entry.source_reference,
+            "branch_id": str(line.branch_id) if line.branch_id else None,
+            "cost_center_id": str(line.cost_center_id) if line.cost_center_id else None,
+            "debit": float(line.debit),
+            "credit": float(line.credit),
+            "running_debit_balance": float(max(running_balance, Decimal("0.00"))),
+            "running_credit_balance": float(max(-running_balance, Decimal("0.00"))),
+            "running_signed_balance": float(running_balance),
+        })
+
+    closing_balance = running_balance
+    return {
+        "school": {"id": str(account.school_id), "name": account.school.name},
+        "account": {
+            "id": str(account.pk),
+            "code": account.code,
+            "name": account.name,
+            "type": account.account_type,
+        },
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "opening": {
+            "debit": float(max(opening_balance, Decimal("0.00"))),
+            "credit": float(max(-opening_balance, Decimal("0.00"))),
+            "signed_balance": float(opening_balance),
+        },
+        "period": {
+            "debit": float(period_debit),
+            "credit": float(period_credit),
+        },
+        "closing": {
+            "debit": float(max(closing_balance, Decimal("0.00"))),
+            "credit": float(max(-closing_balance, Decimal("0.00"))),
+            "signed_balance": float(closing_balance),
+        },
+        "movements": movements,
+    }
