@@ -139,6 +139,10 @@ class Stage8AccountingIntegrityTests(TestCase):
             period=self.period,
             entry_number="ST8-DIRECT-POST",
         )
+        with self.assertRaises(ValidationError):
+            JournalEntry.objects.filter(pk=entry.pk).update(
+                status=JournalEntry.Status.POSTED,
+            )
         entry.status = JournalEntry.Status.POSTED
         with self.assertRaises(ValidationError):
             entry.save()
@@ -341,6 +345,25 @@ class Stage8AccountingIntegrityTests(TestCase):
             complete_bank_reconciliation(
                 reconciliation, reconciled_by=self.owner,
             )
+
+    def test_direct_fiscal_closure_cannot_bypass_services(self):
+        period = FiscalPeriod.objects.get(pk=self.period.pk)
+        period.is_closed = True
+        period.closed_at = timezone.now()
+        period.closed_by = self.owner
+        with self.assertRaises(ValidationError):
+            period.save()
+        period.refresh_from_db()
+        self.assertFalse(period.is_closed)
+
+        year = FiscalYear.objects.get(pk=self.year.pk)
+        year.is_closed = True
+        year.closed_at = timezone.now()
+        year.closed_by = self.owner
+        with self.assertRaises(ValidationError):
+            year.save()
+        year.refresh_from_db()
+        self.assertFalse(year.is_closed)
 
     def test_period_and_year_closure_record_audit_data(self):
         close_fiscal_period(self.period, self.owner)
