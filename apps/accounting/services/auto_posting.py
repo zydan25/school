@@ -733,7 +733,7 @@ def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by
         raise ValidationError("سبب عكس القيد مطلوب.")
 
     with transaction.atomic():
-        original = JournalEntry.objects.select_for_update().select_related(
+        original = JournalEntry.objects.select_for_update(of=("self",)).select_related(
             "fiscal_period__fiscal_year",
         ).get(pk=original_entry.pk)
         if original.is_reversed:
@@ -888,7 +888,7 @@ def disburse_vendor_payment(
         )
 
         if idempotency_key:
-            existing = PaymentVoucher.objects.select_for_update().filter(
+            existing = PaymentVoucher.objects.select_for_update(of=("self",)).filter(
                 school=school,
                 idempotency_key=idempotency_key,
                 is_archived=False,
