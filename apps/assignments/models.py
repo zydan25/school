@@ -186,3 +186,8 @@ class HomeworkSubmissionAttempt(TenantOwnedModel):
                 raise ValidationError({"branch": "محاولة التسليم يجب أن تتبع فرع سجل التسليم."})
         if self.attempt_number < 1:
             raise ValidationError({"attempt_number": "رقم المحاولة يجب أن يبدأ من 1."})
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("محاولة التسليم سجل تاريخي غير قابل للاستبدال أو التعديل.")
+        return super().save(*args, **kwargs)
