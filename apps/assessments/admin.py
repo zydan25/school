@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils import timezone
 from unfold.admin import ModelAdmin
 
 from apps.assessments.models import (
@@ -12,8 +13,6 @@ from apps.assessments.models import (
     StudentOnlineExamSubmission,
 )
 from apps.auditlog.services import record_event
-from apps.assessments.models import GradeBook as GradeBookModel
-from django.utils import timezone
 from apps.core.admin import AuditedAdminMixin
 
 
@@ -39,10 +38,20 @@ class GradeBookAdmin(AuditedAdminMixin, ModelAdmin):
         "published_by", "published_at", "revision_reason",
     )
 
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj and obj.workflow_status != GradeBook.WorkflowStatus.DRAFT:
+            fields.extend([
+                "student", "subject", "academic_term", "assessment_type",
+                "homework", "assessment_title", "score", "max_score",
+                "teacher_feedback", "graded_by", "graded_at",
+            ])
+        return tuple(dict.fromkeys(fields))
+
     @admin.action(description="اعتماد الدرجات المرسلة للمراجعة")
     def approve_selected(self, request, queryset):
         updated = 0
-        for entry in queryset.filter(workflow_status=GradeBookModel.WorkflowStatus.SUBMITTED):
+        for entry in queryset.filter(workflow_status=GradeBook.WorkflowStatus.SUBMITTED):
             entry.workflow_status = GradeBookModel.WorkflowStatus.APPROVED
             entry.approved_by = request.user
             entry.approved_at = timezone.now()
@@ -121,16 +130,83 @@ class OnlineExamAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("title", "subject__name", "instructions")
     raw_id_fields = ("subject", "academic_term", "grade_level", "section", "created_by", "school", "branch")
     filter_horizontal = ("questions",)
-    readonly_fields = ("id", "created_at", "updated_at")
+    actions = ("publish_selected",)
+    readonly_fields = (
+        "id", "created_at", "updated_at", "is_published",
+        "published_by", "published_at", "unpublished_reason",
+    )
+
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj and obj.submissions.filter(is_archived=False).exists():
+            fields.extend([
+                "title", "subject", "academic_term", "grade_level", "section",
+                "exam_type", "duration_minutes", "total_marks", "passing_marks",
+                "start_time", "end_time", "instructions", "questions",
+            ])
+        return tuple(dict.fromkeys(fields))
+
+    @admin.action(description="نشر الاختبارات المكتملة")
+    def publish_selected(self, request, queryset):
+        published = 0
+        for exam in queryset.filter(is_published=False):
+            if not exam.questions.exists():
+                continue
+            exam.is_published = True
+            exam.published_by = request.user
+            exam.published_at = timezone.now()
+            exam.unpublished_reason = ""
+            exam.save(update_fields=[
+                "is_published", "published_by", "published_at",
+                "unpublished_reason", "updated_at",
+            ])
+            record_event(
+                action="assessment.exam_published",
+                description="تم نشر الاختبار من لوحة الإدارة.",
+                actor=request.user, school=exam.school, obj=exam, request=request,
+            )
+            published += 1
+        self.message_user(request, f"تم نشر {published} اختباراً.")
 
 
 @admin.register(StudentOnlineExamSubmission)
 class StudentOnlineExamSubmissionAdmin(AuditedAdminMixin, ModelAdmin):
     list_display = ("exam", "student", "final_score", "auto_score", "status", "submitted_at", "school")
-    list_filter = ("status", "exam", "school")
+    list_filter = ("status", "result_published", "exam", "school")
     search_fields = ("student__first_name", "student__last_name", "exam__title")
-    raw_id_fields = ("exam", "student", "graded_by", "school", "branch")
-    readonly_fields = ("id", "created_at", "updated_at", "started_at", "submitted_at")
+    raw_id_fields = ("exam", "student", "graded_by", "school", "branch", "result_published_by")
+    actions = ("publish_results",)
+    readonly_fields = (
+        "id", "created_at", "updated_at", "started_at", "submitted_at",
+        "exam", "student", "answers_json", "auto_score", "manual_score",
+        "final_score", "teacher_feedback", "status", "graded_by",
+        "result_published", "result_published_at", "result_published_by",
+        "result_revision_reason",
+    )
+
+    @admin.action(description="نشر نتائج المحاولات المصححة")
+    def publish_results(self, request, queryset):
+        published = 0
+        for submission in queryset.filter(
+            status=StudentOnlineExamSubmission.Status.GRADED,
+            result_published=False,
+        ):
+            submission.result_published = True
+            submission.result_published_at = timezone.now()
+            submission.result_published_by = request.user
+            submission.result_revision_reason = ""
+            submission.save(update_fields=[
+                "result_published", "result_published_at",
+                "result_published_by", "result_revision_reason", "updated_at",
+            ])
+            record_event(
+                action="assessment.exam_result_published",
+                description="تم نشر نتيجة الاختبار من لوحة الإدارة.",
+                actor=request.user, school=submission.school,
+                obj=submission, request=request,
+            )
+            published += 1
+        self.message_user(request, f"تم نشر {published} نتيجة.")
 
 
 @admin.register(ExamCommitteeProctor)
