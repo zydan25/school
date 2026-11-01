@@ -1233,6 +1233,7 @@ class GradeBookViewSet(TenantModelViewSet):
                 school=school, graded_by=teacher, graded_at=timezone.now(),
                 workflow_status=GradeBook.WorkflowStatus.DRAFT,
                 is_published=False,
+                branch=data["student"].branch,
             )
             try:
                 entry.full_clean()
@@ -2262,6 +2263,63 @@ class ExamCommitteeViewSet(TenantModelViewSet):
     serializer_class = ExamCommitteeSerializer
     read_roles = ACADEMIC_ADMIN_ROLES | {"teacher", "student"}
     write_roles = ACADEMIC_ADMIN_ROLES
+
+    def _validate_head_supervisor(self, supervisor, branch, school):
+        if supervisor is None:
+            return
+        if supervisor.school_id != school.pk or supervisor.is_archived or not supervisor.is_active_teaching:
+            raise ValidationError({"head_supervisor": "رئيس اللجنة يجب أن يكون معلماً نشطاً في المدرسة نفسها."})
+        if branch and supervisor.branch_id and branch.pk != supervisor.branch_id:
+            raise ValidationError({"head_supervisor": "رئيس اللجنة يتبع فرعاً مختلفاً."})
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        data = serializer.validated_data
+        branch = data.get("branch")
+        supervisor = data.get("head_supervisor")
+        self._validate_head_supervisor(supervisor, branch, school)
+        with transaction.atomic():
+            committee = serializer.save(school=school)
+            try:
+                committee.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            committee.save()
+        record_event(
+            action="assessment.exam_committee_created",
+            description="تم إنشاء لجنة اختبار.",
+            actor=self.request.user, school=school, obj=committee, request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        data = serializer.validated_data
+        branch = data.get("branch", serializer.instance.branch)
+        supervisor = data.get("head_supervisor", serializer.instance.head_supervisor)
+        self._validate_head_supervisor(supervisor, branch, school)
+        with transaction.atomic():
+            committee = serializer.save()
+            try:
+                committee.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            committee.save()
+        record_event(
+            action="assessment.exam_committee_updated",
+            description="تم تعديل لجنة اختبار.",
+            actor=self.request.user, school=school, obj=committee, request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        if instance.seatings.filter(is_archived=False).exists():
+            raise ValidationError("لا يمكن أرشفة لجنة لديها أرقام جلوس؛ احتفظ بسجلها.")
+        record_event(
+            action="assessment.exam_committee_archived",
+            description="تمت أرشفة لجنة اختبار لا تحتوي على أرقام جلوس.",
+            actor=self.request.user, school=self.get_school(), obj=instance,
+            request=self.request,
+        )
+        super().perform_destroy(instance)
 
     def get_queryset(self):
         qs = super().get_queryset()
