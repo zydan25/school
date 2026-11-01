@@ -39,6 +39,7 @@ from apps.students.models import (
 from apps.timetable.models import (
     ClassSchedule, DailyLessonLog, SchedulePeriodTemplate, SchoolBellSchedule,
 )
+from apps.tenants.models import Branch
 
 
 class TenantModelSerializer(serializers.ModelSerializer):
@@ -210,60 +211,113 @@ class StudentGuardianRelationSerializer(TenantModelSerializer):
         ]
 
 
-class AcademicYearSerializer(TenantModelSerializer):
+class BranchSerializer(serializers.ModelSerializer):
+    """Branch management contract; school ownership is supplied by the server."""
+
+    class Meta:
+        model = Branch
+        fields = "__all__"
+        read_only_fields = (
+            "id", "school", "created_at", "updated_at", "is_archived",
+            "archived_at", "archived_by",
+        )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        school = self.context.get("school")
+        code = (attrs.get("code") or getattr(self.instance, "code", "")).strip().upper()
+        if school and code:
+            duplicates = Branch.objects.filter(school=school, code=code)
+            if self.instance:
+                duplicates = duplicates.exclude(pk=self.instance.pk)
+            if duplicates.exists():
+                raise serializers.ValidationError({"code": "كود الفرع مستخدم بالفعل في المدرسة."})
+        is_main = attrs.get("is_main", getattr(self.instance, "is_main", False))
+        if school and is_main:
+            main_branches = Branch.objects.filter(school=school, is_main=True, is_archived=False)
+            if self.instance:
+                main_branches = main_branches.exclude(pk=self.instance.pk)
+            if main_branches.exists():
+                raise serializers.ValidationError({"is_main": "يوجد فرع رئيسي نشط بالفعل لهذه المدرسة."})
+        if code:
+            attrs["code"] = code
+        return attrs
+
+
+class AcademicStructureSerializer(TenantModelSerializer):
+    """Tenant serializer that allows a validated branch for academic structure only."""
+
     class Meta(TenantModelSerializer.Meta):
+        read_only_fields = tuple(
+            field for field in TenantModelSerializer.Meta.read_only_fields
+            if field != "branch"
+        )
+
+    def get_fields(self):
+        fields = super().get_fields()
+        if "branch" in fields:
+            school = self.context.get("school")
+            fields["branch"].queryset = (
+                Branch.objects.filter(school=school, is_archived=False)
+                if school else Branch.objects.none()
+            )
+        return fields
+
+
+class AcademicYearSerializer(AcademicStructureSerializer):
+    class Meta(AcademicStructureSerializer.Meta):
         model = AcademicYear
         fields = "__all__"
 
 
-class AcademicTermSerializer(TenantModelSerializer):
-    class Meta(TenantModelSerializer.Meta):
+class AcademicTermSerializer(AcademicStructureSerializer):
+    class Meta(AcademicStructureSerializer.Meta):
         model = AcademicTerm
         fields = "__all__"
 
 
-class EducationalStageSerializer(TenantModelSerializer):
-    class Meta(TenantModelSerializer.Meta):
+class EducationalStageSerializer(AcademicStructureSerializer):
+    class Meta(AcademicStructureSerializer.Meta):
         model = EducationalStage
         fields = "__all__"
 
 
-class GradeLevelSerializer(TenantModelSerializer):
-    class Meta(TenantModelSerializer.Meta):
+class GradeLevelSerializer(AcademicStructureSerializer):
+    class Meta(AcademicStructureSerializer.Meta):
         model = GradeLevel
         fields = "__all__"
 
 
-class ClassroomSerializer(TenantModelSerializer):
-    class Meta(TenantModelSerializer.Meta):
+class ClassroomSerializer(AcademicStructureSerializer):
+    class Meta(AcademicStructureSerializer.Meta):
         model = Classroom
         fields = "__all__"
 
 
-class SectionSerializer(TenantModelSerializer):
+class SectionSerializer(AcademicStructureSerializer):
     student_count = serializers.IntegerField(source="current_student_count", read_only=True)
     available_seats = serializers.IntegerField(read_only=True)
 
-    class Meta(TenantModelSerializer.Meta):
+    class Meta(AcademicStructureSerializer.Meta):
         model = Section
         fields = "__all__"
-        read_only_fields = TenantModelSerializer.Meta.read_only_fields + ("student_count", "available_seats")
+        read_only_fields = AcademicStructureSerializer.Meta.read_only_fields + ("student_count", "available_seats")
 
 
-class SubjectSerializer(TenantModelSerializer):
-    class Meta(TenantModelSerializer.Meta):
+class SubjectSerializer(AcademicStructureSerializer):
+    class Meta(AcademicStructureSerializer.Meta):
         model = Subject
         fields = "__all__"
 
 
-class PeriodDefinitionSerializer(TenantModelSerializer):
-    class Meta(TenantModelSerializer.Meta):
+class PeriodDefinitionSerializer(AcademicStructureSerializer):
+    class Meta(AcademicStructureSerializer.Meta):
         model = PeriodDefinition
         fields = "__all__"
 
 
-class SchoolWorkingDaySerializer(TenantModelSerializer):
-    class Meta(TenantModelSerializer.Meta):
+class SchoolWorkingDaySerializer(AcademicStructureSerializer):
+    class Meta(AcademicStructureSerializer.Meta):
         model = SchoolWorkingDay
         fields = "__all__"
 

@@ -62,10 +62,12 @@ from apps.students.services import ensure_guardian_membership
 from apps.timetable.models import (
     ClassSchedule,
 )
+from apps.tenants.models import Branch
 
 from apps.api.v1.serializers import (
     AcademicTermSerializer, AcademicYearSerializer, AccountSerializer,
     AssetCategorySerializer, AssetDepreciationSerializer, AssessmentTypeSerializer,
+    BranchSerializer,
     ClassroomSerializer, ClassScheduleSerializer, ConversationCreateSerializer,
     ConversationMessageSerializer,
     CostCenterSerializer, DailyLessonLogSerializer, DepartmentSerializer,
@@ -172,6 +174,36 @@ class TenantModelViewSet(viewsets.ModelViewSet):
             instance.archive(actor=self.request.user, reason="أرشفة عبر API")
         else:
             raise MethodNotAllowed("DELETE", detail="هذا المورد لا يدعم الأرشفة.")
+
+
+class AcademicStructureViewSet(TenantModelViewSet):
+    """Academic catalogues can be shared by a school or scoped to one branch."""
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        branch_id = self.request.query_params.get("branch_id")
+        if not branch_id:
+            return queryset
+        try:
+            branch = Branch.objects.filter(
+                pk=branch_id,
+                school=self.get_school(),
+                is_archived=False,
+            ).first()
+        except (TypeError, ValueError):
+            branch = None
+        if branch is None:
+            raise ValidationError({"branch_id": "الفرع غير موجود أو لا يتبع المدرسة النشطة."})
+        return queryset.filter(Q(branch_id=branch.pk) | Q(branch__isnull=True))
+
+
+class BranchViewSet(TenantModelViewSet):
+    serializer_class = BranchSerializer
+    read_roles = READ_ROLES
+    write_roles = ADMIN_ROLES
+
+    def get_queryset(self):
+        return super().get_queryset().order_by("-is_main", "name")
 
 
 # ---------------------------------------------------------------------------
@@ -546,31 +578,31 @@ class GuardianRelationViewSet(TenantModelViewSet):
         serializer.save()
 
 
-class AcademicYearViewSet(TenantModelViewSet):
+class AcademicYearViewSet(AcademicStructureViewSet):
     serializer_class = AcademicYearSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
 
     def get_queryset(self):
-        return AcademicYear.objects.filter(school=self.get_school(), is_archived=False).order_by("-starts_on")
+        return super().get_queryset().order_by("-starts_on")
 
 
-class AcademicTermViewSet(TenantModelViewSet):
+class AcademicTermViewSet(AcademicStructureViewSet):
     serializer_class = AcademicTermSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
 
     def get_queryset(self):
-        return AcademicTerm.objects.filter(school=self.get_school(), is_archived=False).select_related("academic_year").order_by("academic_year__starts_on", "number")
+        return super().get_queryset().select_related("academic_year").order_by("academic_year__starts_on", "number")
 
 
-class EducationalStageViewSet(TenantModelViewSet):
+class EducationalStageViewSet(AcademicStructureViewSet):
     serializer_class = EducationalStageSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
 
 
-class GradeLevelViewSet(TenantModelViewSet):
+class GradeLevelViewSet(AcademicStructureViewSet):
     serializer_class = GradeLevelSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
@@ -581,13 +613,13 @@ class GradeLevelViewSet(TenantModelViewSet):
         return qs.filter(stage_id=stage_id) if stage_id else qs
 
 
-class ClassroomViewSet(TenantModelViewSet):
+class ClassroomViewSet(AcademicStructureViewSet):
     serializer_class = ClassroomSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
 
 
-class SectionViewSet(TenantModelViewSet):
+class SectionViewSet(AcademicStructureViewSet):
     serializer_class = SectionSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
@@ -603,19 +635,19 @@ class SectionViewSet(TenantModelViewSet):
         return qs
 
 
-class SubjectViewSet(TenantModelViewSet):
+class SubjectViewSet(AcademicStructureViewSet):
     serializer_class = SubjectSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
 
 
-class PeriodDefinitionViewSet(TenantModelViewSet):
+class PeriodDefinitionViewSet(AcademicStructureViewSet):
     serializer_class = PeriodDefinitionSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
 
 
-class SchoolWorkingDayViewSet(TenantModelViewSet):
+class SchoolWorkingDayViewSet(AcademicStructureViewSet):
     serializer_class = SchoolWorkingDaySerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES

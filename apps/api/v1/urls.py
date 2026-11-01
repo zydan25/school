@@ -8,6 +8,7 @@ from apps.api.v1.views import (
     AcademicYearViewSet,
     AccountViewSet,
     AssetCategoryViewSet,
+    BranchViewSet,
     AssetDepreciationViewSet,
     AssessmentTypeViewSet,
     ClassroomViewSet,
@@ -74,6 +75,7 @@ router.register("membership-roles", MembershipRoleViewSet, basename="app-members
 router.register("guardians", GuardianProfileViewSet, basename="app-guardian")
 router.register("guardian-relations", GuardianRelationViewSet, basename="app-guardian-relation")
 
+router.register("branches", BranchViewSet, basename="app-branch")
 router.register("academic-years", AcademicYearViewSet, basename="app-academic-year")
 router.register("academic-terms", AcademicTermViewSet, basename="app-academic-term")
 router.register("stages", EducationalStageViewSet, basename="app-stage")
