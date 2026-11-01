@@ -230,7 +230,7 @@ class TaqrerrFixesVerificationTests(TestCase):
         )
 
         # 1. دفع 300 فقط على الفاتورة (أقل من القسط الأول 500)
-        rec1 = PaymentReceipt.objects.create(
+        PaymentReceipt.objects.create(
             school=self.school,
             student=self.student,
             invoice=inv,
@@ -246,7 +246,7 @@ class TaqrerrFixesVerificationTests(TestCase):
         self.assertEqual(inst1.remaining_amount, Decimal("200.00"))
 
         # 2. دفع 400 إضافية (تكمل الـ 200 المتبقية للقسط الأول و 200 للقسط الثاني)
-        rec2 = PaymentReceipt.objects.create(
+        PaymentReceipt.objects.create(
             school=self.school,
             student=self.student,
             invoice=inv,
@@ -311,8 +311,8 @@ class TaqrerrFixesVerificationTests(TestCase):
         self.assertEqual(adv_line.credit, Decimal("300.00"))
 
         # تحقق من التوازن التام
-        total_debit = sum(l.debit for l in lines)
-        total_credit = sum(l.credit for l in lines)
+        total_debit = sum(line.debit for line in lines)
+        total_credit = sum(line.credit for line in lines)
         self.assertEqual(total_debit, total_credit)
         self.assertEqual(total_debit, Decimal("1300.00"))
 
@@ -448,7 +448,7 @@ class TaqrerrFixesVerificationTests(TestCase):
     def test_payroll_approval_workflow_and_repayment_records(self):
         """دورة مسير الرواتب: اشتراط الاعتماد قبل الترحيل، تاريخ الاستحقاق الشهري، وتسجيل سداد السلف."""
         # إنشاء عقد عمل
-        contract = EmployeeContract.objects.create(
+        EmployeeContract.objects.create(
             school=self.school,
             teacher=self.teacher_profile,
             contract_number="CNT-TAQ-01",
