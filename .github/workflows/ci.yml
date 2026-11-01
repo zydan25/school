@@ -63,6 +63,7 @@ jobs:
             tests/test_finance_and_attendance.py \
             tests/test_report2_fixes.py \
             tests/test_audit_fixes.py \
+            tests/test_taqrerr_fixes.py \
             tests/test_stage7_student_fees.py \
             apps/school_services/models.py \
             apps/tenants/admin.py \
