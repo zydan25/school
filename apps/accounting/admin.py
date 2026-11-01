@@ -17,8 +17,12 @@ from apps.accounting.models import (
     BankReconciliation,
     BankStatementLine,
 )
-from apps.accounting.services.period_closing import close_fiscal_period, close_fiscal_year
-from apps.accounting.services.treasury import complete_bank_reconciliation, reverse_treasury_transfer
+from apps.accounting.services.period_closing import close_fiscal_period, close_fiscal_year, open_fiscal_year
+from apps.accounting.services.treasury import (
+    complete_bank_reconciliation,
+    create_treasury_transfer,
+    reverse_treasury_transfer,
+)
 from apps.core.admin import AuditedAdminMixin
 
 
@@ -44,7 +48,31 @@ class FiscalYearAdmin(AuditedAdminMixin, ModelAdmin):
         "closed_at", "closed_by", "closing_entry", "opening_entry",
     )
     inlines = (FiscalPeriodInline,)
-    actions = ("close_selected_fiscal_years",)
+    actions = ("close_selected_fiscal_years", "open_selected_fiscal_years")
+
+    @admin.action(description="ترحيل الأرصدة الافتتاحية من السنة السابقة")
+    def open_selected_fiscal_years(self, request, queryset):
+        opened = 0
+        failures = []
+        for year in queryset:
+            previous = FiscalYear.objects.filter(
+                school=year.school,
+                is_closed=True,
+                end_date__lt=year.start_date,
+                is_archived=False,
+            ).order_by("-end_date").first()
+            if not previous:
+                failures.append(f"{year.name}: لا توجد سنة سابقة مقفلة.")
+                continue
+            try:
+                open_fiscal_year(year, previous, user=request.user)
+                opened += 1
+            except ValidationError as exc:
+                failures.append(f"{year.name}: {exc}")
+        if opened:
+            self.message_user(request, f"تم ترحيل الأرصدة الافتتاحية لـ {opened} سنة.", messages.SUCCESS)
+        for failure in failures:
+            self.message_user(request, failure, messages.ERROR)
 
     @admin.action(description="إقفال السنوات المالية المحددة")
     def close_selected_fiscal_years(self, request, queryset):
@@ -166,7 +194,31 @@ class TreasuryTransferAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("transfer_number", "idempotency_key", "description")
     autocomplete_fields = ("school", "branch", "source_account", "destination_account", "journal_entry", "reversed_by_entry")
     readonly_fields = ("id", "created_at", "updated_at", "journal_entry", "reversed_by_entry", "status")
-    actions = ("reverse_selected_transfers",)
+    actions = ("post_selected_transfers", "reverse_selected_transfers")
+
+    @admin.action(description="ترحيل التحويلات المسودة")
+    def post_selected_transfers(self, request, queryset):
+        posted = 0
+        failures = []
+        for transfer in queryset:
+            try:
+                create_treasury_transfer(
+                    source_account=transfer.source_account,
+                    destination_account=transfer.destination_account,
+                    amount=transfer.amount,
+                    transfer_number=transfer.transfer_number,
+                    idempotency_key=transfer.idempotency_key,
+                    transfer_date=transfer.transfer_date,
+                    description=transfer.description,
+                    user=request.user,
+                )
+                posted += 1
+            except ValidationError as exc:
+                failures.append(f"{transfer.transfer_number}: {exc}")
+        if posted:
+            self.message_user(request, f"تم ترحيل {posted} تحويل.", messages.SUCCESS)
+        for failure in failures:
+            self.message_user(request, failure, messages.ERROR)
 
     @admin.action(description="عكس التحويلات المحددة")
     def reverse_selected_transfers(self, request, queryset):
