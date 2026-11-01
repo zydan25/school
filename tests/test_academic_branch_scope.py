@@ -339,6 +339,20 @@ class AcademicBranchApiTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.assertEqual(str(response.data["branch"]), str(self.branch_b.pk))
 
+        term_response = self.client.post(
+            f"/api/v1/app/academic-terms/{self.school_query}",
+            {
+                "academic_year": response.data["id"],
+                "name": "الفصل الأول",
+                "number": 1,
+                "starts_on": "2027-09-01",
+                "ends_on": "2028-01-15",
+            },
+            format="json",
+        )
+        self.assertEqual(term_response.status_code, status.HTTP_201_CREATED, term_response.data)
+        self.assertEqual(str(term_response.data["branch"]), str(self.branch_b.pk))
+
         payload["code"] = "2028-2029"
         payload["branch"] = str(self.other_branch.pk)
         rejected = self.client.post(

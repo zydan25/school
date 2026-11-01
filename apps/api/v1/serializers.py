@@ -258,6 +258,46 @@ class AcademicStructureBranchMixin:
             )
         return fields
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        school = self.context.get("school")
+        model = getattr(self.Meta, "model", None)
+        related_branch_ids = set()
+        if model:
+            for model_field in model._meta.fields:
+                if not getattr(model_field, "many_to_one", False):
+                    continue
+                field_name = model_field.name
+                if field_name in {"school", "branch"}:
+                    continue
+                related = attrs.get(field_name)
+                if related is None and self.instance is not None:
+                    related = getattr(self.instance, field_name, None)
+                related_branch_id = getattr(related, "branch_id", None) if related else None
+                if related_branch_id:
+                    related_branch_ids.add(related_branch_id)
+        if len(related_branch_ids) > 1:
+            raise serializers.ValidationError("العلاقات الأكاديمية المحددة تتبع فروعاً مختلفة.")
+
+        branch_provided = "branch" in attrs
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        if related_branch_ids:
+            required_branch_id = next(iter(related_branch_ids))
+            if branch is None and not branch_provided:
+                branch = Branch.objects.filter(
+                    pk=required_branch_id,
+                    school=school,
+                    is_archived=False,
+                ).first()
+                if branch is None:
+                    raise serializers.ValidationError({"branch": "تعذر تحديد الفرع المرتبط بالبيانات الأكاديمية."})
+                attrs["branch"] = branch
+            elif branch is None or branch.pk != required_branch_id:
+                raise serializers.ValidationError({"branch": "الفرع المحدد لا يطابق فروع العناصر الأكاديمية المرتبطة."})
+        if branch and school and (branch.school_id != school.pk or branch.is_archived):
+            raise serializers.ValidationError({"branch": "الفرع غير نشط أو لا يتبع المدرسة الحالية."})
+        return attrs
+
 
 class AcademicYearSerializer(AcademicStructureBranchMixin, TenantModelSerializer):
     class Meta(TenantModelSerializer.Meta):
