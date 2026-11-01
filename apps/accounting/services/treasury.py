@@ -4,7 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -264,9 +264,23 @@ def _complete_bank_reconciliation(
     locked.status = BankReconciliation.Status.RECONCILED
     locked.reconciled_at = timezone.now()
     locked.reconciled_by = reconciled_by
-    locked.save(update_fields=[
-        "book_opening_balance", "book_closing_balance",
-        "outstanding_ledger_amount", "difference",
-        "status", "reconciled_at", "reconciled_by", "updated_at",
-    ])
+    locked.full_clean()
+    updated_at = timezone.now()
+    updated = models.QuerySet.update(
+        BankReconciliation.objects.filter(
+            pk=locked.pk,
+            status=BankReconciliation.Status.DRAFT,
+        ),
+        book_opening_balance=locked.book_opening_balance,
+        book_closing_balance=locked.book_closing_balance,
+        outstanding_ledger_amount=locked.outstanding_ledger_amount,
+        difference=locked.difference,
+        status=BankReconciliation.Status.RECONCILED,
+        reconciled_at=locked.reconciled_at,
+        reconciled_by=reconciled_by,
+        updated_at=updated_at,
+    )
+    if updated != 1:
+        raise ValidationError("تعذر اعتماد المطابقة بسبب تغير حالتها بالتزامن؛ أعد تحميلها وحاول مجدداً.")
+    locked.updated_at = updated_at
     return locked, None
