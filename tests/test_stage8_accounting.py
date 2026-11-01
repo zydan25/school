@@ -323,6 +323,40 @@ class Stage8AccountingIntegrityTests(TestCase):
         self.assertEqual(completed.difference, Decimal("0.00"))
         self.assertEqual(completed.book_closing_balance, Decimal("200.00"))
 
+        statement_line = BankStatementLine.objects.get(pk=BankStatementLine.objects.get(
+            reconciliation=reconciliation,
+        ).pk)
+        statement_line.amount = Decimal("250.00")
+        with self.assertRaises(ValidationError):
+            statement_line.save()
+        with self.assertRaises(ValidationError):
+            BankStatementLine.objects.filter(pk=statement_line.pk).update(
+                amount=Decimal("250.00"),
+            )
+        with self.assertRaises(ValidationError):
+            BankStatementLine.objects.filter(pk=statement_line.pk).delete()
+
+    def test_bank_reconciliation_rejects_direct_approval(self):
+        bank = TreasuryAccount.objects.create(
+            school=self.school, code="BANK-DIRECT-APPROVAL",
+            name="بنك اختبار الاعتماد المباشر",
+            kind=TreasuryAccount.Kind.BANK, bank_name="بنك الاختبار",
+            account=Account.objects.get(school=self.school, code="1102"),
+        )
+        reconciliation = BankReconciliation.objects.create(
+            school=self.school, treasury_account=bank,
+            start_date=timezone.localdate(), end_date=timezone.localdate(),
+            statement_opening_balance=Decimal("0.00"),
+            statement_closing_balance=Decimal("0.00"),
+        )
+        reconciliation.status = BankReconciliation.Status.RECONCILED
+        reconciliation.reconciled_at = timezone.now()
+        reconciliation.reconciled_by = self.owner
+        with self.assertRaises(ValidationError):
+            reconciliation.save()
+        reconciliation.refresh_from_db()
+        self.assertEqual(reconciliation.status, BankReconciliation.Status.DRAFT)
+
     def test_bank_reconciliation_rejects_unmatched_statement_line(self):
         bank = TreasuryAccount.objects.create(
             school=self.school, code="BANK-UNMATCHED", name="بنك غير مطابق",
