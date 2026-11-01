@@ -827,7 +827,13 @@ class ReceiptVoucher(TenantOwnedModel):
         return f"سند قبض عام #{self.voucher_number} - {self.received_from}: {self.amount}"
 
 
+class TreasuryAccountQuerySet(TenantQuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("تعديل بيانات الخزينة يتم عبر حفظ السجل بعد التحقق من ارتباطاته المحاسبية.")
+
+
 class TreasuryAccount(TenantOwnedModel):
+    objects = TreasuryAccountQuerySet.as_manager()
     """صندوق نقدي أو حساب بنكي مرتبط بحساب تفصيلي في دفتر الأستاذ."""
     class Kind(models.TextChoices):
         CASH = "cash", "صندوق نقدي"
@@ -857,6 +863,11 @@ class TreasuryAccount(TenantOwnedModel):
                 condition=models.Q(is_archived=False),
                 name="acct_treasury_code_uniq",
             ),
+            models.UniqueConstraint(
+                fields=["school", "kind"],
+                condition=models.Q(is_archived=False, is_default=True),
+                name="acct_treasury_default_uniq",
+            ),
         ]
         indexes = [
             models.Index(fields=["school", "kind", "is_active"], name="acct_tr_kind_active"),
@@ -877,6 +888,40 @@ class TreasuryAccount(TenantOwnedModel):
             raise ValidationError({"bank_name": "اسم البنك مطلوب للحساب البنكي."})
         if self.currency and len(self.currency) != 3:
             raise ValidationError({"currency": "رمز العملة يجب أن يتكون من ثلاثة أحرف."})
+        if self.is_default and self.school_id:
+            duplicate_default = TreasuryAccount.objects.filter(
+                school_id=self.school_id,
+                kind=self.kind,
+                is_default=True,
+                is_archived=False,
+            ).exclude(pk=self.pk)
+            if duplicate_default.exists():
+                raise ValidationError({"is_default": "يوجد حساب افتراضي آخر من النوع نفسه لهذه المدرسة."})
+
+    @transaction.atomic
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = TreasuryAccount.objects.select_for_update().filter(pk=self.pk).first()
+            if original:
+                has_posted_transfers = TreasuryTransfer.objects.filter(
+                    models.Q(source_account_id=self.pk) | models.Q(destination_account_id=self.pk),
+                    status__in=[TreasuryTransfer.Status.POSTED, TreasuryTransfer.Status.REVERSED],
+                    is_archived=False,
+                ).exists()
+                has_reconciliations = BankReconciliation.objects.filter(
+                    treasury_account_id=self.pk,
+                    is_archived=False,
+                ).exists()
+                if has_posted_transfers or has_reconciliations:
+                    protected = (
+                        "school_id", "branch_id", "code", "kind", "account_id",
+                        "bank_name", "bank_account_number", "currency",
+                    )
+                    if any(getattr(original, field) != getattr(self, field) for field in protected):
+                        raise ValidationError(
+                            "هوية حساب الخزينة لا تتغير بعد استخدامه في تحويل مرحّل أو مطابقة بنكية."
+                        )
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.code} - {self.name}"
