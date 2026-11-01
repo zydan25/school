@@ -17,6 +17,10 @@ class FiscalYear(TenantOwnedModel):
     start_date = models.DateField("تاريخ بداية السنة المالية")
     end_date = models.DateField("تاريخ نهاية السنة المالية")
     is_closed = models.BooleanField("سنة مقفلة محاسبياً", default=False)
+    closed_at = models.DateTimeField("تاريخ إقفال السنة", null=True, blank=True)
+    closed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="closed_fiscal_years", verbose_name="المسؤول عن الإقفال")
+    closing_entry = models.ForeignKey("JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="closed_fiscal_years", verbose_name="قيد إقفال السنة")
+    opening_entry = models.ForeignKey("JournalEntry", null=True, blank=True, on_delete=models.PROTECT, related_name="opened_fiscal_years", verbose_name="قيد افتتاح السنة")
 
     class Meta:
         verbose_name = "سنة مالية"
@@ -28,6 +32,31 @@ class FiscalYear(TenantOwnedModel):
                 name="accounting_fiscal_year_uniq",
             )
         ]
+
+    def clean(self):
+        super().clean()
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValidationError({"end_date": "نهاية السنة المالية يجب ألا تسبق بدايتها."})
+        if self.school_id and self.start_date and self.end_date:
+            overlaps = FiscalYear.objects.filter(
+                school_id=self.school_id, is_archived=False,
+                start_date__lte=self.end_date, end_date__gte=self.start_date,
+            ).exclude(pk=self.pk)
+            if overlaps.exists():
+                raise ValidationError("تتداخل تواريخ السنة المالية مع سنة أخرى للمدرسة نفسها.")
+        if self.is_closed and not self.closing_entry_id:
+            raise ValidationError({"is_closed": "لا يجوز إقفال السنة دون إنشاء قيد الإقفال المعتمد."})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = FiscalYear.objects.filter(pk=self.pk).first()
+            if original and original.is_closed:
+                if not self.is_closed:
+                    raise ValidationError("السنة المالية المقفلة لا يعاد فتحها بتعديل مباشر.")
+                fields = ("school_id", "start_date", "end_date", "name")
+                if any(getattr(original, field) != getattr(self, field) for field in fields):
+                    raise ValidationError("لا يمكن تغيير بيانات سنة مالية مقفلة.")
+        return super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.name} ({'مقفلة' if self.is_closed else 'مفتوحة'})"
@@ -46,6 +75,8 @@ class FiscalPeriod(TenantOwnedModel):
     start_date = models.DateField("تاريخ بداية الفترة")
     end_date = models.DateField("تاريخ نهاية الفترة")
     is_closed = models.BooleanField("فترة مقفلة", default=False)
+    closed_at = models.DateTimeField("تاريخ إقفال الفترة", null=True, blank=True)
+    closed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="closed_fiscal_periods", verbose_name="المسؤول عن الإقفال")
 
     class Meta:
         verbose_name = "فترة محاسبية"
@@ -70,6 +101,27 @@ class FiscalPeriod(TenantOwnedModel):
         if self.fiscal_year_id and self.start_date and self.end_date:
             if self.start_date < self.fiscal_year.start_date or self.end_date > self.fiscal_year.end_date:
                 raise ValidationError("يجب أن تقع تواريخ الفترة المالية بالكامل داخل حدود السنة المالية التابعة لها.")
+            if self.period_number < 1 or self.period_number > 12:
+                raise ValidationError({"period_number": "رقم الفترة يجب أن يكون بين 1 و12."})
+            overlaps = FiscalPeriod.objects.filter(
+                school_id=self.school_id, is_archived=False,
+                start_date__lte=self.end_date, end_date__gte=self.start_date,
+            ).exclude(pk=self.pk)
+            if overlaps.exists():
+                raise ValidationError("تتداخل تواريخ الفترة مع فترة مالية أخرى للمدرسة نفسها.")
+        if self.is_closed and not self.closed_at:
+            raise ValidationError({"closed_at": "تاريخ الإقفال مطلوب عند إقفال الفترة."})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = FiscalPeriod.objects.filter(pk=self.pk).first()
+            if original and original.is_closed:
+                if not self.is_closed:
+                    raise ValidationError("الفترة المالية المقفلة لا يعاد فتحها بتعديل مباشر.")
+                fields = ("school_id", "fiscal_year_id", "period_number", "start_date", "end_date")
+                if any(getattr(original, field) != getattr(self, field) for field in fields):
+                    raise ValidationError("لا يمكن تغيير بيانات فترة مالية مقفلة.")
+        return super().save(*args, **kwargs)
 
 
 class Account(TenantOwnedModel):
