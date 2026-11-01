@@ -104,6 +104,8 @@ def is_school_day(school, date: datetime.date, academic_year=None, branch=None) 
         school=school,
         date=date,
         is_archived=False,
+        calendar__is_archived=False,
+        calendar__is_active=True,
     )
     if academic_year:
         query = query.filter(calendar__academic_year=academic_year)

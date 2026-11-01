@@ -267,6 +267,12 @@ class AcademicBranchModelTests(TestCase):
             self.school, date(2026, 9, 4),
             academic_year=shared_year, branch=self.branch_a,
         ))
+        branch_calendar.is_active = False
+        branch_calendar.save(update_fields=["is_active", "updated_at"])
+        self.assertFalse(is_school_day(
+            self.school, date(2026, 9, 4),
+            academic_year=shared_year, branch=self.branch_a,
+        ))
 
 class AcademicBranchApiTests(TestCase):
     @classmethod
