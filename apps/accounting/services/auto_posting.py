@@ -429,156 +429,164 @@ def post_student_invoice_discount_to_journal(discount_request) -> JournalEntry:
 
 
 def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
-    """
-    الترحيل الآلي لسند الصرف المالي إلى قيد يومية محاسبي.
-    الجانب المدين: حساب المصروف أو المورد (voucher.debit_account).
-    الجانب الدائن: حساب الصندوق أو البنك (voucher.credit_account).
-    """
-    if voucher.amount <= Decimal("0.00"):
-        raise ValueError("لا يمكن ترحيل سند صرف مالي بمبلغ صفر أو سالب.")
-    if voucher.status == PaymentVoucher.Status.CANCELLED:
-        raise ValueError("لا يمكن ترحيل سند صرف ملغى.")
-
-    school = voucher.school
-    if voucher.debit_account.school_id != school.id or voucher.credit_account.school_id != school.id:
-        raise ValueError("حسابات سند الصرف لا تنتمي إلى نفس مدرسة السند.")
-
-    period = _get_active_fiscal_period(school, voucher.date)
-    debit_branch = voucher.branch_id or voucher.debit_account.branch_id or (voucher.cost_center.branch_id if voucher.cost_center_id else None)
-    credit_branch = voucher.branch_id or voucher.credit_account.branch_id
-    entry_branch_id = debit_branch if debit_branch == credit_branch else None
-
+    """ترحيل سند الصرف بقيد مزدوج، بقفل السند وإعادة القيد نفسه عند تكرار الطلب."""
     with transaction.atomic():
+        locked = PaymentVoucher.objects.select_for_update(of=("self",)).get(pk=voucher.pk)
+        if locked.amount <= Decimal("0.00"):
+            raise ValidationError("لا يمكن ترحيل سند صرف مالي بمبلغ صفر أو سالب.")
+        if locked.status == PaymentVoucher.Status.CANCELLED:
+            raise ValidationError("لا يمكن ترحيل سند صرف ملغى.")
+
+        school = locked.school
+        if (
+            locked.debit_account.school_id != school.pk
+            or locked.credit_account.school_id != school.pk
+        ):
+            raise ValidationError("حسابات سند الصرف لا تنتمي إلى نفس مدرسة السند.")
+
         existing = JournalEntry.objects.filter(
             school=school,
             source_module="accounting_payment",
-            source_reference=voucher.voucher_number,
+            source_reference=locked.voucher_number,
             is_archived=False,
         ).first()
         if existing:
-            if not voucher.journal_entry_id:
-                voucher.journal_entry = existing
-                voucher.status = PaymentVoucher.Status.POSTED
-                voucher.save(update_fields=["journal_entry", "status", "updated_at"])
+            if existing.status != JournalEntry.Status.POSTED:
+                raise ValidationError("يوجد قيد سند صرف سابق غير مرحّل؛ يجب مراجعته قبل المتابعة.")
+            locked.journal_entry = existing
+            locked.status = PaymentVoucher.Status.POSTED
+            locked.save(update_fields=["journal_entry", "status", "updated_at"])
             return existing
 
-        entry_number = f"JV-PAY-{voucher.voucher_number}"
+        if locked.status == PaymentVoucher.Status.POSTED:
+            raise ValidationError("سند الصرف معلّم كمرحل دون وجود قيد محاسبي مرتبط.")
+
+        period = _get_active_fiscal_period(school, locked.date)
+        debit_branch = (
+            locked.branch_id or locked.debit_account.branch_id
+            or (locked.cost_center.branch_id if locked.cost_center_id else None)
+        )
+        credit_branch = locked.branch_id or locked.credit_account.branch_id
+        entry_branch_id = debit_branch if debit_branch == credit_branch else None
+
         entry = JournalEntry.objects.create(
             school=school,
             branch_id=entry_branch_id,
             fiscal_period=period,
-            entry_number=entry_number,
-            date=voucher.date,
+            entry_number=f"JV-PAY-{locked.voucher_number}",
+            date=locked.date,
             status=JournalEntry.Status.DRAFT,
             source_module="accounting_payment",
-            source_reference=voucher.voucher_number,
-            description=f"صرف مالي بسند #{voucher.voucher_number} إلى: {voucher.paid_to} - {voucher.description}",
+            source_reference=locked.voucher_number,
+            description=(
+                f"صرف مالي بسند #{locked.voucher_number} إلى: "
+                f"{locked.paid_to} - {locked.description}"
+            ),
         )
-
         JournalEntryLine.objects.create(
             school=school,
             branch_id=debit_branch,
             journal_entry=entry,
-            account=voucher.debit_account,
-            cost_center=voucher.cost_center,
-            description=voucher.description or f"صرف إلى {voucher.paid_to}",
-            debit=voucher.amount,
+            account=locked.debit_account,
+            cost_center=locked.cost_center,
+            description=locked.description or f"صرف إلى {locked.paid_to}",
+            debit=locked.amount,
             credit=Decimal("0.00"),
         )
-
         JournalEntryLine.objects.create(
             school=school,
             branch_id=credit_branch,
             journal_entry=entry,
-            account=voucher.credit_account,
-            description=f"خروج نقدية لصالح {voucher.paid_to}",
+            account=locked.credit_account,
+            description=f"خروج نقدية لصالح {locked.paid_to}",
             debit=Decimal("0.00"),
-            credit=voucher.amount,
+            credit=locked.amount,
         )
-
-        entry.post(user=voucher.created_by if hasattr(voucher, "created_by") else None)
-        voucher.status = PaymentVoucher.Status.POSTED
-        voucher.journal_entry = entry
-        voucher.save(update_fields=["status", "journal_entry", "updated_at"])
-
+        entry.post(user=getattr(locked, "created_by", None))
+        locked.status = PaymentVoucher.Status.POSTED
+        locked.journal_entry = entry
+        locked.save(update_fields=["status", "journal_entry", "updated_at"])
         return entry
-
 
 def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
-    """
-    الترحيل الآلي لسند القبض العام إلى قيد يومية محاسبي.
-    الجانب المدين: حساب الصندوق أو البنك (voucher.debit_account).
-    الجانب الدائن: حساب الإيراد (voucher.credit_account).
-    """
-    if voucher.amount <= Decimal("0.00"):
-        raise ValueError("لا يمكن ترحيل سند قبض عام بمبلغ صفر أو سالب.")
-    if voucher.status == ReceiptVoucher.Status.CANCELLED:
-        raise ValueError("لا يمكن ترحيل سند قبض ملغى.")
-
-    school = voucher.school
-    if voucher.debit_account.school_id != school.id or voucher.credit_account.school_id != school.id:
-        raise ValueError("حسابات سند القبض لا تنتمي إلى نفس مدرسة السند.")
-
-    period = _get_active_fiscal_period(school, voucher.date)
-    debit_branch = voucher.branch_id or voucher.debit_account.branch_id
-    credit_branch = voucher.branch_id or voucher.credit_account.branch_id or (voucher.cost_center.branch_id if voucher.cost_center_id else None)
-    entry_branch_id = debit_branch if debit_branch == credit_branch else None
-
+    """ترحيل سند القبض العام بقفل السند ومنع تكرار الأثر المحاسبي."""
     with transaction.atomic():
+        locked = ReceiptVoucher.objects.select_for_update(of=("self",)).get(pk=voucher.pk)
+        if locked.amount <= Decimal("0.00"):
+            raise ValidationError("لا يمكن ترحيل سند قبض عام بمبلغ صفر أو سالب.")
+        if locked.status == ReceiptVoucher.Status.CANCELLED:
+            raise ValidationError("لا يمكن ترحيل سند قبض ملغى.")
+
+        school = locked.school
+        if (
+            locked.debit_account.school_id != school.pk
+            or locked.credit_account.school_id != school.pk
+        ):
+            raise ValidationError("حسابات سند القبض لا تنتمي إلى نفس مدرسة السند.")
+
         existing = JournalEntry.objects.filter(
             school=school,
             source_module="accounting_receipt",
-            source_reference=voucher.voucher_number,
+            source_reference=locked.voucher_number,
             is_archived=False,
         ).first()
         if existing:
-            if not voucher.journal_entry_id:
-                voucher.journal_entry = existing
-                voucher.status = ReceiptVoucher.Status.POSTED
-                voucher.save(update_fields=["journal_entry", "status", "updated_at"])
+            if existing.status != JournalEntry.Status.POSTED:
+                raise ValidationError("يوجد قيد سند قبض سابق غير مرحّل؛ يجب مراجعته قبل المتابعة.")
+            locked.journal_entry = existing
+            locked.status = ReceiptVoucher.Status.POSTED
+            locked.save(update_fields=["journal_entry", "status", "updated_at"])
             return existing
 
-        entry_number = f"JV-REC-GEN-{voucher.voucher_number}"
+        if locked.status == ReceiptVoucher.Status.POSTED:
+            raise ValidationError("سند القبض معلّم كمرحل دون وجود قيد محاسبي مرتبط.")
+
+        period = _get_active_fiscal_period(school, locked.date)
+        debit_branch = locked.branch_id or locked.debit_account.branch_id
+        credit_branch = (
+            locked.branch_id or locked.credit_account.branch_id
+            or (locked.cost_center.branch_id if locked.cost_center_id else None)
+        )
+        entry_branch_id = debit_branch if debit_branch == credit_branch else None
+
         entry = JournalEntry.objects.create(
             school=school,
             branch_id=entry_branch_id,
             fiscal_period=period,
-            entry_number=entry_number,
-            date=voucher.date,
+            entry_number=f"JV-REC-GEN-{locked.voucher_number}",
+            date=locked.date,
             status=JournalEntry.Status.DRAFT,
             source_module="accounting_receipt",
-            source_reference=voucher.voucher_number,
-            description=f"قبض إيراد عام بسند #{voucher.voucher_number} من: {voucher.received_from} - {voucher.description}",
+            source_reference=locked.voucher_number,
+            description=(
+                f"قبض إيراد عام بسند #{locked.voucher_number} من: "
+                f"{locked.received_from} - {locked.description}"
+            ),
         )
-
         JournalEntryLine.objects.create(
             school=school,
             branch_id=debit_branch,
             journal_entry=entry,
-            account=voucher.debit_account,
-            description=f"قبض نقدية من {voucher.received_from}",
-            debit=voucher.amount,
+            account=locked.debit_account,
+            description=f"قبض نقدية من {locked.received_from}",
+            debit=locked.amount,
             credit=Decimal("0.00"),
         )
-
         JournalEntryLine.objects.create(
             school=school,
             branch_id=credit_branch,
             journal_entry=entry,
-            account=voucher.credit_account,
-            cost_center=voucher.cost_center,
-            description=voucher.description,
+            account=locked.credit_account,
+            cost_center=locked.cost_center,
+            description=locked.description,
             debit=Decimal("0.00"),
-            credit=voucher.amount,
+            credit=locked.amount,
         )
-
-        entry.post(user=voucher.created_by if hasattr(voucher, "created_by") else None)
-        voucher.status = ReceiptVoucher.Status.POSTED
-        voucher.journal_entry = entry
-        voucher.save(update_fields=["status", "journal_entry", "updated_at"])
-
+        entry.post(user=getattr(locked, "created_by", None))
+        locked.status = ReceiptVoucher.Status.POSTED
+        locked.journal_entry = entry
+        locked.save(update_fields=["status", "journal_entry", "updated_at"])
         return entry
-
 
 def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> JournalEntry:
     """
