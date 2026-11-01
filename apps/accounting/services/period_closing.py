@@ -103,25 +103,28 @@ def _year_profit_and_loss_lines(year: FiscalYear) -> list[dict]:
             Account.AccountType.EXPENSE,
         ],
     ).values(
-        "account_id", "account__branch_id", "account__account_type",
+        "account_id", "branch_id", "account__account_type",
     ).annotate(
         debit_total=Sum("debit"),
         credit_total=Sum("credit"),
     ).order_by("account_id")
 
     lines = []
-    net_income = ZERO
+    net_income_by_branch: dict[str | None, Decimal] = {}
     for row in rows:
         debit = row["debit_total"] or ZERO
         credit = row["credit_total"] or ZERO
         account_type = row["account__account_type"]
+        branch_id = row["branch_id"]
         if account_type == Account.AccountType.REVENUE:
             balance = credit - debit
-            net_income += balance
+            net_income_by_branch[branch_id] = (
+                net_income_by_branch.get(branch_id, ZERO) + balance
+            )
             if balance > ZERO:
                 lines.append({
                     "account_id": row["account_id"],
-                    "branch_id": row["account__branch_id"],
+                    "branch_id": branch_id,
                     "debit": balance,
                     "credit": ZERO,
                     "description": "إقفال رصيد الإيراد في نهاية السنة المالية",
@@ -136,7 +139,9 @@ def _year_profit_and_loss_lines(year: FiscalYear) -> list[dict]:
                 })
         else:
             balance = debit - credit
-            net_income -= balance
+            net_income_by_branch[branch_id] = (
+                net_income_by_branch.get(branch_id, ZERO) - balance
+            )
             if balance > ZERO:
                 lines.append({
                     "account_id": row["account_id"],
@@ -154,7 +159,12 @@ def _year_profit_and_loss_lines(year: FiscalYear) -> list[dict]:
                     "description": "إقفال الرصيد الدائن لحساب المصروف",
                 })
 
-    if net_income > ZERO:
+    non_zero_branches = {
+        branch_id: balance
+        for branch_id, balance in net_income_by_branch.items()
+        if balance != ZERO
+    }
+    if non_zero_branches:
         retained = Account.objects.filter(
             school=year.school,
             code="3102",
@@ -163,29 +173,21 @@ def _year_profit_and_loss_lines(year: FiscalYear) -> list[dict]:
         ).first()
         if not retained:
             raise ValidationError("حساب الأرباح والخسائر المرحلة 3102 غير موجود في دليل الحسابات.")
-        lines.append({
-            "account_id": retained.pk,
-            "branch_id": retained.branch_id,
-            "debit": ZERO,
-            "credit": net_income,
-            "description": "ترحيل صافي ربح السنة إلى الأرباح المرحلة",
-        })
-    elif net_income < ZERO:
-        retained = Account.objects.filter(
-            school=year.school,
-            code="3102",
-            is_leaf=True,
-            is_archived=False,
-        ).first()
-        if not retained:
-            raise ValidationError("حساب الأرباح والخسائر المرحلة 3102 غير موجود في دليل الحسابات.")
-        lines.append({
-            "account_id": retained.pk,
-            "branch_id": retained.branch_id,
-            "debit": abs(net_income),
-            "credit": ZERO,
-            "description": "ترحيل صافي خسارة السنة إلى الأرباح المرحلة",
-        })
+        for branch_id, net_income in non_zero_branches.items():
+            if retained.branch_id and retained.branch_id != branch_id:
+                raise ValidationError(
+                    "حساب الأرباح المرحلة 3102 مربوط بفرع مختلف عن فرع نتائج السنة؛ راجع دليل الحسابات."
+                )
+            lines.append({
+                "account_id": retained.pk,
+                "branch_id": branch_id if retained.branch_id is None else retained.branch_id,
+                "debit": abs(net_income) if net_income < ZERO else ZERO,
+                "credit": net_income if net_income > ZERO else ZERO,
+                "description": (
+                    "ترحيل صافي ربح السنة إلى الأرباح المرحلة"
+                    if net_income > ZERO else "ترحيل صافي خسارة السنة إلى الأرباح المرحلة"
+                ),
+            })
     return lines
 
 
@@ -309,7 +311,7 @@ def open_fiscal_year(
         journal_entry__status=JournalEntry.Status.POSTED,
         journal_entry__date__lte=previous.end_date,
         is_archived=False,
-    ).values("account_id", "account__account_type", "account__branch_id").annotate(
+    ).values("account_id", "branch_id", "account__account_type").annotate(
         debit_total=Sum("debit"),
         credit_total=Sum("credit"),
     ).order_by("account_id")
@@ -332,7 +334,7 @@ def open_fiscal_year(
         else:
             credit_balance = -debit_balance
             debit, credit = (ZERO, credit_balance) if credit_balance > ZERO else (abs(credit_balance), ZERO)
-        opening_lines.append((row["account_id"], row["account__branch_id"], debit, credit))
+        opening_lines.append((row["account_id"], row["branch_id"], debit, credit))
         total_debit += debit
         total_credit += credit
 
