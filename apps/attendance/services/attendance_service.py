@@ -84,6 +84,9 @@ def get_or_create_register(
                     "schedule": None, "event_occurrence": event_occurrence, "status": AttendanceRegister.Status.OPEN,
                 },
             )
+        # Never append students or synchronize legacy rows after submission/approval/locking.
+        if register.status != AttendanceRegister.Status.OPEN:
+            return register, created
         existing_ids = set(register.student_records.values_list("student_id", flat=True))
         enrolled = Student.objects.filter(school=school, section=section, status=Student.Status.ACTIVE, is_archived=False)
         new_records = []

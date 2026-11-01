@@ -607,8 +607,8 @@ class StudentAttendanceRecord(TenantOwnedModel):
             raise ValidationError({"student": "الطالب لا يتبع فرع سجل الحضور."})
         if self.register_id and self.branch_id != self.register.branch_id:
             raise ValidationError({"branch": "فرع السجل التفصيلي يجب أن يطابق فرع سجل الحضور."})
-        if self.register_id and not self.register.is_modifiable and not self._state.adding:
-            raise ValidationError("لا يمكن تعديل سجل حضور معتمد أو مقفل؛ استخدم إجراء إعادة الفتح الرسمي.")
+        if self.register_id and not self.register.is_modifiable:
+            raise ValidationError("لا يمكن إضافة أو تعديل تفاصيل سجل حضور معتمد أو مقفل؛ استخدم إجراء إعادة الفتح الرسمي.")
 
 
 class AttendanceReopenRequest(TenantOwnedModel):

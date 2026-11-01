@@ -241,11 +241,11 @@ def get_term_attendance_summary(school, academic_term_id: UUID, section_id: UUID
         raise ValueError("الشعبة لا تتبع السنة والمدرسة للفصل المحدد.")
     enrollments = StudentEnrollment.objects.filter(
         school=school, academic_year=term.academic_year, is_archived=False,
-    ).select_related("student", "section").order_by("student__first_name", "student__last_name")
+    ).select_related("student", "student__branch", "section", "section__branch").order_by("student__first_name", "student__last_name")
     if section_id is not None:
         enrollments = enrollments.filter(section_id=section_id)
     if not enrollments.exists():
-        fallback_students = Student.objects.filter(school=school, academic_year=term.academic_year, is_archived=False)
+        fallback_students = Student.objects.filter(school=school, academic_year=term.academic_year, is_archived=False).select_related("branch", "section", "section__branch")
         if section_id is not None:
             fallback_students = fallback_students.filter(section_id=section_id)
         enrol_rows = [(student, student.section) for student in fallback_students.select_related("section")]
@@ -267,7 +267,7 @@ def get_term_attendance_summary(school, academic_term_id: UUID, section_id: UUID
         period_sessions = 0
         for day, group in by_student.get(student.pk, {}).items():
             if group["daily"]:
-                measures.extend(group["daily"])
+                measures.append(_aggregate_day_status(group["daily"]))
             else:
                 measures.extend(group["periods"])
                 period_sessions += len(group["periods"])
@@ -294,9 +294,9 @@ def get_chronic_absenteeism_report(school, academic_year_id: UUID, threshold_per
         raise ValueError("السنة الدراسية غير موجودة في المدرسة المحددة.")
     enrollments = StudentEnrollment.objects.filter(
         school=school, academic_year=academic_year, is_archived=False,
-    ).select_related("student", "section", "student__grade_level").order_by("student__first_name", "student__last_name")
+    ).select_related("student", "student__branch", "section", "section__branch", "student__grade_level").order_by("student__first_name", "student__last_name")
     if not enrollments.exists():
-        fallback = Student.objects.filter(school=school, academic_year=academic_year, status=Student.Status.ACTIVE, is_archived=False).select_related("grade_level", "section")
+        fallback = Student.objects.filter(school=school, academic_year=academic_year, status=Student.Status.ACTIVE, is_archived=False).select_related("grade_level", "section", "branch", "section__branch")
         enrol_rows = [(student, student.section) for student in fallback]
     else:
         enrol_rows = [(item.student, item.section) for item in enrollments]
@@ -305,13 +305,18 @@ def get_chronic_absenteeism_report(school, academic_year_id: UUID, threshold_per
     )
     chronic = []
     for student, enrollment_section in enrol_rows:
+        student_branch = student.branch or (enrollment_section.branch if enrollment_section else None)
+        calendar_days = _calendar_days(
+            school, academic_year.starts_on, academic_year.ends_on,
+            academic_year=academic_year, branch=student_branch,
+        )
         school_days = 0
         absent_days = 0
         categories = []
         for (student_id, day), group in records.items():
             if student_id != student.pk:
                 continue
-            if not _is_school_day(None, day):
+            if not _is_school_day(calendar_days.get(day), day):
                 continue
             category = _resolve_day_status(group)
             if category is None:
