@@ -66,7 +66,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="homeworksubmissionattempt",
-            index=models.Index(fields=["school", "submission", "submitted_at"], name="assignments_school__attempt_idx"),
+            index=models.Index(fields=["school", "submission", "submitted_at"], name="asgn_attempt_idx"),
         ),
         migrations.RunPython(copy_existing_submissions, migrations.RunPython.noop),
     ]
