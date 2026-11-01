@@ -5,7 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -60,7 +60,16 @@ def close_fiscal_period(period: FiscalPeriod, user) -> FiscalPeriod:
     locked.is_closed = True
     locked.closed_at = timezone.now()
     locked.closed_by = user
-    locked.save(update_fields=["is_closed", "closed_at", "closed_by", "updated_at"])
+    locked.full_clean()
+    updated_at = timezone.now()
+    models.QuerySet.update(
+        FiscalPeriod.objects.filter(pk=locked.pk, is_closed=False),
+        is_closed=True,
+        closed_at=locked.closed_at,
+        closed_by=locked.closed_by,
+        updated_at=updated_at,
+    )
+    locked.updated_at = updated_at
     return locked
 
 
@@ -255,9 +264,17 @@ def close_fiscal_year(year: FiscalYear, user) -> FiscalYear:
     locked.is_closed = True
     locked.closed_at = timezone.now()
     locked.closed_by = user
-    locked.save(update_fields=[
-        "closing_entry", "is_closed", "closed_at", "closed_by", "updated_at",
-    ])
+    locked.full_clean()
+    updated_at = timezone.now()
+    models.QuerySet.update(
+        FiscalYear.objects.filter(pk=locked.pk, is_closed=False),
+        closing_entry=closing_entry,
+        is_closed=True,
+        closed_at=locked.closed_at,
+        closed_by=locked.closed_by,
+        updated_at=updated_at,
+    )
+    locked.updated_at = updated_at
     return locked
 
 
