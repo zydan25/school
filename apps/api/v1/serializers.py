@@ -37,7 +37,7 @@ from apps.students.models import (
     Guardian, Student, StudentEnrollment, StudentGuardianRelation,
 )
 from apps.timetable.models import (
-    ClassSchedule, DailyLessonLog, SchedulePeriodTemplate, SchoolBellSchedule,
+    ClassSchedule, DailyLessonLog, SchedulePeriodTemplate, SchoolBellSchedule, TimetablePlan,
 )
 from apps.tenants.models import Branch
 
@@ -851,3 +851,50 @@ class MessageCreateSerializer(serializers.Serializer):
         if not attrs.get("body") and not self.context["request"].FILES.get("attachment"):
             raise serializers.ValidationError("يجب كتابة رسالة أو إرفاق ملف.")
         return attrs
+
+class TimetablePlanSerializer(TenantModelSerializer):
+    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.none(), required=False, allow_null=True)
+
+    class Meta(TenantModelSerializer.Meta):
+        model = TimetablePlan
+        fields = "__all__"
+        read_only_fields = tuple(field for field in TenantModelSerializer.Meta.read_only_fields if field != "branch") + (
+            "version", "status", "is_current", "based_on", "submitted_by", "submitted_at",
+            "approved_by", "approved_at", "published_by", "published_at",
+        )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        school = self.context.get("school")
+        self.fields["branch"].queryset = Branch.objects.filter(school=school, is_archived=False) if school else Branch.objects.none()
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        school = self.context.get("school")
+        year = attrs.get("academic_year", getattr(self.instance, "academic_year", None))
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        if year and school and year.school_id != school.pk:
+            raise serializers.ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة النشطة."})
+        if branch is None and year and year.branch_id:
+            branch = year.branch
+            attrs["branch"] = branch
+        if branch and school and branch.school_id != school.pk:
+            raise serializers.ValidationError({"branch": "الفرع لا يتبع المدرسة النشطة."})
+        if year and year.branch_id and year.branch_id != getattr(branch, "pk", None):
+            raise serializers.ValidationError({"branch": "الفرع لا يطابق فرع السنة الدراسية."})
+        term = attrs.get("academic_term", getattr(self.instance, "academic_term", None))
+        if term and year and (term.school_id != school.pk or term.academic_year_id != year.pk):
+            raise serializers.ValidationError({"academic_term": "الفصل الدراسي لا يتبع السنة والمدرسة المحددتين."})
+        bell = attrs.get("bell_schedule", getattr(self.instance, "bell_schedule", None))
+        if bell and year and (bell.school_id != school.pk or bell.academic_year_id != year.pk):
+            raise serializers.ValidationError({"bell_schedule": "قالب الجرس لا يتبع السنة والمدرسة المحددتين."})
+        if bell and bell.branch_id and bell.branch_id != getattr(branch, "pk", None):
+            raise serializers.ValidationError({"bell_schedule": "قالب الجرس يتبع فرعاً مختلفاً."})
+        return attrs
+
+
+class TimetablePlanCopyInputSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=150, required=False)
+    effective_from = serializers.DateField(required=False)
+    academic_term_id = serializers.UUIDField(required=False)
+    bell_schedule_id = serializers.UUIDField(required=False)
