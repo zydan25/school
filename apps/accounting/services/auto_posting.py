@@ -236,90 +236,97 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
         return entry
 
 
+@transaction.atomic
 def post_credit_settlement_to_journal(credit_tx) -> JournalEntry | None:
-    """
-    قيد تسوية استخدام الرصيد الدائن للطالب لسداد فاتورة:
-    مدين: أرصدة وأمانات الطلاب الدائنة (2102)
-    دائن: ذمم ورسوم الطلاب (1104)
-    """
-    if credit_tx.amount <= Decimal("0.00"):
-        return None
-    school = credit_tx.school
-    tx_date = credit_tx.created_at.date()
-    period = _get_active_fiscal_period(school, tx_date)
-
-    acc_liability = _get_account_or_seed(school, "2102", "أرصدة وأمانات الطلاب الدائنة")
-    acc_receivable = _get_account_or_seed(school, "1104", "ذمم ورسوم الطلاب")
-
-    entry_num = f"JV-SETTLE-{credit_tx.id.hex[:8].upper()}"
-    with transaction.atomic():
-        existing = JournalEntry.objects.filter(
-            school=school,
-            source_module="student_fees_credit",
-            source_reference=str(credit_tx.id),
-            is_archived=False,
-        ).first()
-        if existing:
-            return existing
-
-        entry = JournalEntry.objects.create(
-            school=school,
-            branch=credit_tx.branch,
-            fiscal_period=period,
-            entry_number=entry_num,
-            date=tx_date,
-            status=JournalEntry.Status.DRAFT,
-            source_module="student_fees_credit",
-            source_reference=str(credit_tx.id),
-            description=f"تسوية سداد من الرصيد الدائن للطالب {credit_tx.student}",
-        )
-
-        # Debit: 2102 (Reduce liability)
-        JournalEntryLine.objects.create(
-            school=school,
-            branch=credit_tx.branch,
-            journal_entry=entry,
-            account=acc_liability,
-            debit=credit_tx.amount,
-            credit=Decimal("0.00"),
-            description=f"تسوية رصيد دائن للطالب {credit_tx.student}",
-        )
-
-        # Credit: 1104 (Reduce student receivable)
-        JournalEntryLine.objects.create(
-            school=school,
-            branch=credit_tx.branch,
-            journal_entry=entry,
-            account=acc_receivable,
-            debit=Decimal("0.00"),
-            credit=credit_tx.amount,
-            description=f"إثبات سداد الفاتورة #{credit_tx.invoice.invoice_number if credit_tx.invoice else ''}",
-        )
-
-        entry.post(user=credit_tx.created_by)
-        return entry
-
-
-def post_student_credit_refund_to_journal(credit_tx) -> JournalEntry:
-    """قيد استرداد رصيد الطالب: مدين الأرصدة الدائنة ودائن وسيلة الصرف."""
+    """ترحيل استخدام رصيد الطالب بعد قفل حركة الرصيد ومنع تكرار القيد."""
     from apps.student_fees.models import StudentCreditTransaction
 
-    if credit_tx.transaction_type != StudentCreditTransaction.TransactionType.REFUND:
-        raise ValidationError("الحركة المحددة ليست استرداد رصيد دائن.")
-    if credit_tx.amount <= Decimal("0.00"):
-        raise ValidationError("قيمة استرداد الرصيد يجب أن تكون أكبر من الصفر.")
-    school = credit_tx.school
-    tx_date = credit_tx.created_at.date()
-    period = _get_active_fiscal_period(school, tx_date)
+    locked_tx = StudentCreditTransaction.objects.select_for_update(of=("self",)).get(
+        pk=credit_tx.pk,
+    )
+    if locked_tx.amount <= Decimal("0.00"):
+        return None
+    school = locked_tx.school
+    source_reference = str(locked_tx.pk)
     existing = JournalEntry.objects.filter(
         school=school,
-        source_module="student_fees_credit_refund",
-        source_reference=str(credit_tx.pk),
+        source_module="student_fees_credit",
+        source_reference=source_reference,
         is_archived=False,
     ).first()
     if existing:
+        if existing.status != JournalEntry.Status.POSTED:
+            raise ValidationError("يوجد قيد تسوية رصيد سابق غير مرحّل؛ يجب مراجعته.")
         return existing
+    if locked_tx.is_reversed:
+        raise ValidationError("لا يمكن إنشاء قيد تسوية جديد لحركة رصيد معكوسة.")
 
+    tx_date = locked_tx.created_at.date()
+    period = _get_active_fiscal_period(school, tx_date)
+    acc_liability = _get_account_or_seed(school, "2102", "أرصدة وأمانات الطلاب الدائنة")
+    acc_receivable = _get_account_or_seed(school, "1104", "ذمم ورسوم الطلاب")
+    entry = JournalEntry.objects.create(
+        school=school,
+        branch=locked_tx.branch,
+        fiscal_period=period,
+        entry_number=f"JV-SETTLE-{locked_tx.pk.hex[:8].upper()}",
+        date=tx_date,
+        status=JournalEntry.Status.DRAFT,
+        source_module="student_fees_credit",
+        source_reference=source_reference,
+        description=f"تسوية سداد من الرصيد الدائن للطالب {locked_tx.student}",
+    )
+    JournalEntryLine.objects.create(
+        school=school,
+        branch=locked_tx.branch,
+        journal_entry=entry,
+        account=acc_liability,
+        debit=locked_tx.amount,
+        credit=Decimal("0.00"),
+        description=f"تسوية رصيد دائن للطالب {locked_tx.student}",
+    )
+    JournalEntryLine.objects.create(
+        school=school,
+        branch=locked_tx.branch,
+        journal_entry=entry,
+        account=acc_receivable,
+        debit=Decimal("0.00"),
+        credit=locked_tx.amount,
+        description=f"إثبات سداد الفاتورة #{locked_tx.invoice.invoice_number if locked_tx.invoice else ''}",
+    )
+    entry.post(user=locked_tx.created_by)
+    return entry
+
+@transaction.atomic
+def post_student_credit_refund_to_journal(credit_tx) -> JournalEntry:
+    """ترحيل استرداد رصيد الطالب مرة واحدة ضمن معاملة ذرية."""
+    from apps.student_fees.models import StudentCreditTransaction
+
+    locked_tx = StudentCreditTransaction.objects.select_for_update(of=("self",)).get(
+        pk=credit_tx.pk,
+    )
+    if locked_tx.transaction_type != StudentCreditTransaction.TransactionType.REFUND:
+        raise ValidationError("الحركة المحددة ليست استرداد رصيد دائن.")
+    if locked_tx.amount <= Decimal("0.00"):
+        raise ValidationError("قيمة استرداد الرصيد يجب أن تكون أكبر من الصفر.")
+
+    school = locked_tx.school
+    source_reference = str(locked_tx.pk)
+    existing = JournalEntry.objects.filter(
+        school=school,
+        source_module="student_fees_credit_refund",
+        source_reference=source_reference,
+        is_archived=False,
+    ).first()
+    if existing:
+        if existing.status != JournalEntry.Status.POSTED:
+            raise ValidationError("يوجد قيد استرداد سابق غير مرحّل؛ يجب مراجعته.")
+        return existing
+    if locked_tx.is_reversed:
+        raise ValidationError("لا يمكن ترحيل استرداد سبق عكسه.")
+
+    tx_date = locked_tx.created_at.date()
+    period = _get_active_fiscal_period(school, tx_date)
     payment_accounts = {
         PaymentReceipt.PaymentMethod.CASH: ("1101", "الصندوق / الخزينة"),
         PaymentReceipt.PaymentMethod.BANK_TRANSFER: ("1102", "البنك"),
@@ -327,7 +334,7 @@ def post_student_credit_refund_to_journal(credit_tx) -> JournalEntry:
         PaymentReceipt.PaymentMethod.ONLINE: ("1102", "البنك"),
     }
     account_code, account_name = payment_accounts.get(
-        credit_tx.refund_payment_method, (None, None),
+        locked_tx.refund_payment_method, (None, None),
     )
     if not account_code:
         raise ValidationError("طريقة صرف استرداد الرصيد غير معتمدة.")
@@ -335,28 +342,27 @@ def post_student_credit_refund_to_journal(credit_tx) -> JournalEntry:
     payment_account = _get_account_or_seed(school, account_code, account_name)
     entry = JournalEntry.objects.create(
         school=school,
-        branch=credit_tx.branch,
+        branch=locked_tx.branch,
         fiscal_period=period,
-        entry_number=f"JV-REFUND-{credit_tx.pk.hex[:8].upper()}",
+        entry_number=f"JV-REFUND-{locked_tx.pk.hex[:8].upper()}",
         date=tx_date,
         status=JournalEntry.Status.DRAFT,
         source_module="student_fees_credit_refund",
-        source_reference=str(credit_tx.pk),
-        description=f"استرداد رصيد دائن للطالب {credit_tx.student}",
+        source_reference=source_reference,
+        description=f"استرداد رصيد دائن للطالب {locked_tx.student}",
     )
     JournalEntryLine.objects.create(
-        school=school, branch=credit_tx.branch, journal_entry=entry, account=liability,
-        debit=credit_tx.amount, credit=Decimal("0.00"),
-        description=f"تخفيض الرصيد الدائن المستحق للطالب {credit_tx.student}",
+        school=school, branch=locked_tx.branch, journal_entry=entry, account=liability,
+        debit=locked_tx.amount, credit=Decimal("0.00"),
+        description=f"تخفيض الرصيد الدائن المستحق للطالب {locked_tx.student}",
     )
     JournalEntryLine.objects.create(
-        school=school, branch=credit_tx.branch, journal_entry=entry, account=payment_account,
-        debit=Decimal("0.00"), credit=credit_tx.amount,
-        description=f"صرف استرداد رصيد الطالب {credit_tx.student}",
+        school=school, branch=locked_tx.branch, journal_entry=entry, account=payment_account,
+        debit=Decimal("0.00"), credit=locked_tx.amount,
+        description=f"صرف استرداد رصيد الطالب {locked_tx.student}",
     )
-    entry.post(user=credit_tx.created_by)
+    entry.post(user=locked_tx.created_by)
     return entry
-
 
 def post_student_invoice_discount_to_journal(discount_request) -> JournalEntry:
     """قيد الخصم المعتمد: تخفيض إيراد الرسوم والذمم بالقيمة نفسها."""
@@ -673,75 +679,86 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
         locked_asset.save(update_fields=["accumulated_depreciation", "updated_at"])
         return journal_entry
 
+@transaction.atomic
 def post_student_invoice_to_journal(invoice) -> JournalEntry:
-    """
-    الترحيل الآلي لإصدار فاتورة رسوم الطالب إلى قيد استحقاق محاسبي.
-    الجانب المدين: ذمم الطلاب وأولياء الأمور (1104).
-    الجانب الدائن: إيرادات الرسوم الدراسية (4101).
-    """
-    school = invoice.school
-    post_date = getattr(invoice, "issue_date", None) or getattr(invoice, "due_date", None) or timezone.localdate()
+    """ترحيل استحقاق فاتورة الطالب بعد قفلها ومنع إنشاء قيد مكرر."""
+    from apps.student_fees.models import StudentInvoice
+
+    locked_invoice = StudentInvoice.objects.select_for_update(of=("self",)).get(
+        pk=invoice.pk,
+    )
+    if locked_invoice.status == StudentInvoice.Status.CANCELLED:
+        raise ValidationError("لا يمكن ترحيل فاتورة طالب ملغاة.")
+    school = locked_invoice.school
+    source_reference = locked_invoice.invoice_number
+    existing = JournalEntry.objects.filter(
+        school=school,
+        source_module="student_invoice",
+        source_reference=source_reference,
+        is_archived=False,
+    ).first()
+    if existing:
+        if existing.status != JournalEntry.Status.POSTED:
+            raise ValidationError("يوجد قيد فاتورة سابق غير مرحّل؛ يجب مراجعته.")
+        if locked_invoice.journal_entry_id and locked_invoice.journal_entry_id != existing.pk:
+            raise ValidationError("الفاتورة مرتبطة بقيد مختلف عن قيد مصدرها.")
+        if not locked_invoice.journal_entry_id:
+            locked_invoice.journal_entry = existing
+            locked_invoice.save(update_fields=["journal_entry", "updated_at"])
+        invoice.journal_entry = existing
+        return existing
+    if locked_invoice.journal_entry_id:
+        raise ValidationError("الفاتورة مرتبطة بقيد لا يطابق مرجع مصدرها.")
+
+    post_date = locked_invoice.issue_date or locked_invoice.due_date or timezone.localdate()
     period = _get_active_fiscal_period(school, post_date)
-
-    with transaction.atomic():
-        existing = JournalEntry.objects.filter(
-            school=school,
-            source_module="student_invoice",
-            source_reference=invoice.invoice_number,
-            is_archived=False,
-        ).first()
-        if existing:
-            if not getattr(invoice, "journal_entry_id", None):
-                invoice.journal_entry = existing
-                invoice.save(update_fields=["journal_entry", "updated_at"])
-            return existing
-
-        net_amount = max(Decimal("0.00"), invoice.total_amount - invoice.discount_amount)
-        if net_amount <= Decimal("0.00"):
-            raise ValueError(f"صافي قيمة الفاتورة ({net_amount}) يجب أن يكون أكبر من الصفر لترحيلها.")
-
-        debit_acc = _get_account_or_seed(school, "1104", "ذمم ورسوم الطلاب")
-        credit_acc = _get_account_or_seed(school, "4101", "إيرادات الرسوم الدراسية")
-
-        entry_number = f"JV-INV-{invoice.invoice_number}"
-        entry = JournalEntry.objects.create(
-            school=school,
-            branch=invoice.branch,
-            fiscal_period=period,
-            entry_number=entry_number,
-            date=post_date,
-            status=JournalEntry.Status.DRAFT,
-            source_module="student_invoice",
-            source_reference=invoice.invoice_number,
-            description=f"إثبات استحقاق فاتورة رسوم #{invoice.invoice_number} للطالب {invoice.student}",
+    net_amount = max(
+        Decimal("0.00"),
+        locked_invoice.total_amount - locked_invoice.discount_amount,
+    )
+    if net_amount <= Decimal("0.00"):
+        raise ValidationError(
+            f"صافي قيمة الفاتورة ({net_amount}) يجب أن يكون أكبر من الصفر لترحيلها."
         )
-
-        JournalEntryLine.objects.create(
-            school=school,
-            branch=invoice.branch,
-            journal_entry=entry,
-            account=debit_acc,
-            description=f"ذمة الطالب: {invoice.student} - فاتورة #{invoice.invoice_number}",
-            debit=net_amount,
-            credit=Decimal("0.00"),
-        )
-
-        JournalEntryLine.objects.create(
-            school=school,
-            branch=invoice.branch,
-            journal_entry=entry,
-            account=credit_acc,
-            description=f"إيراد رسوم دراسية - فاتورة #{invoice.invoice_number}",
-            debit=Decimal("0.00"),
-            credit=net_amount,
-        )
-
-        entry.post(user=getattr(invoice, "created_by", None))
-        if hasattr(invoice, "journal_entry"):
-            invoice.journal_entry = entry
-            invoice.save(update_fields=["journal_entry", "updated_at"])
-        return entry
-
+    debit_acc = _get_account_or_seed(school, "1104", "ذمم ورسوم الطلاب")
+    credit_acc = _get_account_or_seed(school, "4101", "إيرادات الرسوم الدراسية")
+    entry = JournalEntry.objects.create(
+        school=school,
+        branch=locked_invoice.branch,
+        fiscal_period=period,
+        entry_number=f"JV-INV-{locked_invoice.invoice_number}",
+        date=post_date,
+        status=JournalEntry.Status.DRAFT,
+        source_module="student_invoice",
+        source_reference=source_reference,
+        description=(
+            f"إثبات استحقاق فاتورة رسوم #{locked_invoice.invoice_number} "
+            f"للطالب {locked_invoice.student}"
+        ),
+    )
+    JournalEntryLine.objects.create(
+        school=school,
+        branch=locked_invoice.branch,
+        journal_entry=entry,
+        account=debit_acc,
+        description=f"ذمة الطالب: {locked_invoice.student} - فاتورة #{locked_invoice.invoice_number}",
+        debit=net_amount,
+        credit=Decimal("0.00"),
+    )
+    JournalEntryLine.objects.create(
+        school=school,
+        branch=locked_invoice.branch,
+        journal_entry=entry,
+        account=credit_acc,
+        description=f"إيراد رسوم دراسية - فاتورة #{locked_invoice.invoice_number}",
+        debit=Decimal("0.00"),
+        credit=net_amount,
+    )
+    entry.post(user=getattr(locked_invoice, "created_by", None))
+    locked_invoice.journal_entry = entry
+    locked_invoice.save(update_fields=["journal_entry", "updated_at"])
+    invoice.journal_entry = entry
+    return entry
 
 def validate_and_balance_journal_entry(entry: JournalEntry) -> bool:
     """التحقق الصارم من توازن القيد اليومي (تطابق إجمالي المدين والدائن)."""
