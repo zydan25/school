@@ -247,10 +247,12 @@ class CostCenter(TenantOwnedModel):
 class JournalEntryQuerySet(models.QuerySet):
     """حماية دفتر الأستاذ العام من التعديل أو الحذف الجماعي للقيود المرحّلة."""
     def update(self, **kwargs):
+        if kwargs.get("status") == "posted":
+            raise ValidationError("لا يمكن ترحيل القيد عبر QuerySet.update()؛ استخدم خدمة JournalEntry.post().")
         if self.filter(status="posted").exists():
             allowed = {"is_reversed", "reversed_by_entry", "reversed_by_entry_id", "reversal_reason", "updated_at"}
             disallowed = set(kwargs.keys()) - allowed
-            if disallowed or ("status" in kwargs and kwargs["status"] != "posted"):
+            if disallowed:
                 raise ValidationError(f"لا يمكن تعديل القيود المحاسبية المرحّلة في دفتر الأستاذ عبر التحديث الجماعي QuerySet.update ({disallowed}).")
         return super().update(**kwargs)
 
@@ -341,8 +343,12 @@ class JournalEntry(TenantOwnedModel):
                 raise ValidationError({"date": "تاريخ القيد خارج حدود الفترة المالية."})
 
     def save(self, *args, **kwargs):
+        if not self.pk and self.status == self.Status.POSTED:
+            raise ValidationError("إنشاء قيد مرحّل مباشرة غير مسموح؛ أنشئه كمسودة ثم استخدم خدمة post().")
         if self.pk:
             orig = JournalEntry.objects.filter(pk=self.pk).first()
+            if orig and orig.status != self.Status.POSTED and self.status == self.Status.POSTED:
+                raise ValidationError("ترحيل القيد مباشرة عبر save() غير مسموح؛ استخدم خدمة JournalEntry.post().")
             if orig and orig.status == self.Status.POSTED:
                 if self.status != self.Status.POSTED:
                     raise ValidationError("لا يمكن تحويل قيد محاسبي مرحّل إلى مسودة أو إلغاء ترحيله مباشرة؛ التصحيح يتم عبر قيد عكسي فقط.")
@@ -445,13 +451,20 @@ class JournalEntry(TenantOwnedModel):
                 ):
                     raise ValidationError("كل سطر يجب أن يكون مديناً أو دائناً فقط وبقيمة موجبة.")
 
-            locked.status = self.Status.POSTED
-            locked.posted_at = timezone.now()
-            locked.posted_by = user
-            locked.save(update_fields=["status", "posted_at", "posted_by", "updated_at"])
-            self.status = locked.status
-            self.posted_at = locked.posted_at
-            self.posted_by = locked.posted_by
+            posted_at = timezone.now()
+            updated = models.QuerySet.update(
+                JournalEntry.objects.filter(pk=locked.pk, status=self.Status.DRAFT),
+                status=self.Status.POSTED,
+                posted_at=posted_at,
+                posted_by=user,
+                updated_at=posted_at,
+            )
+            if updated != 1:
+                raise ValidationError("تعذر ترحيل القيد بسبب تغير حالته بالتزامن؛ أعد تحميله وحاول مجدداً.")
+            self.status = self.Status.POSTED
+            self.posted_at = posted_at
+            self.posted_by = user
+            self.updated_at = posted_at
             return self
 
 
