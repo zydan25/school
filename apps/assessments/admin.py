@@ -95,6 +95,7 @@ class GradeBookAdmin(AuditedAdminMixin, ModelAdmin):
 class ExamCommitteeProctorInline(admin.TabularInline):
     model = ExamCommitteeProctor
     extra = 0
+    can_delete = False
     autocomplete_fields = ("teacher",)
     readonly_fields = ("assigned_by", "assigned_at")
 
@@ -108,6 +109,11 @@ class ExamCommitteeAdmin(AuditedAdminMixin, ModelAdmin):
     readonly_fields = ("id", "created_at", "updated_at")
     inlines = (ExamCommitteeProctorInline,)
 
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.seatings.filter(is_archived=False).exists():
+            return False
+        return super().has_delete_permission(request, obj)
+
 
 @admin.register(ExamSeating)
 class ExamSeatingAdmin(AuditedAdminMixin, ModelAdmin):
@@ -116,6 +122,9 @@ class ExamSeatingAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("seating_number", "secret_code", "student__first_name", "student__last_name")
     raw_id_fields = ("student", "committee", "academic_year", "school", "branch")
     readonly_fields = ("id", "created_at", "updated_at")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(QuestionBank)
@@ -142,6 +151,11 @@ class QuestionBankAdmin(AuditedAdminMixin, ModelAdmin):
                 "correct_answer", "model_answer_explanation",
             ])
         return tuple(dict.fromkeys(fields))
+
+    def has_delete_permission(self, request, obj=None):
+        if obj and obj.included_in_exams.exists():
+            return False
+        return super().has_delete_permission(request, obj)
 
 
 @admin.register(OnlineExam)
@@ -254,3 +268,6 @@ class ExamCommitteeProctorAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("committee__name", "teacher__user__first_name", "teacher__user__last_name")
     autocomplete_fields = ("school", "branch", "committee", "teacher")
     readonly_fields = ("id", "created_at", "updated_at", "assigned_by", "assigned_at")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
