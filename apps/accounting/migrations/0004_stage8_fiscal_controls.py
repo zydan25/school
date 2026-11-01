@@ -67,7 +67,7 @@ class Migration(migrations.Migration):
                 on_delete=django.db.models.deletion.SET_NULL,
                 related_name="closed_fiscal_periods",
                 to=settings.AUTH_USER_MODEL,
-                verbose_name="المسؤول عن إقفال الفترة",
+                verbose_name="المسؤول عن الإقفال",
             ),
         ),
         migrations.AddIndex(
