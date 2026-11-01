@@ -12,6 +12,7 @@ from apps.attendance.models import (
     AttendanceAuditLog,
     AttendanceExcuseRequest,
     AttendanceRegister,
+    EarlyDepartureRequest,
     AttendanceReopenRequest,
     AttendanceStatusType,
     DailyAttendance,
@@ -400,6 +401,8 @@ def _sync_legacy_attendance(rec: StudentAttendanceRecord, user=None):
             AttendanceStatusType.Category.ABSENT_EXCUSED: PeriodAttendance.Status.ABSENT,
             AttendanceStatusType.Category.LATE: PeriodAttendance.Status.LATE,
             AttendanceStatusType.Category.LATE_EXCUSED: PeriodAttendance.Status.LATE,
+            AttendanceStatusType.Category.AUTHORIZED_DEPARTURE: PeriodAttendance.Status.EARLY_DEPARTURE,
+            AttendanceStatusType.Category.EARLY_DEPARTURE: PeriodAttendance.Status.EARLY_DEPARTURE,
         }
         p_status = period_status_map.get(rec.status_category, PeriodAttendance.Status.PRESENT)
         PeriodAttendance.objects.update_or_create(

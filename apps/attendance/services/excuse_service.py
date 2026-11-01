@@ -231,7 +231,7 @@ def confirm_gate_exit(departure_request: EarlyDepartureRequest, confirmed_by, ex
         locked_request = EarlyDepartureRequest.objects.select_for_update().get(pk=departure_request.pk)
         if locked_request.status != EarlyDepartureRequest.Status.APPROVED:
             raise ValidationError("لا يمكن تأكيد خروج الطالب إلا بعد اعتماد طلب الانصراف رسمياً.")
-        records = list(StudentAttendanceRecord.objects.select_for_update().filter(
+        records = list(StudentAttendanceRecord.objects.select_for_update(of=("self",)).filter(
             school=locked_request.school, student=locked_request.student,
             register__date=locked_request.date, is_archived=False,
         ).select_related("register", "register__schedule"))
