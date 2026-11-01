@@ -36,6 +36,7 @@ def create_default_school_bell_schedule(
     second_break_after: int = 5,
     second_break_duration_minutes: int = 20,
     set_as_default: bool = True,
+    branch=None,
 ) -> SchoolBellSchedule:
     """
     إنشاء قالب مواعيد اليوم الدراسي الافتراضي للمدرسة وتوليد كافة فترات الحصص والفسح والطابور تلقائياً
@@ -43,6 +44,18 @@ def create_default_school_bell_schedule(
     """
     if academic_year.school_id != school.pk:
         raise ValidationError("السنة الدراسية لا تتبع نفس المدرسة.")
+    if branch is None and academic_year.branch_id:
+        branch = academic_year.branch
+    if branch and branch.school_id != school.pk:
+        raise ValidationError("الفرع لا يتبع المدرسة المحددة.")
+    if academic_year.branch_id and academic_year.branch_id != getattr(branch, "pk", None):
+        raise ValidationError("الفرع لا يطابق فرع السنة الدراسية.")
+    if not 1 <= periods_count <= 14:
+        raise ValidationError("عدد الحصص يجب أن يكون بين 1 و14.")
+    if not 1 <= first_break_after <= periods_count:
+        raise ValidationError("موضع الفسحة الأولى خارج نطاق عدد الحصص.")
+    if has_second_break and (not 1 <= second_break_after <= periods_count or second_break_after == first_break_after):
+        raise ValidationError("موضع الفسحة الثانية خارج النطاق أو يطابق موضع الفسحة الأولى.")
 
     assembly_end = _add_minutes_to_time(assembly_start, assembly_duration_minutes) if has_morning_assembly else assembly_start
 
@@ -59,8 +72,9 @@ def create_default_school_bell_schedule(
 
     day_end = curr_time
 
-    bell_sched, _ = SchoolBellSchedule.objects.update_or_create(
+    bell_sched, created = SchoolBellSchedule.objects.get_or_create(
         school=school,
+        branch=branch,
         academic_year=academic_year,
         name=name,
         is_archived=False,
@@ -84,8 +98,9 @@ def create_default_school_bell_schedule(
         },
     )
 
-    # حذف أي فترات قديمة غير مرتبطة وإعادة بنائها
-    bell_sched.period_templates.all().delete()
+    # Preserve custom templates: regeneration must never delete configured or historical periods.
+    if not created and bell_sched.period_templates.filter(is_archived=False).exists():
+        return bell_sched
 
     order = 1
     cursor_time = assembly_start
@@ -94,6 +109,7 @@ def create_default_school_bell_schedule(
     if has_morning_assembly:
         SchedulePeriodTemplate.objects.create(
             school=school,
+            branch=branch,
             schedule=bell_sched,
             period_type=SchedulePeriodTemplate.PeriodType.ASSEMBLY,
             period_number=None,

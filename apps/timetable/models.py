@@ -232,7 +232,7 @@ class TimetablePlan(TenantOwnedModel):
             models.UniqueConstraint(fields=["school", "academic_year"], condition=models.Q(is_archived=False, status="published", is_current=True, branch__isnull=True), name="tt_plan_current_global_uq"),
             models.UniqueConstraint(fields=["school", "branch", "academic_year"], condition=models.Q(is_archived=False, status="published", is_current=True, branch__isnull=False), name="tt_plan_current_branch_uq"),
         ]
-        indexes = [models.Index(fields=["school", "academic_year", "status"])]
+        indexes = [models.Index(fields=["school", "academic_year", "status"], name="tt_plan_school_status_idx")]
 
     def clean(self):
         super().clean()
@@ -559,3 +559,20 @@ class DailyLessonLog(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.schedule} - {self.date} ({self.topic})"
+
+    def clean(self):
+        super().clean()
+        schedule = self.schedule
+        if schedule.school_id != self.school_id:
+            raise ValidationError({"schedule": "الحصة لا تتبع المدرسة المحددة."})
+        if not schedule.academic_year.starts_on <= self.date <= schedule.academic_year.ends_on:
+            raise ValidationError({"date": "تاريخ تنفيذ الدرس يقع خارج السنة الدراسية."})
+        python_weekday = (schedule.day_of_week - 2) % 7
+        if self.date.weekday() != python_weekday:
+            raise ValidationError({"date": "تاريخ تنفيذ الدرس لا يطابق يوم الحصة في الجدول الأسبوعي."})
+        if schedule.timetable_plan_id:
+            plan = schedule.timetable_plan
+            if plan.status not in {TimetablePlan.Status.PUBLISHED, TimetablePlan.Status.RETIRED}:
+                raise ValidationError({"schedule": "لا يمكن توثيق درس على نسخة جدول غير منشورة."})
+            if self.date < plan.effective_from or (plan.effective_to and self.date > plan.effective_to):
+                raise ValidationError({"date": "تاريخ الدرس خارج فترة سريان نسخة الجدول."})
