@@ -1,4 +1,5 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.core.exceptions import ValidationError
 from unfold.admin import ModelAdmin, TabularInline
 
 from apps.accounting.models import (
@@ -11,7 +12,13 @@ from apps.accounting.models import (
     JournalEntryLine,
     PaymentVoucher,
     ReceiptVoucher,
+    TreasuryAccount,
+    TreasuryTransfer,
+    BankReconciliation,
+    BankStatementLine,
 )
+from apps.accounting.services.period_closing import close_fiscal_period, close_fiscal_year
+from apps.accounting.services.treasury import complete_bank_reconciliation, reverse_treasury_transfer
 from apps.core.admin import AuditedAdminMixin
 
 
@@ -32,8 +39,27 @@ class FiscalYearAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("is_closed", "school")
     search_fields = ("name", "school__name")
     autocomplete_fields = ("school", "branch")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = (
+        "id", "created_at", "updated_at", "is_closed",
+        "closed_at", "closed_by", "closing_entry", "opening_entry",
+    )
     inlines = (FiscalPeriodInline,)
+    actions = ("close_selected_fiscal_years",)
+
+    @admin.action(description="إقفال السنوات المالية المحددة")
+    def close_selected_fiscal_years(self, request, queryset):
+        closed = 0
+        failures = []
+        for year in queryset:
+            try:
+                close_fiscal_year(year, request.user)
+                closed += 1
+            except ValidationError as exc:
+                failures.append(f"{year.name}: {exc}")
+        if closed:
+            self.message_user(request, f"تم إقفال {closed} سنة مالية.", messages.SUCCESS)
+        for failure in failures:
+            self.message_user(request, failure, messages.ERROR)
 
 
 @admin.register(FiscalPeriod)
@@ -42,7 +68,25 @@ class FiscalPeriodAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("is_closed", "fiscal_year", "school")
     search_fields = ("name", "fiscal_year__name", "school__name")
     autocomplete_fields = ("school", "branch", "fiscal_year")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = (
+        "id", "created_at", "updated_at", "is_closed", "closed_at", "closed_by",
+    )
+    actions = ("close_selected_periods",)
+
+    @admin.action(description="إقفال الفترات المالية المحددة")
+    def close_selected_periods(self, request, queryset):
+        closed = 0
+        failures = []
+        for period in queryset:
+            try:
+                close_fiscal_period(period, request.user)
+                closed += 1
+            except ValidationError as exc:
+                failures.append(f"{period.name}: {exc}")
+        if closed:
+            self.message_user(request, f"تم إقفال {closed} فترة مالية.", messages.SUCCESS)
+        for failure in failures:
+            self.message_user(request, failure, messages.ERROR)
 
 
 @admin.register(Account)
@@ -96,3 +140,94 @@ class ReceiptVoucherAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("voucher_number", "received_from", "description")
     raw_id_fields = ("debit_account", "credit_account", "cost_center", "journal_entry", "school", "branch")
 
+
+
+
+class BankStatementLineInline(TabularInline):
+    model = BankStatementLine
+    extra = 0
+    autocomplete_fields = ("journal_line",)
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(TreasuryAccount)
+class TreasuryAccountAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("code", "name", "kind", "account", "bank_name", "currency", "is_default", "is_active", "school")
+    list_filter = ("kind", "is_active", "is_default", "school", "branch")
+    search_fields = ("code", "name", "bank_name", "bank_account_number", "account__code", "account__name")
+    autocomplete_fields = ("school", "branch", "account")
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(TreasuryTransfer)
+class TreasuryTransferAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("transfer_number", "transfer_date", "source_account", "destination_account", "amount", "status", "school")
+    list_filter = ("status", "transfer_date", "school", "branch")
+    search_fields = ("transfer_number", "idempotency_key", "description")
+    autocomplete_fields = ("school", "branch", "source_account", "destination_account", "journal_entry", "reversed_by_entry")
+    readonly_fields = ("id", "created_at", "updated_at", "journal_entry", "reversed_by_entry", "status")
+    actions = ("reverse_selected_transfers",)
+
+    @admin.action(description="عكس التحويلات المحددة")
+    def reverse_selected_transfers(self, request, queryset):
+        reversed_count = 0
+        failures = []
+        for transfer in queryset:
+            try:
+                reverse_treasury_transfer(
+                    transfer,
+                    reason="عكس إداري من سجل تحويلات الخزينة",
+                    reversed_by=request.user,
+                )
+                reversed_count += 1
+            except ValidationError as exc:
+                failures.append(f"{transfer.transfer_number}: {exc}")
+        if reversed_count:
+            self.message_user(request, f"تم عكس {reversed_count} تحويل.", messages.SUCCESS)
+        for failure in failures:
+            self.message_user(request, failure, messages.ERROR)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(BankReconciliation)
+class BankReconciliationAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("treasury_account", "start_date", "end_date", "statement_closing_balance", "book_closing_balance", "difference", "status", "school")
+    list_filter = ("status", "treasury_account", "school")
+    search_fields = ("treasury_account__name", "treasury_account__bank_name")
+    autocomplete_fields = ("school", "branch", "treasury_account", "reconciled_by")
+    readonly_fields = (
+        "id", "created_at", "updated_at", "book_opening_balance",
+        "book_closing_balance", "outstanding_ledger_amount", "difference",
+        "status", "reconciled_at", "reconciled_by",
+    )
+    inlines = (BankStatementLineInline,)
+    actions = ("reconcile_selected_statements",)
+
+    @admin.action(description="مطابقة كشوف البنك المحددة")
+    def reconcile_selected_statements(self, request, queryset):
+        reconciled_count = 0
+        failures = []
+        for reconciliation in queryset:
+            try:
+                complete_bank_reconciliation(
+                    reconciliation,
+                    reconciled_by=request.user,
+                )
+                reconciled_count += 1
+            except ValidationError as exc:
+                failures.append(f"{reconciliation}: {exc}")
+        if reconciled_count:
+            self.message_user(request, f"تم اعتماد {reconciled_count} مطابقة بنكية.", messages.SUCCESS)
+        for failure in failures:
+            self.message_user(request, failure, messages.ERROR)
+
+
+@admin.register(BankStatementLine)
+class BankStatementLineAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("external_reference", "transaction_date", "reconciliation", "amount", "journal_line", "school")
+    list_filter = ("transaction_date", "school")
+    search_fields = ("external_reference", "description", "reconciliation__treasury_account__name")
+    autocomplete_fields = ("school", "branch", "reconciliation", "journal_line")
+    readonly_fields = ("id", "created_at", "updated_at")
