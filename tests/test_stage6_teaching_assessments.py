@@ -340,7 +340,7 @@ class PhaseSixTeachingAssessmentTests(TestCase):
             "/api/v1/app/exam-committee-proctors/", self.school_query,
         )
         self.assertEqual(listing.status_code, status.HTTP_200_OK, listing.data)
-        self.assertEqual(len(listing.data), 1)
+        self.assertEqual(len(listing.data["results"]), 1)
 
     def test_student_seating_api_does_not_expose_control_secret_code(self):
         committee = ExamCommittee.objects.create(
