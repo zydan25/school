@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section
@@ -57,7 +58,7 @@ class FinanceAndAttendanceTests(TestCase):
             status=DailyAttendance.Status.LATE,
             late_minutes=15,
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             dup.save()
 
     def test_student_invoice_and_receipt_flow(self):
@@ -95,7 +96,7 @@ class FinanceAndAttendanceTests(TestCase):
         self.assertEqual(invoice.remaining_amount, Decimal("140000.00"))
 
         # Pay 50,000
-        receipt = PaymentReceipt.objects.create(
+        PaymentReceipt.objects.create(
             school=self.school,
             student=self.student,
             invoice=invoice,
