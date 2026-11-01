@@ -773,7 +773,26 @@ class TreasuryAccount(TenantOwnedModel):
         return f"{self.code} - {self.name}"
 
 
+class TreasuryTransferQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        protected = {
+            "school", "school_id", "branch", "branch_id", "transfer_number",
+            "transfer_date", "source_account", "source_account_id",
+            "destination_account", "destination_account_id", "amount",
+            "idempotency_key", "journal_entry", "journal_entry_id", "status",
+        }
+        if protected.intersection(kwargs):
+            raise ValidationError("تغيير التحويلات يتم عبر خدمات الخزينة الموثقة فقط.")
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(status__in=["posted", "reversed"]).exists():
+            raise ValidationError("لا يمكن حذف تحويل مرحّل أو معكوس؛ استخدم خدمة العكس.")
+        return super().delete()
+
+
 class TreasuryTransfer(TenantOwnedModel):
+    objects = TreasuryTransferQuerySet.as_manager()
     """تحويل موثق بين صندوقين أو حسابين نقديين/بنكيين."""
     class Status(models.TextChoices):
         DRAFT = "draft", "مسودة"
@@ -867,7 +886,27 @@ class TreasuryTransfer(TenantOwnedModel):
         return f"{self.transfer_number} - {self.amount}"
 
 
+class BankReconciliationQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        protected = {
+            "school", "school_id", "treasury_account", "treasury_account_id",
+            "start_date", "end_date", "statement_opening_balance",
+            "statement_closing_balance", "book_opening_balance",
+            "book_closing_balance", "outstanding_ledger_amount", "difference",
+            "status", "reconciled_at", "reconciled_by", "reconciled_by_id",
+        }
+        if protected.intersection(kwargs):
+            raise ValidationError("تعديل المطابقة البنكية يتم عبر خدمة المطابقة فقط.")
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(status="reconciled").exists():
+            raise ValidationError("لا يمكن حذف مطابقة بنكية معتمدة.")
+        return super().delete()
+
+
 class BankReconciliation(TenantOwnedModel):
+    objects = BankReconciliationQuerySet.as_manager()
     """محضر مطابقة كشف البنك مع دفتر الأستاذ لفترة محددة."""
     class Status(models.TextChoices):
         DRAFT = "draft", "مسودة"
@@ -918,14 +957,49 @@ class BankReconciliation(TenantOwnedModel):
                 raise ValidationError({"treasury_account": "الحساب البنكي لا يتبع المدرسة نفسها."})
             if self.treasury_account.kind != TreasuryAccount.Kind.BANK:
                 raise ValidationError({"treasury_account": "المطابقة البنكية تتطلب حساباً من نوع بنك."})
-        if self.status == self.Status.RECONCILED and not self.reconciled_at:
-            raise ValidationError({"reconciled_at": "وقت المطابقة مطلوب."})
+        if self.status == self.Status.RECONCILED and (
+            not self.reconciled_at or not self.reconciled_by_id
+        ):
+            raise ValidationError({"reconciled_at": "وقت المطابقة والمسؤول عنها مطلوبان."})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = BankReconciliation.objects.filter(pk=self.pk).first()
+            if original and original.status == self.Status.RECONCILED:
+                fields = (
+                    "school_id", "treasury_account_id", "start_date", "end_date",
+                    "statement_opening_balance", "statement_closing_balance",
+                    "book_opening_balance", "book_closing_balance",
+                    "outstanding_ledger_amount", "difference", "status",
+                    "reconciled_at", "reconciled_by_id",
+                )
+                if any(getattr(original, field) != getattr(self, field) for field in fields):
+                    raise ValidationError("المطابقة البنكية المعتمدة سجل مالي ثابت لا يقبل التعديل.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status == self.Status.RECONCILED:
+            raise ValidationError("لا يمكن حذف مطابقة بنكية معتمدة.")
+        return super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"{self.treasury_account} - {self.start_date} إلى {self.end_date}"
 
 
+class BankStatementLineQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if self.filter(reconciliation__status=BankReconciliation.Status.RECONCILED).exists():
+            raise ValidationError("لا يمكن تعديل حركات كشف بنك بعد اعتماد المطابقة.")
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(reconciliation__status=BankReconciliation.Status.RECONCILED).exists():
+            raise ValidationError("لا يمكن حذف حركات كشف بنك بعد اعتماد المطابقة.")
+        return super().delete()
+
+
 class BankStatementLine(TenantOwnedModel):
+    objects = BankStatementLineQuerySet.as_manager()
     """حركة كشف بنك قابلة للربط بسطر محدد في دفتر الأستاذ."""
     reconciliation = models.ForeignKey(
         BankReconciliation,
@@ -985,6 +1059,11 @@ class BankStatementLine(TenantOwnedModel):
                 raise ValidationError({"journal_line": "تاريخ سطر الأستاذ لا يطابق تاريخ الحركة البنكية."})
             if line.debit - line.credit != self.amount:
                 raise ValidationError({"journal_line": "قيمة سطر الأستاذ لا تطابق قيمة حركة كشف البنك."})
+
+    def delete(self, *args, **kwargs):
+        if self.reconciliation.status == BankReconciliation.Status.RECONCILED:
+            raise ValidationError("لا يمكن حذف حركة من مطابقة بنكية معتمدة.")
+        return super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"{self.external_reference} - {self.amount}"
