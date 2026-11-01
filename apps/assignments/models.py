@@ -174,7 +174,7 @@ class HomeworkSubmissionAttempt(TenantOwnedModel):
             )
         ]
         indexes = [
-            models.Index(fields=["school", "submission", "submitted_at"]),
+            models.Index(fields=["school", "submission", "submitted_at"], name="asgn_attempt_idx"),
         ]
 
     def clean(self):
