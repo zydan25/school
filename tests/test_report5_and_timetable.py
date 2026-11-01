@@ -47,7 +47,7 @@ from apps.payroll.services import (
     reverse_payroll_run,
 )
 from apps.school_services.models import StudentBookDistribution
-from apps.staff.models import Teacher
+from apps.staff.models import Teacher, TeacherAssignment
 from apps.student_fees.models import (
     FeeCategory,
     PaymentReceipt,
@@ -65,8 +65,11 @@ from apps.students.services import (
 )
 from apps.tenants.models import School
 from apps.tenants.services import provision_school
-from apps.timetable.models import ClassSchedule, SchedulePeriodTemplate, SchoolBellSchedule, WeekDay
-from apps.timetable.services import create_default_school_bell_schedule
+from apps.timetable.models import ClassSchedule, SchedulePeriodTemplate, SchoolBellSchedule, TimetablePlan, WeekDay
+from apps.timetable.services import (
+    approve_timetable_plan, copy_timetable_plan, create_default_school_bell_schedule,
+    get_effective_class_schedules, publish_timetable_plan, submit_timetable_plan,
+)
 
 
 class Report5AndTimetableSystemTests(TestCase):
@@ -150,6 +153,11 @@ class Report5AndTimetableSystemTests(TestCase):
     def test_class_schedule_conflict_validation(self):
         """اختبار منع تعارض المعلم، الشعبة، القاعة، ومواعيد الفسح والطابور في الحصص المجدولة."""
         bell_sched = create_default_school_bell_schedule(self.school, self.academic_year)
+        TeacherAssignment.objects.create(
+            school=self.school, academic_year=self.academic_year,
+            teacher=self.teacher, subject=self.subject,
+            section=self.section, weekly_periods=4,
+        )
 
         # Valid Period 1: 07:30 to 08:15
         cs1 = ClassSchedule.objects.create(
@@ -198,6 +206,51 @@ class Report5AndTimetableSystemTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             cs_assembly_conflict.clean()
+
+    def test_timetable_versions_follow_submit_approve_publish_and_effective_dates(self):
+        bell = create_default_school_bell_schedule(self.school, self.academic_year)
+        TeacherAssignment.objects.create(
+            school=self.school, academic_year=self.academic_year, teacher=self.teacher,
+            subject=self.subject, section=self.section, weekly_periods=4,
+        )
+        legacy = ClassSchedule.objects.create(
+            school=self.school, bell_schedule=bell, academic_year=self.academic_year,
+            section=self.section, subject=self.subject, teacher=self.teacher,
+            classroom=self.classroom, day_of_week=WeekDay.SUNDAY, period_number=1,
+            start_time=time(7, 30), end_time=time(8, 15),
+        )
+
+        first = copy_timetable_plan(
+            school=self.school, academic_year=self.academic_year,
+            name="الجدول الأساسي", effective_from=date(2026, 9, 1),
+        )
+        self.assertEqual(first.status, TimetablePlan.Status.DRAFT)
+        self.assertEqual(first.class_schedules.count(), 1)
+        submit_timetable_plan(first, submitted_by=self.owner)
+        approve_timetable_plan(first, approved_by=self.owner)
+        publish_timetable_plan(first, published_by=self.owner)
+        self.assertEqual(first.class_schedules.first().based_on if hasattr(first.class_schedules.first(), "based_on") else None, None)
+        self.assertEqual(
+            get_effective_class_schedules(school=self.school, on_date=date(2026, 12, 31), section_id=self.section.pk).first().timetable_plan_id,
+            first.pk,
+        )
+
+        second = copy_timetable_plan(
+            school=self.school, academic_year=self.academic_year, source_plan=first,
+            name="الجدول المعدل", effective_from=date(2027, 1, 1),
+        )
+        self.assertEqual(second.version, first.version + 1)
+        submit_timetable_plan(second, submitted_by=self.owner)
+        approve_timetable_plan(second, approved_by=self.owner)
+        publish_timetable_plan(second, published_by=self.owner)
+        first.refresh_from_db()
+        self.assertEqual(first.status, TimetablePlan.Status.RETIRED)
+        self.assertEqual(first.effective_to, date(2026, 12, 31))
+        self.assertEqual(
+            get_effective_class_schedules(school=self.school, on_date=date(2027, 1, 1), section_id=self.section.pk).first().timetable_plan_id,
+            second.pk,
+        )
+        self.assertTrue(ClassSchedule.objects.filter(pk=legacy.pk, timetable_plan__isnull=True).exists())
 
     # -------------------------------------------------------------------------
     # 2. Ledger Immutability & QuerySet Protection (P0)

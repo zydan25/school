@@ -494,13 +494,18 @@ class AttendanceSystemTests(TestCase):
 
     def test_cascade_daily_attendance_to_all_periods_and_early_departure(self):
         """اعتماد الحضور باليوم يعمم الحضور على كافة الحصص إلا في حال تسجيل انصراف مبكر."""
-        from apps.staff.models import Teacher
+        from apps.staff.models import Teacher, TeacherAssignment
         from apps.timetable.models import ClassSchedule
 
         teacher = Teacher.objects.create(
             school=self.school_a,
             user=self.teacher_user,
             specialization="رياضيات",
+        )
+        TeacherAssignment.objects.create(
+            school=self.school_a, academic_year=self.year_a,
+            teacher=teacher, subject=self.subject_a, section=self.section_a,
+            weekly_periods=3,
         )
 
         # Sunday weekday is 1 in ClassSchedule.WeekDay

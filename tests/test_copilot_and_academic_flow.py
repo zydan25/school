@@ -9,7 +9,7 @@ from apps.assessments.models import GradeBook
 from apps.copilot.services.ai_student import (
     fetch_academic_grades,
 )
-from apps.staff.models import Teacher
+from apps.staff.models import Teacher, TeacherAssignment
 from apps.students.models import Student
 from apps.tenants.models import School
 from apps.timetable.models import ClassSchedule
@@ -90,6 +90,11 @@ class CopilotAndAcademicFlowTests(TestCase):
 
     def test_schedule_creation_and_period_conflict(self):
         """التحقق من منع تعارض الحصص لنفس الشعبة أو المعلم."""
+        TeacherAssignment.objects.create(
+            school=self.school_a, academic_year=self.year_a,
+            teacher=self.teacher_a, subject=self.subject_math,
+            section=self.section_a, weekly_periods=4,
+        )
         ClassSchedule.objects.create(
             school=self.school_a,
             academic_year=self.year_a,
