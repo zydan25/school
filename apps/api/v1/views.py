@@ -1228,11 +1228,17 @@ class GradeBookViewSet(TenantModelViewSet):
         teacher = self._assigned_teacher(
             data["student"], data["subject"], academic_year, school,
         )
-        serializer.save(
-            school=school, graded_by=teacher, graded_at=timezone.now(),
-            workflow_status=GradeBook.WorkflowStatus.DRAFT,
-            is_published=False,
-        )
+        with transaction.atomic():
+            entry = serializer.save(
+                school=school, graded_by=teacher, graded_at=timezone.now(),
+                workflow_status=GradeBook.WorkflowStatus.DRAFT,
+                is_published=False,
+            )
+            try:
+                entry.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            entry.save()
 
     def perform_update(self, serializer):
         entry = serializer.instance
@@ -1246,7 +1252,13 @@ class GradeBookViewSet(TenantModelViewSet):
         term = data.get("academic_term", entry.academic_term)
         academic_year = term.academic_year if term else student.academic_year
         teacher = self._assigned_teacher(student, subject, academic_year, self.get_school())
-        serializer.save(graded_by=teacher, graded_at=timezone.now())
+        with transaction.atomic():
+            updated = serializer.save(graded_by=teacher, graded_at=timezone.now())
+            try:
+                updated.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            updated.save()
         record_event(
             action="gradebook.draft_updated",
             description="تم تعديل درجة ما زالت في حالة المسودة.",
@@ -1554,7 +1566,67 @@ class QuestionBankViewSet(TenantModelViewSet):
                 assignments = assignments.filter(section__grade=data["grade_level"])
             if not assignments.exists():
                 raise PermissionDenied("لا يمكنك إضافة سؤال لمادة أو صف غير مسند إليك.")
+        candidate = QuestionBank(
+            **data,
+            school=school,
+            created_by=self.request.user,
+        )
+        try:
+            candidate.full_clean()
+        except DjangoValidationError as exc:
+            raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
         serializer.save(school=school, created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        question = serializer.instance
+        teacher = user_teacher_profiles(self.request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
+        if not is_admin(self.request.user, school):
+            if not teacher or question.created_by_id != self.request.user.pk:
+                raise PermissionDenied("يمكن للمعلم تعديل الأسئلة التي أنشأها بنفسه فقط.")
+        if question.included_in_exams.filter(
+            Q(is_published=True) | Q(submissions__is_archived=False),
+            is_archived=False,
+        ).distinct().exists():
+            raise ValidationError("لا يمكن تعديل سؤال مرتبط باختبار منشور أو بدأت له محاولات.")
+        data = serializer.validated_data
+        subject = data.get("subject", question.subject)
+        grade_level = data.get("grade_level", question.grade_level)
+        if not is_admin(self.request.user, school):
+            assigned = teacher.assignments.filter(
+                school=school, subject=subject, is_archived=False,
+            )
+            if grade_level:
+                assigned = assigned.filter(section__grade=grade_level)
+            if not assigned.exists():
+                raise PermissionDenied("لا يمكنك نقل السؤال إلى مادة أو صف غير مسند إليك.")
+        with transaction.atomic():
+            updated = serializer.save()
+            try:
+                updated.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            updated.save()
+        record_event(
+            action="assessment.question_updated",
+            description="تم تعديل سؤال من بنك الأسئلة.",
+            actor=self.request.user, school=school, obj=updated,
+            metadata={"subject_id": str(updated.subject_id)},
+            request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        if instance.included_in_exams.exists():
+            raise ValidationError("لا يمكن أرشفة سؤال مرتبط باختبار؛ احتفظ به كسجل تاريخي.")
+        record_event(
+            action="assessment.question_archived",
+            description="تمت أرشفة سؤال غير مستخدم في أي اختبار.",
+            actor=self.request.user, school=self.get_school(), obj=instance,
+            request=self.request,
+        )
+        super().perform_destroy(instance)
 
 
 class OnlineExamViewSet(TenantModelViewSet):
@@ -2240,10 +2312,18 @@ class ExamCommitteeProctorViewSet(TenantModelViewSet):
             raise ValidationError("المعلم واللجنة يجب أن يتبعا المدرسة النشطة.")
         if not teacher.is_active_teaching or teacher.is_archived:
             raise ValidationError({"teacher": "لا يمكن تكليف معلم غير نشط أو مؤرشف."})
-        serializer.save(
-            school=school, branch=committee.branch,
-            assigned_by=self.request.user, assigned_at=timezone.now(),
-        )
+        if committee.branch_id and teacher.branch_id and committee.branch_id != teacher.branch_id:
+            raise ValidationError({"teacher": "المعلم يتبع فرعاً مختلفاً عن اللجنة."})
+        with transaction.atomic():
+            assignment = serializer.save(
+                school=school, branch=committee.branch,
+                assigned_by=self.request.user, assigned_at=timezone.now(),
+            )
+            try:
+                assignment.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            assignment.save()
         record_event(
             action="assessment.exam_proctor_assigned",
             description="تم تكليف معلم بمراقبة لجنة اختبار.",
@@ -2304,8 +2384,13 @@ class ExamSeatingViewSet(TenantModelViewSet):
         if committee.branch_id and student.branch_id and committee.branch_id != student.branch_id:
             raise ValidationError({"student": "الطالب يتبع فرعاً مختلفاً عن لجنة الاختبار."})
         with transaction.atomic():
-            ExamCommittee.objects.select_for_update().get(pk=committee.pk)
-            serializer.save(school=school, branch=committee.branch)
+            locked_committee = ExamCommittee.objects.select_for_update().get(pk=committee.pk)
+            seating = serializer.save(school=school, branch=locked_committee.branch)
+            try:
+                seating.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            seating.save()
         record_event(
             action="assessment.exam_seating_created",
             description="تم تخصيص رقم جلوس للطالب في لجنة اختبار.",
