@@ -1107,11 +1107,34 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
             )
         return Response(self.get_serializer(submission).data)
 
+    def perform_destroy(self, instance):
+        if instance.attempts.filter(is_archived=False).exists():
+            raise ValidationError("لا يمكن أرشفة سجل تسليم يحتوي على محاولات تاريخية.")
+        raise MethodNotAllowed("DELETE", detail="لا تحذف سجلات تسليم الواجبات؛ استخدم الأرشفة من إجراء إداري معتمد.")
+
 
 class AssessmentTypeViewSet(TenantModelViewSet):
     serializer_class = AssessmentTypeSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
+
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            instance = serializer.save(school=self.get_school())
+            try:
+                instance.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            instance.save()
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            instance = serializer.save()
+            try:
+                instance.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            instance.save()
 
 
 class GradeBookViewSet(TenantModelViewSet):
@@ -1231,6 +1254,17 @@ class GradeBookViewSet(TenantModelViewSet):
             metadata={"student_id": str(student.pk), "subject_id": str(subject.pk)},
             request=self.request,
         )
+
+    def perform_destroy(self, instance):
+        if instance.workflow_status != GradeBook.WorkflowStatus.DRAFT or instance.is_published:
+            raise ValidationError("لا يمكن أرشفة درجة مرسلة أو معتمدة أو منشورة؛ أعد فتحها واتبع مسار التصحيح.")
+        record_event(
+            action="gradebook.draft_archived",
+            description="تمت أرشفة مسودة درجة غير معتمدة.",
+            actor=self.request.user, school=self.get_school(), obj=instance,
+            request=self.request,
+        )
+        super().perform_destroy(instance)
 
     @action(detail=False, methods=["get"], url_path="weighted-summary")
     def weighted_summary(self, request):
@@ -1597,6 +1631,8 @@ class OnlineExamViewSet(TenantModelViewSet):
         question_total = sum((q.default_marks for q in questions), Decimal("0.00"))
         if question_total > data["total_marks"]:
             raise ValidationError({"questions": "مجموع درجات الأسئلة يتجاوز الدرجة العظمى للاختبار."})
+        if any(q.school_id != school.pk for q in questions):
+            raise ValidationError({"questions": "يجب أن تنتمي كل أسئلة الاختبار إلى المدرسة النشطة."})
         if any(q.subject_id != data["subject"].pk for q in questions):
             raise ValidationError({"questions": "يجب أن تنتمي كل أسئلة الاختبار إلى المادة المختارة."})
         if not is_admin(self.request.user, school):
@@ -1619,15 +1655,37 @@ class OnlineExamViewSet(TenantModelViewSet):
 
     def perform_update(self, serializer):
         exam = serializer.instance
+        school = self.get_school()
         if exam.is_published:
             raise ValidationError("ألغ نشر الاختبار أولاً قبل تعديل بياناته.")
         if exam.submissions.filter(is_archived=False).exists():
             raise ValidationError("لا يمكن تعديل اختبار بعد بدء أي محاولة؛ أنشئ نسخة جديدة.")
         data = serializer.validated_data
-        teacher = user_teacher_profiles(self.request.user, self.get_school()).filter(
+        subject = data.get("subject", exam.subject)
+        academic_term = data.get("academic_term", exam.academic_term)
+        grade_level = data.get("grade_level", exam.grade_level)
+        section = data.get("section", exam.section)
+        duration_minutes = data.get("duration_minutes", exam.duration_minutes)
+        total_marks = data.get("total_marks", exam.total_marks)
+        passing_marks = data.get("passing_marks", exam.passing_marks)
+        start_time = data.get("start_time", exam.start_time)
+        end_time = data.get("end_time", exam.end_time)
+        questions = list(data.get("questions", exam.questions.all()))
+        if end_time <= start_time or duration_minutes < 1 or passing_marks > total_marks:
+            raise ValidationError("بيانات التوقيت أو المدة أو درجات النجاح للاختبار غير صالحة.")
+        if section and (
+            section.school_id != school.pk or section.grade_id != grade_level.pk
+            or section.academic_year_id != academic_term.academic_year_id
+        ):
+            raise ValidationError({"section": "الشعبة يجب أن تتبع المدرسة والصف والسنة المحددة للاختبار."})
+        if any(question.school_id != school.pk or question.subject_id != subject.pk for question in questions):
+            raise ValidationError({"questions": "أسئلة الاختبار يجب أن تتبع المدرسة والمادة المختارة."})
+        if sum((question.default_marks for question in questions), Decimal("0.00")) > total_marks:
+            raise ValidationError({"questions": "مجموع درجات الأسئلة يتجاوز الدرجة العظمى للاختبار."})
+        teacher = user_teacher_profiles(self.request.user, school).filter(
             is_active_teaching=True,
         ).first()
-        if not is_admin(self.request.user, self.get_school()):
+        if not is_admin(self.request.user, school):
             if teacher is None:
                 raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك.")
             academic_year = data.get("academic_term", exam.academic_term).academic_year
@@ -1644,7 +1702,13 @@ class OnlineExamViewSet(TenantModelViewSet):
                 assigned = assigned.filter(section__grade=grade_level)
             if not assigned.exists():
                 raise PermissionDenied("لا يمكنك تعديل اختبار خارج المواد والشعب المسندة إليك.")
-        serializer.save(is_published=False)
+        with transaction.atomic():
+            updated = serializer.save(is_published=False)
+            try:
+                updated.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            updated.save()
 
     def perform_destroy(self, instance):
         if instance.is_published or instance.submissions.filter(is_archived=False).exists():
@@ -1673,6 +1737,10 @@ class OnlineExamViewSet(TenantModelViewSet):
                 raise ValidationError("بيانات التوقيت أو درجات النجاح للاختبار غير صالحة.")
             if exam.questions.filter(subject__school_id=exam.school_id).count() != exam.questions.count():
                 raise ValidationError({"questions": "يوجد سؤال لا يتبع المدرسة نفسها."})
+            if exam.questions.exclude(subject_id=exam.subject_id).exists():
+                raise ValidationError({"questions": "يوجد سؤال من مادة مختلفة عن مادة الاختبار."})
+            if sum((question.default_marks for question in exam.questions.all()), Decimal("0.00")) > exam.total_marks:
+                raise ValidationError({"questions": "مجموع درجات أسئلة الاختبار يتجاوز الدرجة العظمى."})
             exam.is_published = True
             exam.published_by = request.user
             exam.published_at = timezone.now()
@@ -1752,7 +1820,7 @@ class OnlineExamViewSet(TenantModelViewSet):
             submission, created = StudentOnlineExamSubmission.objects.get_or_create(
                 school=self.get_school(), exam=locked_exam, student=student,
                 defaults={
-                    "branch": student.branch,
+                    "branch": exam.branch or student.branch,
                     "started_at": now,
                     "status": StudentOnlineExamSubmission.Status.IN_PROGRESS,
                 },
@@ -1831,6 +1899,9 @@ class OnlineExamViewSet(TenantModelViewSet):
                 }:
                     student_answer = str(answers.get(str(question.pk), "")).strip().lower()
                     correct_answer = str(question.correct_answer).strip().lower()
+                    if question.question_type == QuestionBank.QuestionType.TRUE_FALSE:
+                        student_answer = "true" if student_answer in {"true", "صح"} else "false"
+                        correct_answer = "true" if correct_answer in {"true", "صح"} else "false"
                     if student_answer and student_answer == correct_answer:
                         submission.auto_score += question.default_marks
             if submission.auto_score > exam.total_marks:
@@ -1867,11 +1938,14 @@ class OnlineExamViewSet(TenantModelViewSet):
         completed = attempts.exclude(status=StudentOnlineExamSubmission.Status.IN_PROGRESS).count()
         if exam.section_id:
             target_students = Student.objects.filter(
-                school=exam.school, section_id=exam.section_id, is_archived=False,
+                school=exam.school, section_id=exam.section_id,
+                academic_year=exam.academic_term.academic_year,
+                is_archived=False,
             ).count()
         else:
             target_students = Student.objects.filter(
                 school=exam.school, grade_level_id=exam.grade_level_id,
+                academic_year=exam.academic_term.academic_year,
                 is_archived=False,
             ).count()
         return Response({
@@ -1942,6 +2016,15 @@ class ExamSubmissionViewSet(TenantModelViewSet):
 
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed("POST", detail="تنشأ محاولة الاختبار من خلال POST /online-exams/{id}/start/.")
+
+    def update(self, request, *args, **kwargs):
+        raise MethodNotAllowed("PUT", detail="لا تعدّل إجابات أو نتائج محاولة الاختبار مباشرة؛ استخدم إجراءات التصحيح وإعادة الفتح.")
+
+    def partial_update(self, request, *args, **kwargs):
+        raise MethodNotAllowed("PATCH", detail="لا تعدّل إجابات أو نتائج محاولة الاختبار مباشرة؛ استخدم إجراءات التصحيح وإعادة الفتح.")
+
+    def perform_destroy(self, instance):
+        raise ValidationError("محاولات الاختبار سجلات تاريخية لا تحذف بعد بدئها.")
 
     @action(detail=True, methods=["post"], url_path="grade")
     def grade(self, request, pk=None):
