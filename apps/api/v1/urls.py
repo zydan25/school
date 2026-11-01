@@ -52,6 +52,7 @@ from apps.api.v1.views import (
     ReceiptVoucherViewSet,
     RevokeInvitationAPIView,
     SchoolBellScheduleViewSet,
+    TimetablePlanViewSet,
     SchoolConversationViewSet,
     SchoolInvitationAPIView,
     SchoolRoleViewSet,
@@ -102,6 +103,7 @@ router.register("exam-submissions", ExamSubmissionViewSet, basename="app-exam-su
 router.register("exam-committees", ExamCommitteeViewSet, basename="app-exam-committee")
 router.register("exam-seatings", ExamSeatingViewSet, basename="app-exam-seating")
 
+router.register("timetable-plans", TimetablePlanViewSet, basename="app-timetable-plan")
 router.register("bell-schedules", SchoolBellScheduleViewSet, basename="app-bell-schedule")
 router.register("period-templates", SchedulePeriodTemplateViewSet, basename="app-period-template")
 router.register("class-schedules", ClassScheduleViewSet, basename="app-class-schedule")
