@@ -229,6 +229,7 @@ class Report2AuditFixesTests(TestCase):
 
         entry = JournalEntry.objects.create(
             school=self.school,
+            fiscal_period=self.fiscal_period,
             entry_number="JE-TEST-IMMUTABLE-01",
             date=date(2026, 9, 1),
             status=JournalEntry.Status.DRAFT,
@@ -249,9 +250,8 @@ class Report2AuditFixesTests(TestCase):
             credit=Decimal("500.00"),
         )
 
-        # Post the entry
-        entry.status = JournalEntry.Status.POSTED
-        entry.save()
+        # Post through the validated ledger service.
+        entry.post(user=self.user)
 
         # Attempt to delete a line from a posted entry -> must raise ValidationError
         with self.assertRaises(ValidationError):
