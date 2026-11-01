@@ -40,32 +40,26 @@ def _get_account_or_seed(school, code: str, name: str = "") -> Account:
 
 
 def _get_active_fiscal_period(school, target_date=None) -> FiscalPeriod:
-    """البحث عن الفترة المالية المفتوحة للمدرسة الموافقة للتاريخ بدقة، مع تهيئة السنة والفترة الخاصة بتاريخ المعاملة تلقائياً."""
+    """إرجاع الفترة الوحيدة المطابقة للتاريخ، مع رفض أي فترة/سنة مغلقة."""
     if target_date is None:
         target_date = timezone.localdate()
     elif isinstance(target_date, datetime.datetime):
         target_date = target_date.date()
 
-    period = FiscalPeriod.objects.filter(
-        school=school,
-        fiscal_year__is_closed=False,
-        is_closed=False,
-        start_date__lte=target_date,
-        end_date__gte=target_date,
-        is_archived=False,
-    ).first()
-
-    if not period:
-        f_year = FiscalYear.objects.filter(
-            school=school,
-            is_closed=False,
-            start_date__lte=target_date,
-            end_date__gte=target_date,
-            is_archived=False,
-        ).first()
-
-        if not f_year:
-            # Auto-initialize standard calendar fiscal year for the exact year of target_date
+    with transaction.atomic():
+        years = list(
+            FiscalYear.objects.select_for_update().filter(
+                school=school,
+                is_archived=False,
+                start_date__lte=target_date,
+                end_date__gte=target_date,
+            )
+        )
+        if len(years) > 1:
+            raise ValidationError("يوجد تداخل بين السنوات المالية لهذا التاريخ؛ يجب معالجة التداخل قبل الترحيل.")
+        if years and years[0].is_closed:
+            raise ValidationError("التاريخ المحدد يقع داخل سنة مالية مقفلة.")
+        if not years:
             f_year, _ = FiscalYear.objects.get_or_create(
                 school=school,
                 start_date=date(target_date.year, 1, 1),
@@ -75,11 +69,34 @@ def _get_active_fiscal_period(school, target_date=None) -> FiscalPeriod:
                     "is_closed": False,
                 },
             )
+            if f_year.is_closed or not (f_year.start_date <= target_date <= f_year.end_date):
+                raise ValidationError("لا توجد سنة مالية مفتوحة تغطي تاريخ المعاملة.")
+        else:
+            f_year = years[0]
+
+        periods = list(
+            FiscalPeriod.objects.select_for_update().filter(
+                school=school,
+                fiscal_year=f_year,
+                is_archived=False,
+                start_date__lte=target_date,
+                end_date__gte=target_date,
+            )
+        )
+        if len(periods) > 1:
+            raise ValidationError("يوجد تداخل بين الفترات المالية التي تغطي تاريخ المعاملة.")
+        if periods:
+            period = periods[0]
+            if period.is_closed or period.fiscal_year.is_closed:
+                raise ValidationError("لا يمكن تسجيل حركة بتاريخ يقع داخل فترة مالية مقفلة.")
+            return period
 
         import calendar
         last_day_num = calendar.monthrange(target_date.year, target_date.month)[1]
-        first_day = date(target_date.year, target_date.month, 1)
-        last_day = date(target_date.year, target_date.month, last_day_num)
+        first_day = max(f_year.start_date, date(target_date.year, target_date.month, 1))
+        last_day = min(f_year.end_date, date(target_date.year, target_date.month, last_day_num))
+        if first_day > last_day:
+            raise ValidationError("لا توجد فترة مالية صالحة للتاريخ المحدد.")
 
         period, _ = FiscalPeriod.objects.get_or_create(
             school=school,
@@ -87,13 +104,14 @@ def _get_active_fiscal_period(school, target_date=None) -> FiscalPeriod:
             period_number=target_date.month,
             defaults={
                 "name": f"فترة {target_date.strftime('%m/%Y')}",
-                "start_date": max(f_year.start_date, first_day),
-                "end_date": min(f_year.end_date, last_day),
+                "start_date": first_day,
+                "end_date": last_day,
                 "is_closed": False,
             },
         )
-
-    return period
+        if period.is_closed or not (period.start_date <= target_date <= period.end_date):
+            raise ValidationError("الفترة الموجودة لهذا الشهر مغلقة أو لا تغطي تاريخ المعاملة.")
+        return period
 
 
 def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
@@ -693,52 +711,71 @@ def validate_and_balance_journal_entry(entry: JournalEntry) -> bool:
 
 
 def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by=None) -> JournalEntry:
-    """
-    إنشاء قيد عكسي محاسبي متكامل لقيد سابق لإلغاء أثره المالي دون حذف السجل التاريخي.
-    الأطراف المدينة تصبح دائنة، والأطراف الدائنة تصبح مدينة.
-    كلا القيدين يظلان في دفتر الأستاذ كـ POSTED ليتلاشى أثرهما الرياضي معاً إلى الصفر،
-    ويتم توثيق الارتباط التبادلي وسبب العكس.
-    """
-    if original_entry.is_reversed:
-        raise ValueError("لا يمكن عكس قيد محاسبي تم عكسه مسبقاً.")
-    if original_entry.status != JournalEntry.Status.POSTED:
-        raise ValueError("لا يمكن عكس قيد غير مرحل.")
-
-    school = original_entry.school
-    period = _get_active_fiscal_period(school, timezone.localdate())
+    """عكس القيد داخل معاملة واحدة؛ إعادة الطلب تعيد القيد العكسي نفسه."""
+    if not reason or not reason.strip():
+        raise ValidationError("سبب عكس القيد مطلوب.")
 
     with transaction.atomic():
-        reversal_num = f"REV-{original_entry.entry_number}"
+        original = JournalEntry.objects.select_for_update().select_related(
+            "fiscal_period__fiscal_year",
+        ).get(pk=original_entry.pk)
+        if original.is_reversed:
+            if original.reversed_by_entry_id:
+                return original.reversed_by_entry
+            raise ValidationError("القيد معلّم كمعكوس دون ربط القيد العكسي.")
+        if original.status != JournalEntry.Status.POSTED:
+            raise ValidationError("لا يمكن عكس قيد غير مرحل.")
+
+        school = original.school
+        period = _get_active_fiscal_period(school, timezone.localdate())
+        reversal_num = f"REV-{original.entry_number}"
+        existing = JournalEntry.objects.filter(
+            school=school,
+            entry_number=reversal_num,
+            is_archived=False,
+        ).first()
+        if existing:
+            if existing.status != JournalEntry.Status.POSTED:
+                raise ValidationError("يوجد قيد عكسي سابق غير مرحل؛ يجب مراجعته قبل إعادة المحاولة.")
+            original.is_reversed = True
+            original.reversed_by_entry = existing
+            original.reversal_reason = reason.strip()
+            original.save(update_fields=[
+                "is_reversed", "reversed_by_entry", "reversal_reason", "updated_at",
+            ])
+            return existing
+
         rev_entry = JournalEntry.objects.create(
             school=school,
-            branch=original_entry.branch,
+            branch=original.branch,
             fiscal_period=period,
             entry_number=reversal_num,
             date=timezone.localdate(),
             status=JournalEntry.Status.DRAFT,
             source_module="reversal",
-            source_reference=original_entry.entry_number,
-            description=f"قيد عكسي للقيد #{original_entry.entry_number} - السبب: {reason}",
+            source_reference=original.entry_number,
+            description=f"قيد عكسي للقيد #{original.entry_number} - السبب: {reason.strip()}",
         )
 
-        for line in original_entry.lines.all():
+        for line in original.lines.filter(is_archived=False).select_related("account", "cost_center"):
             JournalEntryLine.objects.create(
                 school=school,
-                branch=original_entry.branch,
+                branch=line.branch,
                 journal_entry=rev_entry,
                 account=line.account,
                 cost_center=line.cost_center,
                 description=f"عكس: {line.description}",
-                debit=line.credit,  # swap
-                credit=line.debit,  # swap
+                debit=line.credit,
+                credit=line.debit,
             )
 
         rev_entry.post(user=reversed_by)
-        original_entry.is_reversed = True
-        original_entry.reversed_by_entry = rev_entry
-        original_entry.reversal_reason = reason
-        original_entry.save(update_fields=["is_reversed", "reversed_by_entry", "reversal_reason", "updated_at"])
-
+        original.is_reversed = True
+        original.reversed_by_entry = rev_entry
+        original.reversal_reason = reason.strip()
+        original.save(update_fields=[
+            "is_reversed", "reversed_by_entry", "reversal_reason", "updated_at",
+        ])
         return rev_entry
 
 
