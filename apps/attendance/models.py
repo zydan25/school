@@ -74,8 +74,13 @@ class AttendancePolicy(TenantOwnedModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "academic_year"],
-                condition=Q(is_archived=False, is_active=True),
-                name="attendance_policy_one_active_per_year_school",
+                condition=Q(is_archived=False, is_active=True, branch__isnull=True),
+                name="att_policy_active_global_uq",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "branch", "academic_year"],
+                condition=Q(is_archived=False, is_active=True, branch__isnull=False),
+                name="att_policy_active_branch_uq",
             )
         ]
 
@@ -83,9 +88,13 @@ class AttendancePolicy(TenantOwnedModel):
         return f"سياسة الحضور {self.academic_year.name} ({self.get_attendance_mode_display()})"
 
     def clean(self):
+        if self.academic_year_id and self.academic_year.branch_id and not self.branch_id:
+            self.branch_id = self.academic_year.branch_id
         super().clean()
         if self.academic_year_id and self.academic_year.school_id != self.school_id:
             raise ValidationError({"academic_year": "السنة الدراسية لا تتبع نفس المدرسة."})
+        if self.academic_year_id and self.academic_year.branch_id and self.academic_year.branch_id != self.branch_id:
+            raise ValidationError({"academic_year": "سياسة الحضور يجب أن تتبع فرع السنة الدراسية."})
 
 
 class AttendanceStatusType(TenantOwnedModel):
@@ -481,13 +490,36 @@ class AttendanceRegister(TenantOwnedModel):
         return f"{self.section} ({self.date}) [{self.get_session_type_display()}]{sched_part}: {self.get_status_display()}"
 
     def clean(self):
+        if self.section_id and self.section.branch_id and not self.branch_id:
+            self.branch_id = self.section.branch_id
         super().clean()
+        if self.academic_year_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "السنة الدراسية لا تتبع نفس المدرسة."})
+        if self.academic_year_id and self.section_id and self.section.academic_year_id != self.academic_year_id:
+            raise ValidationError({"academic_year": "السنة الدراسية لا تطابق سنة الشعبة."})
         if self.section_id and self.section.school_id != self.school_id:
             raise ValidationError({"section": "الشعبة لا تتبع نفس المدرسة."})
-        if self.schedule_id and self.schedule.school_id != self.school_id:
-            raise ValidationError({"schedule": "الجدول المجدول لا يتبع نفس المدرسة."})
-        if self.schedule_id and self.schedule.section_id != self.section_id:
-            raise ValidationError({"schedule": "الحصة المجدولة لا تنتمي لنفس الشعبة المحددة للسجل."})
+        if self.section_id and self.section.branch_id and self.section.branch_id != self.branch_id:
+            raise ValidationError({"section": "سجل الحضور يجب أن يتبع فرع الشعبة."})
+        if self.academic_term_id:
+            if self.academic_term.school_id != self.school_id or self.academic_term.academic_year_id != self.academic_year_id:
+                raise ValidationError({"academic_term": "الفصل الدراسي لا يتبع المدرسة والسنة المحددتين."})
+            if not self.academic_term.starts_on <= self.date <= self.academic_term.ends_on:
+                raise ValidationError({"date": "تاريخ الحضور خارج حدود الفصل الدراسي."})
+        if self.schedule_id:
+            if self.schedule.school_id != self.school_id:
+                raise ValidationError({"schedule": "الجدول المجدول لا يتبع نفس المدرسة."})
+            if self.schedule.section_id != self.section_id or self.schedule.academic_year_id != self.academic_year_id:
+                raise ValidationError({"schedule": "الحصة المجدولة لا تنتمي إلى الشعبة والسنة المحددتين."})
+            if self.schedule.branch_id and self.schedule.branch_id != self.branch_id:
+                raise ValidationError({"schedule": "الحصة المجدولة تتبع فرعاً مختلفاً."})
+            if self.schedule.timetable_plan_id:
+                from apps.timetable.models import TimetablePlan
+                plan = self.schedule.timetable_plan
+                if plan.status not in {TimetablePlan.Status.PUBLISHED, TimetablePlan.Status.RETIRED}:
+                    raise ValidationError({"schedule": "لا يمكن فتح حضور لحصة في نسخة جدول غير منشورة."})
+                if self.date < plan.effective_from or (plan.effective_to and self.date > plan.effective_to):
+                    raise ValidationError({"date": "تاريخ الحضور خارج فترة سريان الجدول المنشور."})
 
     @property
     def is_modifiable(self) -> bool:
@@ -562,6 +594,8 @@ class StudentAttendanceRecord(TenantOwnedModel):
         return f"{self.student} - {self.get_status_category_display()} ({self.register.date})"
 
     def clean(self):
+        if self.register_id and self.register.branch_id and not self.branch_id:
+            self.branch_id = self.register.branch_id
         super().clean()
         if self.register_id and self.register.school_id != self.school_id:
             raise ValidationError({"register": "سجل الحضور لا يتبع نفس المدرسة."})
@@ -569,10 +603,12 @@ class StudentAttendanceRecord(TenantOwnedModel):
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
         if self.register_id and self.student_id and self.student.section_id != self.register.section_id:
             raise ValidationError({"student": "الطالب غير مقيد في نفس الشعبة التابعة لهذا السجل."})
+        if self.register_id and self.register.branch_id and self.student.branch_id not in (None, self.register.branch_id):
+            raise ValidationError({"student": "الطالب لا يتبع فرع سجل الحضور."})
+        if self.register_id and self.branch_id != self.register.branch_id:
+            raise ValidationError({"branch": "فرع السجل التفصيلي يجب أن يطابق فرع سجل الحضور."})
         if self.register_id and not self.register.is_modifiable and not self._state.adding:
-            # Check immutability when locked/approved
-            if self.register.status == AttendanceRegister.Status.LOCKED:
-                raise ValidationError("لا يمكن تعديل سجل حضور في دفتر مقفل ومحمي نهائياً.")
+            raise ValidationError("لا يمكن تعديل سجل حضور معتمد أو مقفل؛ استخدم إجراء إعادة الفتح الرسمي.")
 
 
 class AttendanceReopenRequest(TenantOwnedModel):
@@ -679,13 +715,22 @@ class AttendanceExcuseRequest(TenantOwnedModel):
         return f"عذر: {self.student} ({self.start_date} إلى {self.end_date}) - {self.get_status_display()}"
 
     def clean(self):
+        if self.student_id and self.student.branch_id and not self.branch_id:
+            self.branch_id = self.student.branch_id
         super().clean()
         if self.student_id and self.student.school_id != self.school_id:
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
         if self.guardian_id and self.guardian.school_id != self.school_id:
             raise ValidationError({"guardian": "ولي الأمر لا يتبع نفس المدرسة."})
+        if self.student_id and self.student.branch_id and self.student.branch_id != self.branch_id:
+            raise ValidationError({"student": "طلب العذر يجب أن يتبع فرع ملف الطالب."})
         if self.start_date and self.end_date and self.end_date < self.start_date:
             raise ValidationError({"end_date": "تاريخ النهاية لا يمكن أن يكون قبل تاريخ البداية."})
+        if self.student_id and self.student.academic_year_id:
+            if self.start_date < self.student.academic_year.starts_on or self.end_date > self.student.academic_year.ends_on:
+                raise ValidationError({"start_date": "فترة العذر يجب أن تقع داخل السنة الدراسية الحالية للطالب."})
+        if not (self.reason or "").strip():
+            raise ValidationError({"reason": "سبب العذر مطلوب."})
 
 
 class EarlyDepartureRequest(TenantOwnedModel):
@@ -750,11 +795,21 @@ class EarlyDepartureRequest(TenantOwnedModel):
         return f"انصراف مبكر: {self.student} ({self.date} {self.departure_time}) - {self.get_status_display()}"
 
     def clean(self):
+        if self.student_id and self.student.branch_id and not self.branch_id:
+            self.branch_id = self.student.branch_id
         super().clean()
         if self.student_id and self.student.school_id != self.school_id:
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
         if self.guardian_id and self.guardian.school_id != self.school_id:
             raise ValidationError({"guardian": "ولي الأمر لا يتبع نفس المدرسة."})
+        if self.student_id and self.student.branch_id and self.student.branch_id != self.branch_id:
+            raise ValidationError({"student": "طلب الانصراف يجب أن يتبع فرع ملف الطالب."})
+        if self.student_id and self.student.academic_year_id and not (
+            self.student.academic_year.starts_on <= self.date <= self.student.academic_year.ends_on
+        ):
+            raise ValidationError({"date": "تاريخ الانصراف خارج السنة الدراسية الحالية للطالب."})
+        if not (self.reason or "").strip():
+            raise ValidationError({"reason": "مبرر الانصراف مطلوب."})
 
 
 class AttendanceScoringPolicy(TenantOwnedModel):
