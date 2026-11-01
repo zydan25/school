@@ -364,75 +364,106 @@ def post_student_credit_refund_to_journal(credit_tx) -> JournalEntry:
     entry.post(user=locked_tx.created_by)
     return entry
 
+@transaction.atomic
 def post_student_invoice_discount_to_journal(discount_request) -> JournalEntry:
-    """قيد الخصم المعتمد: تخفيض إيراد الرسوم والذمم بالقيمة نفسها."""
-    if discount_request.amount <= Decimal("0.00"):
+    """ترحيل الخصم المعتمد بعد قفل الطلب والفاتورة ومنع تكرار القيد."""
+    from apps.student_fees.models import FeeDiscountRequest, StudentInvoice
+
+    locked_request = FeeDiscountRequest.objects.select_for_update(of=("self",)).get(
+        pk=discount_request.pk,
+    )
+    if locked_request.status != FeeDiscountRequest.Status.APPROVED:
+        raise ValidationError("لا يمكن ترحيل طلب خصم غير معتمد.")
+    if locked_request.amount <= Decimal("0.00"):
         raise ValidationError("قيمة الخصم يجب أن تكون أكبر من الصفر.")
-    invoice = discount_request.invoice
-    if not invoice.journal_entry_id:
-        raise ValidationError("لا يمكن اعتماد خصم محاسبي قبل ترحيل قيد استحقاق الفاتورة.")
-    school = discount_request.school
-    tx_date = discount_request.decided_at.date() if discount_request.decided_at else timezone.localdate()
-    period = _get_active_fiscal_period(school, tx_date)
+
+    invoice = StudentInvoice.objects.select_for_update(of=("self",)).get(
+        pk=locked_request.invoice_id,
+    )
+    school = locked_request.school
+    source_reference = str(locked_request.pk)
     existing = JournalEntry.objects.filter(
         school=school,
         source_module="student_invoice_discount",
-        source_reference=str(discount_request.pk),
+        source_reference=source_reference,
         is_archived=False,
     ).first()
     if existing:
+        if existing.status != JournalEntry.Status.POSTED:
+            raise ValidationError("يوجد قيد خصم سابق غير مرحّل؛ يجب مراجعته.")
         return existing
+    if not invoice.journal_entry_id:
+        raise ValidationError("لا يمكن اعتماد خصم محاسبي قبل ترحيل قيد استحقاق الفاتورة.")
+    if invoice.journal_entry.status != JournalEntry.Status.POSTED:
+        raise ValidationError("قيد استحقاق الفاتورة المرتبط غير مرحّل.")
+
+    tx_date = (
+        locked_request.decided_at.date()
+        if locked_request.decided_at else timezone.localdate()
+    )
+    period = _get_active_fiscal_period(school, tx_date)
     old_net_amount = max(
-        Decimal("0.00"), invoice.total_amount
-        - (invoice.discount_amount - discount_request.amount),
+        Decimal("0.00"),
+        invoice.total_amount - (invoice.discount_amount - locked_request.amount),
     )
     new_net_amount = max(
-        Decimal("0.00"), invoice.total_amount - invoice.discount_amount,
+        Decimal("0.00"),
+        invoice.total_amount - invoice.discount_amount,
     )
-    old_overpayment = max(Decimal("0.00"), invoice.paid_amount - old_net_amount)
-    new_overpayment = max(Decimal("0.00"), invoice.paid_amount - new_net_amount)
-    credit_delta = max(Decimal("0.00"), new_overpayment - old_overpayment)
-
+    old_overpayment = max(
+        Decimal("0.00"), invoice.paid_amount - old_net_amount,
+    )
+    new_overpayment = max(
+        Decimal("0.00"), invoice.paid_amount - new_net_amount,
+    )
+    credit_delta = max(
+        Decimal("0.00"), new_overpayment - old_overpayment,
+    )
     revenue = _get_account_or_seed(school, "4101", "إيرادات الرسوم الدراسية")
     receivable = _get_account_or_seed(school, "1104", "ذمم ورسوم الطلاب")
     liability = (
         _get_account_or_seed(school, "2102", "أرصدة وأمانات الطلاب الدائنة")
         if credit_delta > Decimal("0.00") else None
     )
-    receivable_credit = discount_request.amount - credit_delta
+    receivable_credit = locked_request.amount - credit_delta
+    if receivable_credit < Decimal("0.00"):
+        raise ValidationError("قيمة الخصم غير متسقة مع رصيد الفاتورة والرصيد الدائن؛ راجع التسوية.")
+
     entry = JournalEntry.objects.create(
         school=school,
-        branch=discount_request.branch,
+        branch=locked_request.branch,
         fiscal_period=period,
-        entry_number=f"JV-DISC-{discount_request.pk.hex[:8].upper()}",
+        entry_number=f"JV-DISC-{locked_request.pk.hex[:8].upper()}",
         date=tx_date,
         status=JournalEntry.Status.DRAFT,
         source_module="student_invoice_discount",
-        source_reference=str(discount_request.pk),
-        description=f"اعتماد خصم للفاتورة #{invoice.invoice_number}: {discount_request.reason[:150]}",
+        source_reference=source_reference,
+        description=(
+            f"اعتماد خصم للفاتورة #{invoice.invoice_number}: "
+            f"{locked_request.reason[:150]}"
+        ),
     )
     JournalEntryLine.objects.create(
-        school=school, branch=discount_request.branch, journal_entry=entry, account=revenue,
-        debit=discount_request.amount, credit=Decimal("0.00"),
+        school=school, branch=locked_request.branch, journal_entry=entry, account=revenue,
+        debit=locked_request.amount, credit=Decimal("0.00"),
         description=f"تخفيض إيراد الرسوم للفاتورة #{invoice.invoice_number}",
     )
     if receivable_credit > Decimal("0.00"):
         JournalEntryLine.objects.create(
-            school=school, branch=discount_request.branch,
+            school=school, branch=locked_request.branch,
             journal_entry=entry, account=receivable,
             debit=Decimal("0.00"), credit=receivable_credit,
             description=f"تخفيض ذمم الطالب عن الفاتورة #{invoice.invoice_number}",
         )
     if credit_delta > Decimal("0.00"):
         JournalEntryLine.objects.create(
-            school=school, branch=discount_request.branch,
+            school=school, branch=locked_request.branch,
             journal_entry=entry, account=liability,
             debit=Decimal("0.00"), credit=credit_delta,
             description=f"تحويل الخصم الزائد إلى رصيد دائن للطالب {invoice.student}",
         )
-    entry.post(user=discount_request.approved_by)
+    entry.post(user=locked_request.approved_by)
     return entry
-
 
 def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
     """ترحيل سند الصرف بقيد مزدوج، بقفل السند وإعادة القيد نفسه عند تكرار الطلب."""
