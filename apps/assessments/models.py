@@ -389,6 +389,8 @@ class QuestionBank(TenantOwnedModel):
         if self.grade_level_id and self.grade_level.school_id != self.school_id:
             raise ValidationError({"grade_level": "الصف لا يتبع المدرسة نفسها."})
         if self.question_type == self.QuestionType.MCQ:
+            if not isinstance(self.options_json, list):
+                raise ValidationError({"options_json": "خيارات السؤال يجب أن تكون قائمة من الخيارات."})
             option_ids = {
                 str(item.get("id", "")).strip()
                 for item in self.options_json
@@ -497,13 +499,6 @@ class OnlineExam(TenantOwnedModel):
                 raise ValidationError({"section": "الشعبة لا تتبع الصف المحدد للاختبار."})
             if self.section.academic_year_id != self.academic_term.academic_year_id:
                 raise ValidationError({"section": "الشعبة لا تتبع السنة الدراسية للفصل المحدد."})
-        if self.student_id and self.academic_year_id and self.student.academic_year_id and self.student.academic_year_id != self.academic_year_id:
-            raise ValidationError({"academic_year": "سنة رقم الجلوس لا تطابق سنة تسجيل الطالب."})
-        if self.committee_id and self.committee.branch_id and self.branch_id and self.committee.branch_id != self.branch_id:
-            raise ValidationError({"branch": "رقم الجلوس يجب أن يتبع فرع اللجنة."})
-        if self.student_id and self.exam_id:
-            if self.exam.branch_id and self.student.branch_id and self.exam.branch_id != self.student.branch_id:
-                raise ValidationError({"student": "الطالب يتبع فرعاً مختلفاً عن الاختبار."})
 
 
 class StudentOnlineExamSubmission(TenantOwnedModel):
@@ -575,6 +570,10 @@ class StudentOnlineExamSubmission(TenantOwnedModel):
                 raise ValidationError({"student": "الطالب لا ينتمي إلى شعبة الاختبار."})
             if not self.exam.section_id and self.exam.grade_level_id != self.student.grade_level_id:
                 raise ValidationError({"student": "الطالب لا ينتمي إلى الصف المستهدف للاختبار."})
+            if self.exam.branch_id and self.student.branch_id and self.exam.branch_id != self.student.branch_id:
+                raise ValidationError({"student": "الطالب يتبع فرعاً مختلفاً عن الاختبار."})
+            if self.student.academic_year_id and self.exam.academic_term.academic_year_id != self.student.academic_year_id:
+                raise ValidationError({"student": "الاختبار لا يخص السنة الدراسية الحالية للطالب."})
         if self.final_score > self.exam.total_marks:
             raise ValidationError({"final_score": "النتيجة تتجاوز الدرجة العظمى للاختبار."})
 
