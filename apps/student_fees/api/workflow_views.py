@@ -141,7 +141,7 @@ def _audit(request, school, action, description, obj, metadata=None):
 class FeeCategoryListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.view_feecategory")
         queryset = _scope_branch(
@@ -150,7 +150,7 @@ class FeeCategoryListCreateAPIView(APIView):
         ).order_by("name")
         return Response(FeeCategorySerializer(queryset, many=True).data)
 
-    def post(self, request):
+    def post(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.add_feecategory")
         serializer = FeeCategorySerializer(data=request.data, context={"school": school, "branch": getattr(request, "branch", None)})
@@ -176,11 +176,11 @@ class FeeCategoryDetailAPIView(APIView):
         )
         return school, get_object_or_404(queryset, pk=pk)
 
-    def get(self, request, pk):
+    def get(self, request, pk, **kwargs):
         school, category = self.get_object(request, pk)
         return Response(FeeCategorySerializer(category).data)
 
-    def patch(self, request, pk):
+    def patch(self, request, pk, **kwargs):
         school, category = self.get_object(request, pk)
         _require_finance(request, school, "student_fees.change_feecategory")
         if "branch" in request.data:
@@ -191,7 +191,7 @@ class FeeCategoryDetailAPIView(APIView):
         _audit(request, school, "student_fees.category_updated", "تعديل تصنيف رسوم.", category)
         return Response(FeeCategorySerializer(category).data)
 
-    def delete(self, request, pk):
+    def delete(self, request, pk, **kwargs):
         school, category = self.get_object(request, pk)
         _require_finance(request, school, "student_fees.delete_feecategory")
         category.archive(actor=request.user, reason="أرشفة تصنيف الرسوم عبر API")
@@ -202,7 +202,7 @@ class FeeCategoryDetailAPIView(APIView):
 class FeeStructureListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.view_feestructure")
         queryset = _scope_branch(
@@ -217,7 +217,7 @@ class FeeStructureListCreateAPIView(APIView):
             "academic_year", "grade_level", "fee_category", "branch",
         ).order_by("academic_year__starts_on", "grade_level__sequence"), many=True).data)
 
-    def post(self, request):
+    def post(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.add_feestructure")
         serializer = FeeStructureSerializer(data=request.data, context={"school": school, "branch": getattr(request, "branch", None)})
@@ -243,11 +243,11 @@ class FeeStructureDetailAPIView(APIView):
         )
         return school, get_object_or_404(queryset, pk=pk)
 
-    def get(self, request, pk):
+    def get(self, request, pk, **kwargs):
         school, structure = self.get_object(request, pk)
         return Response(FeeStructureSerializer(structure).data)
 
-    def patch(self, request, pk):
+    def patch(self, request, pk, **kwargs):
         school, structure = self.get_object(request, pk)
         _require_finance(request, school, "student_fees.change_feestructure")
         if "branch" in request.data:
@@ -258,7 +258,7 @@ class FeeStructureDetailAPIView(APIView):
         _audit(request, school, "student_fees.structure_updated", "تعديل هيكل الرسوم.", structure)
         return Response(FeeStructureSerializer(structure).data)
 
-    def delete(self, request, pk):
+    def delete(self, request, pk, **kwargs):
         school, structure = self.get_object(request, pk)
         _require_finance(request, school, "student_fees.delete_feestructure")
         structure.archive(actor=request.user, reason="أرشفة هيكل الرسوم عبر API")
@@ -269,7 +269,7 @@ class FeeStructureDetailAPIView(APIView):
 class FeeInstallmentPlanListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.view_feeinstallmentplan")
         queryset = _scope_branch(
@@ -283,7 +283,7 @@ class FeeInstallmentPlanListCreateAPIView(APIView):
                 queryset = queryset.filter(**{field: request.query_params[param]})
         return Response(FeeInstallmentPlanSerializer(queryset, many=True).data)
 
-    def post(self, request):
+    def post(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.add_feeinstallmentplan")
         serializer = CreateInstallmentPlanSerializer(data=request.data)
@@ -348,7 +348,7 @@ class FeeInstallmentPlanListCreateAPIView(APIView):
 class FeeInstallmentListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.view_feeinstallment")
         queryset = _scope_branch(
@@ -371,7 +371,7 @@ class FeeInstallmentListAPIView(APIView):
 class PaymentAllocationListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.view_paymentallocation")
         queryset = _scope_branch(
@@ -394,7 +394,7 @@ class PaymentAllocationListAPIView(APIView):
 class StudentCreditTransactionListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, **kwargs):
         school = _school_or_deny(request)
         queryset = _scope_branch(
             StudentCreditTransaction.objects.filter(school=school, is_archived=False),
@@ -417,7 +417,7 @@ class StudentCreditTransactionListAPIView(APIView):
 class ApplyCreditToInvoiceAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, invoice_id):
+    def post(self, request, invoice_id, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.change_studentinvoice")
         serializer = ApplyCreditBalanceSerializer(data=request.data)
@@ -450,7 +450,7 @@ class ApplyCreditToInvoiceAPIView(APIView):
 class RefundStudentCreditAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, student_id):
+    def post(self, request, student_id, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.add_studentcredittransaction")
         serializer = RefundStudentCreditSerializer(data=request.data)
@@ -483,7 +483,7 @@ class RefundStudentCreditAPIView(APIView):
 class StudentCreditTransactionReverseAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk):
+    def post(self, request, pk, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.change_studentcredittransaction")
         reason = str(request.data.get("reason", "")).strip()
@@ -520,7 +520,7 @@ class StudentCreditTransactionReverseAPIView(APIView):
 class StudentFeeStatementAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, student_id):
+    def get(self, request, student_id, **kwargs):
         school = _school_or_deny(request)
         student_queryset = _scope_branch(
             Student.objects.filter(school=school, is_archived=False), request,
@@ -629,13 +629,13 @@ class FeeDiscountPolicyAPIView(APIView):
     def get_policy(self, school):
         return FeeDiscountPolicy.objects.get_or_create(school=school)[0]
 
-    def get(self, request):
+    def get(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.view_feediscountpolicy")
         policy = self.get_policy(school)
         return Response(FeeDiscountPolicySerializer(policy).data)
 
-    def patch(self, request):
+    def patch(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.change_feediscountpolicy")
         policy = self.get_policy(school)
@@ -651,7 +651,7 @@ class FeeDiscountPolicyAPIView(APIView):
 class FeeDiscountRequestListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.view_feediscountrequest")
         queryset = _scope_branch(
@@ -666,7 +666,7 @@ class FeeDiscountRequestListCreateAPIView(APIView):
             "-created_at",
         )[:300], many=True).data)
 
-    def post(self, request):
+    def post(self, request, **kwargs):
         school = _school_or_deny(request)
         _require_finance(request, school, "student_fees.add_feediscountrequest")
         serializer = CreateFeeDiscountRequestSerializer(data=request.data)
@@ -707,7 +707,7 @@ class FeeDiscountRequestListCreateAPIView(APIView):
 class FeeDiscountRequestDecisionAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk, decision):
+    def post(self, request, pk, decision, **kwargs):
         school = _school_or_deny(request)
         permission = (
             "student_fees.change_feediscountrequest"

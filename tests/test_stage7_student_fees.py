@@ -3,7 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest import skipUnless
 
-from django.db import IntegrityError, close_old_connections, connection, transaction
+from django.db import close_old_connections, connection
 from django.core.exceptions import ValidationError
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
@@ -194,9 +194,8 @@ class Stage7StudentFeesTests(TestCase):
             academic_year=self.academic_year, grade_level=self.grade,
             fee_category=self.category, amount=Decimal("115.00"),
         )
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                duplicate.save()
+        with self.assertRaises(ValidationError):
+            duplicate.save()
 
     def test_receipt_financial_fields_are_immutable_after_creation(self):
         invoice = self.make_invoice()
