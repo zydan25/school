@@ -123,9 +123,7 @@ class Stage8AccountingIntegrityTests(TestCase):
             overlapping.save()
 
     def test_active_period_helper_rejects_closed_period(self):
-        self.period.is_closed = True
-        self.period.closed_at = timezone.now()
-        self.period.save(update_fields=["is_closed", "closed_at", "updated_at"])
+        close_fiscal_period(self.period, self.owner)
         with self.assertRaises(ValidationError):
             _get_active_fiscal_period(self.school, timezone.localdate())
 
@@ -136,14 +134,29 @@ class Stage8AccountingIntegrityTests(TestCase):
         entry.refresh_from_db()
         self.assertEqual(entry.status, JournalEntry.Status.DRAFT)
 
-    def test_posting_rejects_closed_period(self):
-        self.period.is_closed = True
-        self.period.closed_at = timezone.now()
-        self.period.save(update_fields=["is_closed", "closed_at", "updated_at"])
+    def test_direct_status_change_cannot_bypass_posting_service(self):
         entry = self.make_balanced_entry(
             period=self.period,
+            entry_number="ST8-DIRECT-POST",
+        )
+        entry.status = JournalEntry.Status.POSTED
+        with self.assertRaises(ValidationError):
+            entry.save()
+        entry.refresh_from_db()
+        self.assertEqual(entry.status, JournalEntry.Status.DRAFT)
+        entry.post(user=self.owner)
+        entry.refresh_from_db()
+        self.assertEqual(entry.status, JournalEntry.Status.POSTED)
+
+    def test_posting_rejects_closed_period(self):
+        # Model a pre-existing draft that references a period subsequently closed.
+        entry = self.make_balanced_entry(
+            period=None,
             entry_number="ST8-CLOSED",
         )
+        close_fiscal_period(self.period, self.owner)
+        JournalEntry.objects.filter(pk=entry.pk).update(fiscal_period=self.period)
+        entry.refresh_from_db()
         with self.assertRaises(ValidationError):
             entry.post(user=self.owner)
         entry.refresh_from_db()
