@@ -910,7 +910,7 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         detail=False, methods=["post"], url_path="submit",
         parser_classes=[MultiPartParser, FormParser, JSONParser],
     )
-    def submit(self, request):
+    def submit(self, request, **kwargs):
         school = self.get_school()
         student = user_student_profiles(request.user, school).first()
         if not student or not has_school_roles(request.user, school, {"student"}):
@@ -1011,7 +1011,7 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         )
 
     @action(detail=True, methods=["post"], url_path="request-resubmission")
-    def request_resubmission(self, request, pk=None):
+    def request_resubmission(self, request, pk=None, **kwargs):
         school = self.get_school()
         submission = self.get_object()
         teacher = user_teacher_profiles(request.user, school).filter(
@@ -1050,7 +1050,7 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         detail=True, methods=["get"],
         url_path=r"attempts/(?P<attempt_id>[^/.]+)/attachment",
     )
-    def attempt_attachment(self, request, pk=None, attempt_id=None):
+    def attempt_attachment(self, request, pk=None, attempt_id=None, **kwargs):
         submission = self.get_object()
         attempt = get_object_or_404(
             HomeworkSubmissionAttempt.objects.filter(
@@ -1068,7 +1068,7 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         )
 
     @action(detail=True, methods=["post"], url_path="grade")
-    def grade(self, request, pk=None):
+    def grade(self, request, pk=None, **kwargs):
         school = self.get_school()
         with transaction.atomic():
             submission = get_object_or_404(
@@ -1290,7 +1290,7 @@ class GradeBookViewSet(TenantModelViewSet):
         super().perform_destroy(instance)
 
     @action(detail=False, methods=["get"], url_path="weighted-summary")
-    def weighted_summary(self, request):
+    def weighted_summary(self, request, **kwargs):
         school = self.get_school()
         student = None
         student_id = request.query_params.get("student_id")
@@ -1400,7 +1400,7 @@ class GradeBookViewSet(TenantModelViewSet):
         })
 
     @action(detail=True, methods=["post"], url_path="submit-for-approval")
-    def submit_for_approval(self, request, pk=None):
+    def submit_for_approval(self, request, pk=None, **kwargs):
         entry = self.get_object()
         if not is_admin(request.user, self.get_school()):
             teacher = user_teacher_profiles(request.user, self.get_school()).filter(
@@ -1431,7 +1431,7 @@ class GradeBookViewSet(TenantModelViewSet):
         return Response(self.get_serializer(entry).data)
 
     @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
+    def approve(self, request, pk=None, **kwargs):
         entry = self.get_object()
         if entry.workflow_status != GradeBook.WorkflowStatus.SUBMITTED:
             raise ValidationError("لا يعتمد إلا سجل أرسل للمراجعة.")
@@ -1449,7 +1449,7 @@ class GradeBookViewSet(TenantModelViewSet):
         return Response(self.get_serializer(entry).data)
 
     @action(detail=True, methods=["post"], url_path="publish")
-    def publish(self, request, pk=None):
+    def publish(self, request, pk=None, **kwargs):
         entry = self.get_object()
         publish = request.data.get("is_published", True)
         if not isinstance(publish, bool):
@@ -1494,7 +1494,7 @@ class GradeBookViewSet(TenantModelViewSet):
         })
 
     @action(detail=True, methods=["post"], url_path="reopen")
-    def reopen(self, request, pk=None):
+    def reopen(self, request, pk=None, **kwargs):
         entry = self.get_object()
         reason = str(request.data.get("reason", "")).strip()
         if not reason:
@@ -1813,7 +1813,7 @@ class OnlineExamViewSet(TenantModelViewSet):
         return exam.grade_level_id == student.grade_level_id
 
     @action(detail=True, methods=["post"], url_path="publish")
-    def publish(self, request, pk=None):
+    def publish(self, request, pk=None, **kwargs):
         exam = self.get_object()
         publish = request.data.get("is_published", True)
         if not isinstance(publish, bool):
@@ -1868,7 +1868,7 @@ class OnlineExamViewSet(TenantModelViewSet):
         return Response({"id": str(exam.pk), "is_published": exam.is_published})
 
     @action(detail=True, methods=["get"], url_path="paper")
-    def paper(self, request, pk=None):
+    def paper(self, request, pk=None, **kwargs):
         exam = self.get_object()
         student = user_student_profiles(request.user, self.get_school()).first()
         if not has_school_roles(request.user, self.get_school(), {"student"}) and not is_admin(
@@ -1893,7 +1893,7 @@ class OnlineExamViewSet(TenantModelViewSet):
         })
 
     @action(detail=True, methods=["post"], url_path="start")
-    def start(self, request, pk=None):
+    def start(self, request, pk=None, **kwargs):
         exam = self.get_object()
         student = user_student_profiles(request.user, self.get_school()).first()
         if not has_school_roles(request.user, self.get_school(), {"student"}):
@@ -1929,7 +1929,7 @@ class OnlineExamViewSet(TenantModelViewSet):
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="submit")
-    def submit(self, request, pk=None):
+    def submit(self, request, pk=None, **kwargs):
         exam = self.get_object()
         student = user_student_profiles(request.user, self.get_school()).first()
         if not has_school_roles(request.user, self.get_school(), {"student"}):
@@ -2020,7 +2020,7 @@ class OnlineExamViewSet(TenantModelViewSet):
         })
 
     @action(detail=True, methods=["get"], url_path="report")
-    def report(self, request, pk=None):
+    def report(self, request, pk=None, **kwargs):
         exam = self.get_object()
         attempts = exam.submissions.filter(is_archived=False)
         published = attempts.filter(result_published=True)
@@ -2117,7 +2117,7 @@ class ExamSubmissionViewSet(TenantModelViewSet):
         raise ValidationError("محاولات الاختبار سجلات تاريخية لا تحذف بعد بدئها.")
 
     @action(detail=True, methods=["post"], url_path="grade")
-    def grade(self, request, pk=None):
+    def grade(self, request, pk=None, **kwargs):
         school = self.get_school()
         with transaction.atomic():
             submission = get_object_or_404(
@@ -2196,7 +2196,7 @@ class ExamSubmissionViewSet(TenantModelViewSet):
         })
 
     @action(detail=True, methods=["post"], url_path="publish")
-    def publish(self, request, pk=None):
+    def publish(self, request, pk=None, **kwargs):
         submission = self.get_object()
         publish = request.data.get("is_published", True)
         if not isinstance(publish, bool):
@@ -2240,7 +2240,7 @@ class ExamSubmissionViewSet(TenantModelViewSet):
         })
 
     @action(detail=True, methods=["post"], url_path="reopen")
-    def reopen(self, request, pk=None):
+    def reopen(self, request, pk=None, **kwargs):
         submission = self.get_object()
         reason = str(request.data.get("reason", "")).strip()
         if not reason:
@@ -2591,7 +2591,7 @@ class TimetablePlanViewSet(TenantModelViewSet):
         super().perform_destroy(instance)
 
     @action(detail=True, methods=["post"], url_path="copy")
-    def copy(self, request, pk=None):
+    def copy(self, request, pk=None, **kwargs):
         source = self.get_object()
         data = TimetablePlanCopyInputSerializer(data=request.data)
         data.is_valid(raise_exception=True)
@@ -2614,7 +2614,7 @@ class TimetablePlanViewSet(TenantModelViewSet):
         return Response(self.get_serializer(plan).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="submit")
-    def submit(self, request, pk=None):
+    def submit(self, request, pk=None, **kwargs):
         from apps.timetable.services import submit_timetable_plan
         try:
             plan = submit_timetable_plan(self.get_object(), submitted_by=request.user)
@@ -2623,7 +2623,7 @@ class TimetablePlanViewSet(TenantModelViewSet):
         return Response(self.get_serializer(plan).data)
 
     @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
+    def approve(self, request, pk=None, **kwargs):
         from apps.timetable.services import approve_timetable_plan
         try:
             plan = approve_timetable_plan(self.get_object(), approved_by=request.user)
@@ -2632,7 +2632,7 @@ class TimetablePlanViewSet(TenantModelViewSet):
         return Response(self.get_serializer(plan).data)
 
     @action(detail=True, methods=["post"], url_path="publish")
-    def publish(self, request, pk=None):
+    def publish(self, request, pk=None, **kwargs):
         from apps.timetable.services import publish_timetable_plan
         try:
             plan = publish_timetable_plan(self.get_object(), published_by=request.user)
@@ -3046,7 +3046,7 @@ class JournalEntryViewSet(TenantModelViewSet):
         instance.delete()
 
     @action(detail=True, methods=["post"], url_path="post")
-    def post(self, request, pk=None):
+    def post(self, request, pk=None, **kwargs):
         with transaction.atomic():
             entry = get_object_or_404(
                 JournalEntry.objects.select_for_update(),
@@ -3058,7 +3058,7 @@ class JournalEntryViewSet(TenantModelViewSet):
         return Response(self.get_serializer(entry).data)
 
     @action(detail=True, methods=["post"], url_path="reverse")
-    def reverse(self, request, pk=None):
+    def reverse(self, request, pk=None, **kwargs):
         reason = (request.data.get("reason") or "").strip()
         if len(reason) < 3:
             raise ValidationError({"reason": "سبب عكس القيد مطلوب."})
@@ -3146,7 +3146,7 @@ class PaymentVoucherViewSet(VoucherBaseViewSet):
         return Response(self.get_serializer(voucher).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="post")
-    def post(self, request, pk=None):
+    def post(self, request, pk=None, **kwargs):
         with transaction.atomic():
             voucher = get_object_or_404(
                 PaymentVoucher.objects.select_for_update(),
@@ -3204,7 +3204,7 @@ class ReceiptVoucherViewSet(VoucherBaseViewSet):
         return Response(self.get_serializer(voucher).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="post")
-    def post(self, request, pk=None):
+    def post(self, request, pk=None, **kwargs):
         with transaction.atomic():
             voucher = get_object_or_404(
                 ReceiptVoucher.objects.select_for_update(),
@@ -3307,7 +3307,7 @@ class PurchaseOrderViewSet(TenantModelViewSet):
         serializer.save()
 
     @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
+    def approve(self, request, pk=None, **kwargs):
         with transaction.atomic():
             order = get_object_or_404(
                 PurchaseOrder.objects.select_for_update(),
@@ -3329,7 +3329,7 @@ class PurchaseOrderViewSet(TenantModelViewSet):
         return Response(self.get_serializer(order).data)
 
     @action(detail=True, methods=["post"], url_path="receive")
-    def receive(self, request, pk=None):
+    def receive(self, request, pk=None, **kwargs):
         order = self.get_object()
         movements = order.receive_into_warehouse(user=request.user)
         return Response({"status": order.status, "created_movements": [str(x.pk) for x in movements]})
@@ -3431,7 +3431,7 @@ class VendorInvoiceViewSet(TenantModelViewSet):
         super().perform_destroy(instance)
 
     @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
+    def approve(self, request, pk=None, **kwargs):
         with transaction.atomic():
             invoice = get_object_or_404(
                 VendorInvoice.objects.select_for_update(),
@@ -3444,7 +3444,7 @@ class VendorInvoiceViewSet(TenantModelViewSet):
         return Response(self.get_serializer(invoice).data)
 
     @action(detail=True, methods=["post"], url_path="post")
-    def post(self, request, pk=None):
+    def post(self, request, pk=None, **kwargs):
         from apps.accounting.services.auto_posting import (
             _get_account_or_seed, _get_active_fiscal_period,
         )
@@ -3476,7 +3476,7 @@ class VendorInvoiceViewSet(TenantModelViewSet):
         return Response(self.get_serializer(invoice).data)
 
     @action(detail=True, methods=["post"], url_path="record-payment")
-    def record_payment(self, request, pk=None):
+    def record_payment(self, request, pk=None, **kwargs):
         try:
             amount = Decimal(str(request.data.get("amount")))
         except Exception as exc:
@@ -3696,14 +3696,14 @@ class PushDeviceViewSet(viewsets.ModelViewSet):
         )
 
     @action(detail=True, methods=["post"], url_path="deactivate")
-    def deactivate(self, request, pk=None):
+    def deactivate(self, request, pk=None, **kwargs):
         device = get_object_or_404(PushDevice, pk=pk, user=request.user)
         device.is_active = False
         device.save(update_fields=["is_active", "updated_at"])
         return Response({"id": str(device.pk), "is_active": False})
 
     @action(detail=True, methods=["post"], url_path="heartbeat")
-    def heartbeat(self, request, pk=None):
+    def heartbeat(self, request, pk=None, **kwargs):
         device = get_object_or_404(PushDevice, pk=pk, user=request.user)
         device.last_seen_at = timezone.now()
         device.is_active = True
@@ -3827,7 +3827,7 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         return ConversationParticipant.Role.STAFF
 
     @action(detail=True, methods=["get", "post"], url_path="messages")
-    def messages(self, request, pk=None):
+    def messages(self, request, pk=None, **kwargs):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
         self.get_participant(conv)
         if request.method == "GET":
@@ -3885,7 +3885,7 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         return Response(ConversationMessageSerializer(message).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="read")
-    def mark_read(self, request, pk=None):
+    def mark_read(self, request, pk=None, **kwargs):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
         participant = self.get_participant(conv)
         participant.last_read_at = timezone.now()
@@ -3893,7 +3893,7 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         return Response({"conversation_id": str(conv.pk), "last_read_at": participant.last_read_at})
 
     @action(detail=True, methods=["post"], url_path="mute")
-    def mute(self, request, pk=None):
+    def mute(self, request, pk=None, **kwargs):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
         participant = self.get_participant(conv)
         participant.is_muted = bool(request.data.get("muted", True))
@@ -3901,7 +3901,7 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         return Response({"conversation_id": str(conv.pk), "is_muted": participant.is_muted})
 
     @action(detail=True, methods=["post"], url_path="close")
-    def close(self, request, pk=None):
+    def close(self, request, pk=None, **kwargs):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
         self.get_participant(conv)
         require_school_role_or_permission(request, self.get_school(), ADMIN_ROLES)
