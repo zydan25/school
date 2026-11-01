@@ -242,7 +242,7 @@ class Report2AuditFixesTests(TestCase):
             debit=Decimal("500.00"),
             credit=Decimal("0.00"),
         )
-        line2 = JournalEntryLine.objects.create(
+        JournalEntryLine.objects.create(
             school=self.school,
             journal_entry=entry,
             account=rev_acc,
@@ -281,7 +281,7 @@ class Report2AuditFixesTests(TestCase):
             employee_number="EMP-STAFF-02",
             hire_date=date(2026, 1, 1),
         )
-        contract = EmployeeContract.objects.create(
+        EmployeeContract.objects.create(
             school=self.school,
             staff_member=staff,
             contract_number="CNT-REP2-01",
