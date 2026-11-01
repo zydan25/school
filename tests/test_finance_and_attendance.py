@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.test import TestCase
 
 from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section
-from apps.accounting.models import Account, FiscalYear, JournalEntry, JournalEntryLine
+from apps.accounting.models import Account, FiscalPeriod, FiscalYear, JournalEntry, JournalEntryLine
 from apps.accounts.models import User
 from apps.attendance.models import DailyAttendance
 from apps.student_fees.models import (
@@ -111,13 +111,22 @@ class FinanceAndAttendanceTests(TestCase):
     def test_double_entry_accounting_lines(self):
         """التحقق من إنشاء حسابات مالية وخطوط القيد اليومي."""
         fy = FiscalYear.objects.create(school=self.school, name="2026", start_date=date(2026, 1, 1), end_date=date(2026, 12, 31))
-        
+        period = FiscalPeriod.objects.create(
+            school=self.school,
+            fiscal_year=fy,
+            period_number=10,
+            name="أكتوبر 2026",
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 31),
+        )
+
         # Accounts: Cash and Tuition Revenue
         cash_account = Account.objects.create(school=self.school, code="1101", name="الصندوق الرئيسي", account_type=Account.AccountType.ASSET, is_leaf=True)
         revenue_account = Account.objects.create(school=self.school, code="4101", name="إيرادات الرسوم الدراسية", account_type=Account.AccountType.REVENUE, is_leaf=True)
 
         entry = JournalEntry.objects.create(
             school=self.school,
+            fiscal_period=period,
             entry_number="JE-2026-001",
             date=date(2026, 10, 30),
             description="إثبات تحصيل قسط دراسي نقداً",
