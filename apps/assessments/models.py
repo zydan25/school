@@ -41,7 +41,8 @@ class AssessmentType(TenantOwnedModel):
         if self.school_id:
             existing_weight = sum(
                 AssessmentType.objects.filter(
-                    school_id=self.school_id, is_archived=False,
+                    school_id=self.school_id, branch_id=self.branch_id,
+                    is_archived=False,
                 ).exclude(pk=self.pk).values_list("weight_percentage", flat=True),
                 Decimal("0.00"),
             )
