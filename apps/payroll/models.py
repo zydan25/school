@@ -74,6 +74,47 @@ class EmployeeContract(TenantOwnedModel):
             raise ValidationError({"teacher": "المعلم لا ينتمي إلى نفس المدرسة."})
         if self.staff_member_id and self.staff_member.school_id != self.school_id:
             raise ValidationError({"staff_member": "الموظف الإداري لا ينتمي إلى نفس المدرسة."})
+        if self.teacher_id and not self.teacher.is_active_teaching:
+            raise ValidationError({"teacher": "لا يمكن إنشاء عقد لمعلم غير نشط تدريسياً."})
+        if self.staff_member_id and not self.staff_member.is_active:
+            raise ValidationError({"staff_member": "لا يمكن إنشاء عقد لموظف غير نشط."})
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValidationError({"end_date": "تاريخ نهاية العقد لا يمكن أن يسبق تاريخ بدايته."})
+        salary_fields = (
+            "basic_salary", "housing_allowance", "transport_allowance",
+            "other_allowances", "insurance_deduction",
+        )
+        for field in salary_fields:
+            value = getattr(self, field)
+            if value is not None and value < Decimal("0.00"):
+                raise ValidationError({field: "لا يمكن أن تكون مكونات الراتب سالبة."})
+        if self.is_active and self.start_date:
+            overlapping = EmployeeContract.objects.filter(
+                school_id=self.school_id,
+                is_active=True,
+                is_archived=False,
+                start_date__lte=self.end_date or timezone.localdate().replace(year=9999),
+            ).exclude(pk=self.pk)
+            if self.teacher_id:
+                overlapping = overlapping.filter(teacher_id=self.teacher_id, staff_member__isnull=True)
+            else:
+                overlapping = overlapping.filter(staff_member_id=self.staff_member_id, teacher__isnull=True)
+            if self.end_date:
+                overlapping = overlapping.filter(
+                    models.Q(end_date__isnull=True) | models.Q(end_date__gte=self.start_date)
+                )
+            else:
+                overlapping = overlapping.filter(
+                    models.Q(end_date__isnull=True) | models.Q(end_date__gte=self.start_date)
+                )
+            if overlapping.exists():
+                raise ValidationError("يوجد عقد نشط متداخل زمنياً لهذا الموظف؛ أنهِ العقد السابق قبل إضافة عقد جديد.")
+        employee_branch_id = (
+            self.teacher.branch_id if self.teacher_id else
+            self.staff_member.branch_id if self.staff_member_id else None
+        )
+        if self.branch_id and employee_branch_id and self.branch_id != employee_branch_id:
+            raise ValidationError({"branch": "فرع العقد يجب أن يطابق فرع ملف الموظف."})
 
     @property
     def total_allowances(self) -> Decimal:
@@ -91,7 +132,9 @@ class EmployeeContract(TenantOwnedModel):
 class EmployeeLoanAdvance(TenantOwnedModel):
     """سلف وقروض الموظفين وأقساط السداد الشهرية."""
     class Status(models.TextChoices):
-        ACTIVE = "active", "نشطة (قيد الاستقطاع)"
+        PENDING = "pending", "طلب قيد المراجعة"
+        APPROVED = "approved", "معتمدة بانتظار الصرف"
+        ACTIVE = "active", "مصروفة وقيد الاستقطاع"
         FULLY_REPAID = "fully_repaid", "مسددة بالكامل"
         WRITTEN_OFF = "written_off", "معفاة / مشطوبة"
 
@@ -116,8 +159,42 @@ class EmployeeLoanAdvance(TenantOwnedModel):
     monthly_installment = models.DecimalField("القسط الشهري للاستقطاع", max_digits=12, decimal_places=2)
     repaid_amount = models.DecimalField("المبلغ المسدد حتى الآن", max_digits=12, decimal_places=2, default=Decimal("0.00"))
     start_date = models.DateField("تاريخ بدء الاستقطاع")
-    status = models.CharField("حالة السلفة", max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    status = models.CharField("حالة السلفة", max_length=20, choices=Status.choices, default=Status.PENDING)
     notes = models.TextField("سبب السلفة وملاحظاتها", blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="requested_employee_loans",
+        verbose_name="مقدم طلب السلفة",
+    )
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="approved_employee_loans",
+        verbose_name="معتمد السلفة",
+    )
+    approved_at = models.DateTimeField("تاريخ اعتماد السلفة", null=True, blank=True)
+    disbursed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="disbursed_employee_loans",
+        verbose_name="مسؤول صرف السلفة",
+    )
+    disbursed_at = models.DateTimeField("تاريخ صرف السلفة", null=True, blank=True)
+    disbursement_voucher = models.ForeignKey(
+        "accounting.PaymentVoucher",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="employee_loans",
+        verbose_name="سند صرف السلفة",
+    )
 
     class Meta:
         verbose_name = "سلفة موظف"
@@ -127,7 +204,19 @@ class EmployeeLoanAdvance(TenantOwnedModel):
                 fields=["school", "loan_number"],
                 condition=models.Q(is_archived=False),
                 name="payroll_loan_num_uniq",
-            )
+            ),
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0),
+                name="payroll_loan_amount_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(monthly_installment__gt=0),
+                name="payroll_loan_installment_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(repaid_amount__gte=0) & models.Q(repaid_amount__lte=models.F("amount")),
+                name="payroll_loan_repaid_range",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -146,6 +235,10 @@ class EmployeeLoanAdvance(TenantOwnedModel):
             raise ValidationError({"amount": "مبلغ السلفة الإجمالي يجب أن يكون أكبر من الصفر."})
         if self.monthly_installment <= Decimal("0.00"):
             raise ValidationError({"monthly_installment": "القسط الشهري للاستقطاع يجب أن يكون أكبر من الصفر."})
+        if self.repaid_amount < Decimal("0.00") or self.repaid_amount > self.amount:
+            raise ValidationError({"repaid_amount": "إجمالي المسدد يجب أن يكون بين صفر ومبلغ السلفة."})
+        if self.disbursement_voucher_id and self.disbursement_voucher.school_id != self.school_id:
+            raise ValidationError({"disbursement_voucher": "سند صرف السلفة يجب أن يتبع المدرسة نفسها."})
 
     @property
     def remaining_amount(self) -> Decimal:
@@ -299,11 +392,44 @@ class EmployeeLoanRepayment(TenantOwnedModel):
     balance_after = models.DecimalField("رصيد السلفة بعد السداد", max_digits=12, decimal_places=2)
     repaid_at = models.DateField("تاريخ الاستقطاع", default=timezone.localdate)
     is_reversed = models.BooleanField("تم عكس القسط", default=False)
+    idempotency_key = models.CharField("مفتاح منع تكرار السداد", max_length=100, blank=True, default="")
+    receipt_voucher = models.ForeignKey(
+        "accounting.ReceiptVoucher",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="employee_loan_repayments",
+        verbose_name="سند تحصيل السداد اليدوي",
+    )
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="recorded_employee_loan_repayments",
+        verbose_name="مسجل عملية السداد",
+    )
+    notes = models.CharField("ملاحظات السداد", max_length=500, blank=True)
 
     class Meta:
         verbose_name = "سجل سداد سلفة"
         verbose_name_plural = "سجلات سداد سلف الموظفين"
         ordering = ["-repaid_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "idempotency_key"],
+                condition=models.Q(is_archived=False, idempotency_key__gt=""),
+                name="payroll_loan_repay_idem_uniq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0),
+                name="payroll_loan_repayment_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(balance_before__gte=0) & models.Q(balance_after__gte=0),
+                name="payroll_loan_repayment_balances_nonnegative",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.loan.loan_number}: {self.amount} (المتبقي: {self.balance_after})"
