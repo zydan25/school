@@ -253,7 +253,10 @@ class PhaseSixTeachingAssessmentTests(TestCase):
             question_text="1 + 1 = ؟",
             question_type=QuestionBank.QuestionType.MCQ,
             default_marks=Decimal("5.00"),
-            options_json=[{"id": "A", "text": "2"}, {"id": "B", "text": "3"}],
+            options_json=[
+                {"id": "A", "text": "2", "is_correct": True},
+                {"id": "B", "text": "3", "is_correct": False},
+            ],
             correct_answer="A", created_by=self.teacher_user,
         )
         exam = OnlineExam.objects.create(
@@ -278,6 +281,8 @@ class PhaseSixTeachingAssessmentTests(TestCase):
         )
         self.assertEqual(paper.status_code, status.HTTP_200_OK, paper.data)
         self.assertNotIn("correct_answer", paper.data["questions"][0])
+        self.assertNotIn("is_correct", paper.data["questions"][0]["options_json"][0])
+        self.assertNotIn("is_correct", paper.data["questions"][0]["options_json"][1])
 
         started = self.student_client.post(
             f"/api/v1/app/online-exams/{exam.pk}/start/",
