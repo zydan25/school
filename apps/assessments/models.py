@@ -244,7 +244,7 @@ class ExamCommitteeProctor(TenantOwnedModel):
                 name="assessments_committee_proctor_uniq",
             )
         ]
-        indexes = [models.Index(fields=["school", "teacher", "duty"])]
+        indexes = [models.Index(fields=["school", "teacher", "duty"], name="assessments_school_proctor_idx")]
 
     def clean(self):
         super().clean()
@@ -497,6 +497,10 @@ class OnlineExam(TenantOwnedModel):
                 raise ValidationError({"section": "الشعبة لا تتبع الصف المحدد للاختبار."})
             if self.section.academic_year_id != self.academic_term.academic_year_id:
                 raise ValidationError({"section": "الشعبة لا تتبع السنة الدراسية للفصل المحدد."})
+        if self.student_id and self.academic_year_id and self.student.academic_year_id and self.student.academic_year_id != self.academic_year_id:
+            raise ValidationError({"academic_year": "سنة رقم الجلوس لا تطابق سنة تسجيل الطالب."})
+        if self.committee_id and self.committee.branch_id and self.branch_id and self.committee.branch_id != self.branch_id:
+            raise ValidationError({"branch": "رقم الجلوس يجب أن يتبع فرع اللجنة."})
         if self.student_id and self.exam_id:
             if self.exam.branch_id and self.student.branch_id and self.exam.branch_id != self.student.branch_id:
                 raise ValidationError({"student": "الطالب يتبع فرعاً مختلفاً عن الاختبار."})
