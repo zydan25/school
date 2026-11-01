@@ -1036,6 +1036,8 @@ class TreasuryTransfer(TenantOwnedModel):
                 or self.reversed_by_entry.status != JournalEntry.Status.POSTED
             ):
                 raise ValidationError({"reversed_by_entry": "التحويل المعكوس يجب أن يرتبط بقيد عكسي مرحّل."})
+            if self.journal_entry_id and not self.journal_entry.is_reversed:
+                raise ValidationError({"journal_entry": "القيد الأصلي للتحويل المعكوس يجب أن يكون معلّماً كمعكوس."})
 
     @transaction.atomic
     def save(self, *args, **kwargs):
@@ -1052,6 +1054,7 @@ class TreasuryTransfer(TenantOwnedModel):
                     "school_id", "branch_id", "transfer_number", "transfer_date",
                     "source_account_id", "destination_account_id", "amount",
                     "description", "idempotency_key", "journal_entry_id",
+                    "reversed_by_entry_id",
                 )
                 if any(getattr(original, field) != getattr(self, field) for field in protected):
                     raise ValidationError("بيانات التحويل المرحّل غير قابلة للتعديل؛ صححها بقيد عكسي.")
