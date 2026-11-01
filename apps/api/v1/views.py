@@ -1172,7 +1172,11 @@ class GradeBookViewSet(TenantModelViewSet):
             if has_school_roles(self.request.user, school, {"student"}):
                 student = user_student_profiles(self.request.user, school).first()
                 if student:
-                    allowed |= Q(student=student, is_published=True)
+                    allowed |= Q(
+                        student=student,
+                        is_published=True,
+                        workflow_status=GradeBook.WorkflowStatus.PUBLISHED,
+                    )
             if has_school_roles(self.request.user, school, {"guardian"}):
                 guardian = user_guardian_profiles(self.request.user, school).first()
                 if guardian:
@@ -1181,6 +1185,7 @@ class GradeBookViewSet(TenantModelViewSet):
                             school=school, is_archived=False,
                         ),
                         is_published=True,
+                        workflow_status=GradeBook.WorkflowStatus.PUBLISHED,
                     )
             if has_school_roles(self.request.user, school, {"teacher"}):
                 teacher = user_teacher_profiles(self.request.user, school).filter(
@@ -1332,6 +1337,7 @@ class GradeBookViewSet(TenantModelViewSet):
         entries = GradeBook.objects.filter(
             school=school, student=student, subject_id=subject_id,
             is_archived=False, is_published=True,
+            workflow_status=GradeBook.WorkflowStatus.PUBLISHED,
         ).select_related("assessment_type")
         term_id = request.query_params.get("academic_term_id")
         if term_id:
