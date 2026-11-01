@@ -388,104 +388,131 @@ def disburse_payroll_run(
     disbursed_by=None,
     user=None,
 ) -> JournalEntry:
-    """
-    تنفيذ الصرف الفعلي لمسير الرواتب من حساب الصندوق أو البنك،
-    وإنشاء قيد صرف مالي وسند صرف وتحديث قسائم الموظفين كـ مدفوعة.
-    """
+    """صرف مسير الرواتب بقيد سداد واحد قابل لإعادة الطلب دون ازدواج."""
     disbursed_by = disbursed_by or user
     if payment_account is None and credit_account is not None:
         payment_account = credit_account
-
     if payment_account is None:
-        raise ValueError("يجب تحديد حساب الصرف المالي (الصندوق أو البنك).")
+        raise ValidationError("يجب تحديد حساب الصرف المالي (الصندوق أو البنك).")
 
     from apps.accounting.services.auto_posting import (
         _get_account_or_seed,
         _get_active_fiscal_period,
     )
-
-    school = payroll_run.school
-    if payment_account.school_id != school.pk:
-        raise ValidationError("حساب الصرف المالي لا ينتمي إلى نفس المدرسة.")
-    if not payment_account.is_leaf or payment_account.account_type != Account.AccountType.ASSET:
-        raise ValidationError("حساب الصرف يجب أن يكون حساباً فرعياً من نوع أصول (نقدية أو بنك).")
+    from apps.accounting.models import PaymentVoucher
 
     with transaction.atomic():
-        locked_run = PayrollRun.objects.select_for_update().get(pk=payroll_run.pk)
+        locked_run = PayrollRun.objects.select_for_update(of=("self",)).get(
+            pk=payroll_run.pk,
+        )
+        school = locked_run.school
+        existing_disbursement = JournalEntry.objects.filter(
+            school=school,
+            source_module="payroll_disbursement",
+            source_reference=str(locked_run.pk),
+            is_archived=False,
+        ).first()
         if locked_run.status == PayrollRun.Status.PAID:
-            raise ValueError("مسير الرواتب هذا مصروف مسبقاً.")
+            if (
+                existing_disbursement
+                and existing_disbursement.status == JournalEntry.Status.POSTED
+            ):
+                return existing_disbursement
+            raise ValidationError("مسير الرواتب معلّم كمصروف لكن قيد الصرف المرحّل غير موجود؛ يلزم التدقيق.")
+        if existing_disbursement:
+            raise ValidationError(
+                "يوجد قيد صرف سابق لمسير الرواتب دون حالة صرف مكتملة؛ يلزم التدقيق قبل إعادة التنفيذ."
+            )
+        if locked_run.status not in (PayrollRun.Status.POSTED, PayrollRun.Status.APPROVED):
+            raise ValidationError("يجب اعتماد مسير الرواتب وترحيله محاسبياً قبل صرفه.")
+        if payment_account.school_id != school.pk:
+            raise ValidationError("حساب الصرف المالي لا ينتمي إلى نفس المدرسة.")
+        if (
+            not payment_account.is_leaf
+            or payment_account.is_archived
+            or payment_account.account_type != Account.AccountType.ASSET
+        ):
+            raise ValidationError("حساب الصرف يجب أن يكون حساب أصول تفصيلياً ونشطاً.")
 
-        if not locked_run.journal_entry:
+        if not locked_run.journal_entry_id:
             post_payroll_to_accounting(locked_run, posted_by=disbursed_by)
             locked_run.refresh_from_db()
+        elif locked_run.journal_entry.status != JournalEntry.Status.POSTED:
+            raise ValidationError("قيد استحقاق الرواتب المرتبط غير مرحّل.")
 
-        payable_account = _get_account_or_seed(school, "2101", "الرواتب والأجور المستحقة")
-
+        payable_account = _get_account_or_seed(
+            school, "2103", "الرواتب والأجور المستحقة",
+        )
+        if payable_account.account_type != Account.AccountType.LIABILITY or not payable_account.is_leaf:
+            raise ValidationError("حساب مستحقات الرواتب 2103 يجب أن يكون حساب التزامات تفصيلياً.")
         post_date = timezone.localdate()
         period = _get_active_fiscal_period(school, post_date)
-
-        # Disbursement Journal Entry (Debit 2101, Credit 1101/1102)
-        disb_entry_number = f"DISB-PAY-{locked_run.year}{locked_run.month:02d}-{locked_run.id.hex[:6].upper()}"
         disb_entry = JournalEntry.objects.create(
             school=school,
             fiscal_period=period,
-            entry_number=disb_entry_number,
+            entry_number=(
+                f"DISB-PAY-{locked_run.year}{locked_run.month:02d}-"
+                f"{locked_run.pk.hex[:6].upper()}"
+            ),
             date=post_date,
-            description=f"صرف رواتب شهر {locked_run.month}/{locked_run.year} - مرجع: {reference_number}",
+            description=(
+                f"صرف رواتب شهر {locked_run.month}/{locked_run.year} "
+                f"- مرجع: {reference_number}"
+            ),
             status=JournalEntry.Status.DRAFT,
             source_module="payroll_disbursement",
-            source_reference=str(locked_run.id),
+            source_reference=str(locked_run.pk),
         )
-
         JournalEntryLine.objects.create(
-            school=school,
-            journal_entry=disb_entry,
-            account=payable_account,
-            debit=locked_run.total_net,
-            credit=Decimal("0.00"),
+            school=school, journal_entry=disb_entry, account=payable_account,
+            debit=locked_run.total_net, credit=Decimal("0.00"),
             description=f"إقفال مستحقات رواتب شهر {locked_run.month}/{locked_run.year}",
         )
-
         JournalEntryLine.objects.create(
-            school=school,
-            journal_entry=disb_entry,
-            account=payment_account,
-            debit=Decimal("0.00"),
-            credit=locked_run.total_net,
+            school=school, journal_entry=disb_entry, account=payment_account,
+            debit=Decimal("0.00"), credit=locked_run.total_net,
             description=f"تحويل رواتب الموظفين عبر {payment_method}",
         )
-
         disb_entry.post(user=disbursed_by)
 
-        # Create Payment Voucher with complete details
-        from apps.accounting.models import PaymentVoucher
-
-        v_num = f"PV-PAY-{locked_run.year}{locked_run.month:02d}"
-        pv, _ = PaymentVoucher.objects.get_or_create(
+        voucher_number = f"PV-PAY-{locked_run.year}{locked_run.month:02d}"
+        voucher, created = PaymentVoucher.objects.get_or_create(
             school=school,
-            voucher_number=v_num,
+            voucher_number=voucher_number,
             defaults={
                 "date": post_date,
                 "paid_to": f"كادر وموظفو المدرسة ({locked_run.name})",
                 "amount": locked_run.total_net,
-                "payment_method": payment_method if payment_method in [PaymentVoucher.PaymentMethod.CASH, PaymentVoucher.PaymentMethod.BANK_TRANSFER, PaymentVoucher.PaymentMethod.CHEQUE] else PaymentVoucher.PaymentMethod.BANK_TRANSFER,
+                "payment_method": (
+                    payment_method if payment_method in PaymentVoucher.PaymentMethod.values
+                    else PaymentVoucher.PaymentMethod.BANK_TRANSFER
+                ),
                 "reference_number": reference_number,
                 "debit_account": payable_account,
                 "credit_account": payment_account,
                 "description": f"صرف مسير رواتب شهر {locked_run.month}/{locked_run.year}",
-                "status": PaymentVoucher.Status.POSTED,
-                "journal_entry": disb_entry,
+                "status": PaymentVoucher.Status.DRAFT,
+                "idempotency_key": f"payroll-disbursement-{locked_run.pk}",
             },
         )
+        if not created:
+            if (
+                voucher.amount != locked_run.total_net
+                or voucher.debit_account_id != payable_account.pk
+                or voucher.credit_account_id != payment_account.pk
+            ):
+                raise ValidationError("يوجد سند صرف رواتب سابق ببيانات مختلفة عن الصرف الحالي.")
+            if voucher.journal_entry_id and voucher.journal_entry_id != disb_entry.pk:
+                raise ValidationError("سند صرف الرواتب مرتبط بقيد آخر؛ يلزم التدقيق.")
+        voucher.journal_entry = disb_entry
+        voucher.status = PaymentVoucher.Status.POSTED
+        voucher.save(update_fields=["journal_entry", "status", "updated_at"])
 
         locked_run.status = PayrollRun.Status.PAID
         locked_run.save(update_fields=["status", "updated_at"])
-
-        # Mark all payslips as paid with today's date
-        locked_run.payslips.all().update(
+        locked_run.payslips.filter(is_archived=False).update(
             is_paid=True,
             payment_date=post_date,
             updated_at=timezone.now(),
         )
-
         return disb_entry
