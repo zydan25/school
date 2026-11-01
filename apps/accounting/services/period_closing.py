@@ -110,7 +110,7 @@ def _year_profit_and_loss_lines(year: FiscalYear) -> list[dict]:
     ).order_by("account_id")
 
     lines = []
-    net_income_by_branch: dict[str | None, Decimal] = {}
+    net_income_by_branch: dict[object, Decimal] = {}
     for row in rows:
         debit = row["debit_total"] or ZERO
         credit = row["credit_total"] or ZERO
@@ -132,7 +132,7 @@ def _year_profit_and_loss_lines(year: FiscalYear) -> list[dict]:
             elif balance < ZERO:
                 lines.append({
                     "account_id": row["account_id"],
-                    "branch_id": row["account__branch_id"],
+                    "branch_id": branch_id,
                     "debit": ZERO,
                     "credit": abs(balance),
                     "description": "إقفال الرصيد المدين لحساب الإيراد",
@@ -145,7 +145,7 @@ def _year_profit_and_loss_lines(year: FiscalYear) -> list[dict]:
             if balance > ZERO:
                 lines.append({
                     "account_id": row["account_id"],
-                    "branch_id": row["account__branch_id"],
+                    "branch_id": branch_id,
                     "debit": ZERO,
                     "credit": balance,
                     "description": "إقفال رصيد المصروف في نهاية السنة المالية",
@@ -153,7 +153,7 @@ def _year_profit_and_loss_lines(year: FiscalYear) -> list[dict]:
             elif balance < ZERO:
                 lines.append({
                     "account_id": row["account_id"],
-                    "branch_id": row["account__branch_id"],
+                    "branch_id": branch_id,
                     "debit": abs(balance),
                     "credit": ZERO,
                     "description": "إقفال الرصيد الدائن لحساب المصروف",
