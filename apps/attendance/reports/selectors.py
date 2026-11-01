@@ -331,7 +331,7 @@ def get_chronic_absenteeism_report(school, academic_year_id: UUID, threshold_per
         rate = round(absent_days / school_days * 100, 1)
         if rate >= threshold_percentage:
             chronic.append({
-                "student_id": str(student.pk),
+                "student_id": student.pk,
                 "student_name": f"{student.first_name} {student.last_name}",
                 "student_number": student.student_id_number,
                 "grade_name": student.grade_level.name if student.grade_level else "",

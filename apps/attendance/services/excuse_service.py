@@ -12,7 +12,6 @@ from apps.attendance.models import (
     AttendanceExcuseRequest,
     AttendancePolicy,
     AttendanceStatusType,
-    DailyAttendance,
     EarlyDepartureRequest,
     StudentAttendanceRecord,
 )
