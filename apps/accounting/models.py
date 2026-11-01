@@ -785,12 +785,12 @@ class TreasuryTransfer(TenantOwnedModel):
             models.UniqueConstraint(
                 fields=["school", "transfer_number"],
                 condition=models.Q(is_archived=False),
-                name="acct_treasury_transfer_num_uniq",
+                name="acct_transfer_num_uniq",
             ),
             models.UniqueConstraint(
                 fields=["school", "idempotency_key"],
                 condition=models.Q(is_archived=False),
-                name="acct_treasury_transfer_idem_uniq",
+                name="acct_transfer_idem_uniq",
             ),
         ]
 
