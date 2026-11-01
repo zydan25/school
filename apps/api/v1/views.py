@@ -1266,10 +1266,13 @@ class GradeBookViewSet(TenantModelViewSet):
                     school=school, section=student.section,
                     subject_id=subject_id, is_archived=False,
                 )
+                term_id = request.query_params.get("academic_term_id")
                 if term_id:
                     assignments = assignments.filter(academic_year_id__in=AcademicTerm.objects.filter(
                         school=school, pk=term_id,
                     ).values_list("academic_year_id", flat=True))
+                elif student.academic_year_id:
+                    assignments = assignments.filter(academic_year_id=student.academic_year_id)
                 if not assignments.exists():
                     raise PermissionDenied("لا يمكنك عرض ملخص درجات طالب خارج المادة أو الشعبة المسندة إليك.")
         if student is None:
