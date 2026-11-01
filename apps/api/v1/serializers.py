@@ -17,10 +17,10 @@ from apps.accounting.models import (
 )
 from apps.assets.models import AssetCategory, AssetDepreciationEntry, FixedAsset
 from apps.assessments.models import (
-    AssessmentType, ExamCommittee, ExamSeating, GradeBook, OnlineExam,
+    AssessmentType, ExamCommittee, ExamCommitteeProctor, ExamSeating, GradeBook, OnlineExam,
     QuestionBank, StudentOnlineExamSubmission,
 )
-from apps.assignments.models import Homework, HomeworkSubmission
+from apps.assignments.models import Homework, HomeworkSubmission, HomeworkSubmissionAttempt
 from apps.inventory.models import (
     InventoryItem, PurchaseOrder, PurchaseOrderItem, StockMovement,
     Supplier, VendorInvoice, Warehouse,
@@ -431,8 +431,24 @@ class HomeworkSerializer(TenantModelSerializer):
         read_only_fields = TenantModelSerializer.Meta.read_only_fields + ("teacher", "subject_name", "section_name", "teacher_name")
 
 
+class HomeworkSubmissionAttemptSerializer(TenantModelSerializer):
+    attachment_name = serializers.SerializerMethodField()
+
+    class Meta(TenantModelSerializer.Meta):
+        model = HomeworkSubmissionAttempt
+        fields = [
+            "id", "attempt_number", "submission_text", "attachment_name",
+            "submitted_at", "status",
+        ]
+        read_only_fields = fields
+
+    def get_attachment_name(self, obj):
+        return obj.attachment.name.rsplit("/", 1)[-1] if obj.attachment else ""
+
+
 class HomeworkSubmissionSerializer(TenantModelSerializer):
     student_name = serializers.CharField(source="student.get_full_name", read_only=True)
+    attempts = HomeworkSubmissionAttemptSerializer(many=True, read_only=True)
     attachment = serializers.FileField(write_only=True, required=False)
     attachment_name = serializers.SerializerMethodField()
     attachment_available = serializers.SerializerMethodField()
@@ -443,10 +459,12 @@ class HomeworkSubmissionSerializer(TenantModelSerializer):
             "id", "homework", "student", "student_name", "submission_text",
             "attachment", "attachment_name", "attachment_available",
             "submitted_at", "status", "score", "teacher_feedback", "graded_by", "graded_at",
+            "attempts",
         ]
         read_only_fields = TenantModelSerializer.Meta.read_only_fields + (
             "student", "student_name", "attachment_name", "attachment_available",
             "submitted_at", "status", "score", "teacher_feedback", "graded_by", "graded_at",
+            "attempts",
         )
 
     def get_attachment_name(self, obj):
@@ -472,6 +490,8 @@ class GradeBookSerializer(TenantModelSerializer):
         fields = "__all__"
         read_only_fields = TenantModelSerializer.Meta.read_only_fields + (
             "student_name", "subject_name", "academic_term_name", "graded_by", "graded_at",
+            "workflow_status", "is_published", "submitted_by", "submitted_at",
+            "approved_by", "approved_at", "published_by", "published_at", "revision_reason",
         )
 
 
@@ -483,9 +503,24 @@ class QuestionBankTeacherSerializer(TenantModelSerializer):
 
 
 class ExamPaperQuestionSerializer(serializers.ModelSerializer):
+    options_json = serializers.SerializerMethodField()
+
     class Meta:
         model = QuestionBank
         fields = ["id", "question_text", "question_type", "difficulty", "default_marks", "options_json", "unit_name", "topic"]
+
+    def get_options_json(self, obj):
+        # Never expose arbitrary option metadata such as is_correct/correct_answer.
+        if not isinstance(obj.options_json, list):
+            return []
+        return [
+            {
+                "id": str(option.get("id", "")),
+                "text": str(option.get("text", "")),
+            }
+            for option in obj.options_json
+            if isinstance(option, dict) and option.get("id") is not None
+        ]
 
 
 class OnlineExamSerializer(TenantModelSerializer):
@@ -494,7 +529,10 @@ class OnlineExamSerializer(TenantModelSerializer):
     class Meta(TenantModelSerializer.Meta):
         model = OnlineExam
         fields = "__all__"
-        read_only_fields = TenantModelSerializer.Meta.read_only_fields + ("created_by",)
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + (
+            "created_by", "is_published", "published_by", "published_at",
+            "unpublished_reason",
+        )
 
 
 class ExamSubmissionSerializer(TenantModelSerializer):
@@ -513,11 +551,24 @@ class ExamSubmissionReviewSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentOnlineExamSubmission
         fields = "__all__"
-        read_only_fields = [
-            "id", "school", "branch", "student", "exam", "started_at",
-            "submitted_at", "answers_json", "auto_score", "status", "created_at",
-            "updated_at", "is_archived", "archived_at", "archived_by",
-        ]
+        read_only_fields = [field.name for field in StudentOnlineExamSubmission._meta.fields]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if user and user.is_authenticated:
+            from apps.accounts.api_permissions import has_school_roles
+            is_student_or_guardian = has_school_roles(
+                user, instance.school, {"student", "guardian"},
+            )
+            if is_student_or_guardian and not instance.result_published:
+                for field in (
+                    "auto_score", "manual_score", "final_score",
+                    "teacher_feedback", "graded_by",
+                ):
+                    data.pop(field, None)
+        return data
 
 
 class ExamCommitteeSerializer(TenantModelSerializer):
@@ -526,9 +577,22 @@ class ExamCommitteeSerializer(TenantModelSerializer):
         fields = "__all__"
 
 
+class ExamCommitteeProctorSerializer(TenantModelSerializer):
+    teacher_name = serializers.CharField(source="teacher.user.get_full_name", read_only=True)
+    committee_name = serializers.CharField(source="committee.name", read_only=True)
+
+    class Meta(TenantModelSerializer.Meta):
+        model = ExamCommitteeProctor
+        fields = "__all__"
+        read_only_fields = TenantModelSerializer.Meta.read_only_fields + (
+            "assigned_by", "assigned_at", "teacher_name", "committee_name",
+        )
+
+
 class ExamSeatingSerializer(TenantModelSerializer):
     student_name = serializers.CharField(source="student.get_full_name", read_only=True)
     committee_name = serializers.CharField(source="committee.name", read_only=True)
+    secret_code = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta(TenantModelSerializer.Meta):
         model = ExamSeating

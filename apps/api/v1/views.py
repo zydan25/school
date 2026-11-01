@@ -42,9 +42,13 @@ from apps.accounting.models import (
 from apps.accounting.services.auto_posting import reverse_journal_entry
 from apps.assets.models import AssetDepreciationEntry, FixedAsset
 from apps.assessments.models import (
-    GradeBook, OnlineExam, QuestionBank, StudentOnlineExamSubmission,
+    ExamCommittee, GradeBook, OnlineExam, QuestionBank,
+    StudentOnlineExamSubmission,
 )
-from apps.assignments.models import Homework, HomeworkSubmission
+from apps.assignments.models import (
+    Homework, HomeworkSubmission, HomeworkSubmissionAttempt,
+)
+from apps.auditlog.services import record_event
 from apps.inventory.models import (
     InventoryItem, PurchaseOrder, Supplier, VendorInvoice, Warehouse,
 )
@@ -71,8 +75,8 @@ from apps.api.v1.serializers import (
     ClassroomSerializer, ClassScheduleSerializer, ConversationCreateSerializer,
     ConversationMessageSerializer,
     CostCenterSerializer, DailyLessonLogSerializer, DepartmentSerializer,
-    EducationalStageSerializer, ExamCommitteeSerializer, ExamPaperQuestionSerializer,
-    ExamSeatingSerializer, ExamSubmissionReviewSerializer,
+    EducationalStageSerializer, ExamCommitteeProctorSerializer, ExamCommitteeSerializer,
+    ExamPaperQuestionSerializer, ExamSeatingSerializer, ExamSubmissionReviewSerializer,
     ExpenseCategorySerializer, FiscalPeriodSerializer, FiscalYearSerializer,
     FixedAssetSerializer, GradeBookSerializer, GradeLevelSerializer,
     GuardianSerializer, HomeworkSerializer, HomeworkSubmissionSerializer,
@@ -823,6 +827,33 @@ class HomeworkViewSet(TenantModelViewSet):
                 raise PermissionDenied("لا يمكنك إسناد واجب لمادة أو شعبة غير مسندة إليك.")
         serializer.save(school=school, teacher=teacher)
 
+    def perform_update(self, serializer):
+        school = self.get_school()
+        instance = serializer.instance
+        teacher = user_teacher_profiles(self.request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
+        section = serializer.validated_data.get("section", instance.section)
+        subject = serializer.validated_data.get("subject", instance.subject)
+        if not is_admin(self.request.user, school):
+            if not teacher or instance.teacher_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك تعديل واجب أسنده معلم آخر.")
+            assigned = TeacherAssignment.objects.filter(
+                school=school, teacher=teacher, section=section,
+                subject=subject, academic_year=section.academic_year,
+                is_archived=False,
+            ).exists()
+            if not assigned:
+                raise PermissionDenied("لا يمكنك نقل الواجب إلى مادة أو شعبة غير مسندة إليك.")
+        serializer.save(teacher=instance.teacher)
+        record_event(
+            action="homework.updated",
+            description="تم تعديل بيانات الواجب.",
+            actor=self.request.user, school=school, obj=instance,
+            metadata={"subject_id": str(subject.pk), "section_id": str(section.pk)},
+            request=self.request,
+        )
+
 
 class HomeworkSubmissionViewSet(TenantModelViewSet):
     serializer_class = HomeworkSubmissionSerializer
@@ -831,15 +862,17 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
     action_role_map = {
         "list": ADMIN_ROLES | {"teacher", "student", "guardian"},
         "retrieve": ADMIN_ROLES | {"teacher", "student", "guardian"},
-        "submit": {"student"} | ADMIN_ROLES,
+        "submit": {"student"},
         "grade": TEACHER_ROLES,
+        "request_resubmission": TEACHER_ROLES,
+        "attempt_attachment": ADMIN_ROLES | {"teacher", "student", "guardian"},
     }
 
     def get_queryset(self):
         school = self.get_school()
         qs = HomeworkSubmission.objects.filter(
             school=school, is_archived=False,
-        ).select_related("homework", "student", "graded_by")
+        ).select_related("homework", "student", "graded_by").prefetch_related("attempts")
         if not is_admin(self.request.user, school):
             allowed = Q(pk__in=[])
             if has_school_roles(self.request.user, school, {"student"}):
@@ -853,7 +886,9 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
                         school=school, is_archived=False,
                     ))
             if has_school_roles(self.request.user, school, {"teacher"}):
-                teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
+                teacher = user_teacher_profiles(self.request.user, school).filter(
+                    is_active_teaching=True,
+                ).first()
                 if teacher:
                     allowed |= Q(homework__teacher=teacher)
             qs = qs.filter(allowed)
@@ -875,7 +910,7 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         detail=False, methods=["post"], url_path="submit",
         parser_classes=[MultiPartParser, FormParser, JSONParser],
     )
-    def submit(self, request):
+    def submit(self, request, **kwargs):
         school = self.get_school()
         student = user_student_profiles(request.user, school).first()
         if not student or not has_school_roles(request.user, school, {"student"}):
@@ -886,6 +921,8 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         )
         if homework.section_id != student.section_id:
             raise PermissionDenied("الواجب لا يخص الشعبة الحالية للطالب.")
+        if homework.branch_id and student.branch_id and homework.branch_id != student.branch_id:
+            raise PermissionDenied("الواجب لا يخص فرع الطالب.")
         attachment = request.FILES.get("attachment")
         if attachment:
             extension = os.path.splitext(attachment.name)[1].lower()
@@ -893,66 +930,216 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
                 raise ValidationError({"attachment": "نوع الملف غير مدعوم."})
             if attachment.size > 15 * 1024 * 1024:
                 raise ValidationError({"attachment": "الحد الأقصى لحجم المرفق 15 ميجابايت."})
-        late = timezone.now() > homework.due_date
+
+        now = timezone.now()
+        late = now > homework.due_date
+        attempt_status = (
+            HomeworkSubmissionAttempt.Status.LATE
+            if late else HomeworkSubmissionAttempt.Status.SUBMITTED
+        )
         with transaction.atomic():
+            # Lock the homework row as well: the first-ever submission has no
+            # existing HomeworkSubmission row to lock yet.
+            homework = Homework.objects.select_for_update().get(
+                pk=homework.pk, school=school, is_archived=False, is_active=True,
+            )
             existing = HomeworkSubmission.objects.select_for_update().filter(
                 school=school, homework=homework, student=student,
                 is_archived=False,
             ).first()
             created = existing is None
             if existing and existing.status == HomeworkSubmission.Status.GRADED:
-                raise ValidationError("تم تصحيح هذا الواجب ولا يمكن استبدال التسليم.")
+                raise ValidationError("تم تصحيح هذا الواجب. لا يمكن إعادة التسليم بعد التصحيح.")
+            if existing and existing.status != HomeworkSubmission.Status.RESUBMIT:
+                raise ValidationError("لا توجد موافقة من المعلم على إعادة التسليم لهذا الواجب.")
             if created:
                 existing = HomeworkSubmission(
-                    school=school, homework=homework, student=student,
+                    school=school, branch=homework.branch or student.branch,
+                    homework=homework, student=student,
                 )
-            existing.submission_text = request.data.get("submission_text", "")
+                existing.save()
+
+            next_number = (
+                existing.attempts.filter(is_archived=False).aggregate(value=Max("attempt_number"))["value"] or 0
+            ) + 1
+            attempt = HomeworkSubmissionAttempt(
+                school=school,
+                branch=existing.branch,
+                submission=existing,
+                attempt_number=next_number,
+                submission_text=request.data.get("submission_text", ""),
+                status=attempt_status,
+                submitted_at=now,
+            )
             if attachment:
-                existing.attachment = attachment
+                attempt.attachment = attachment
+            attempt.save()
+
+            existing.submission_text = attempt.submission_text
             existing.status = (
                 HomeworkSubmission.Status.LATE
                 if late else HomeworkSubmission.Status.SUBMITTED
             )
-            existing.submitted_at = timezone.now()
-            existing.save()
+            existing.submitted_at = now
+            existing.score = None
+            existing.graded_by = None
+            existing.graded_at = None
+            existing.teacher_feedback = ""
+            if attempt.attachment:
+                existing.attachment.name = attempt.attachment.name
+            existing.save(update_fields=[
+                "submission_text", "status", "submitted_at", "score",
+                "graded_by", "graded_at", "teacher_feedback", "attachment",
+                "updated_at",
+            ])
+            record_event(
+                action="homework.submission_attempt_created",
+                description="تم حفظ محاولة تسليم واجب دون استبدال المحاولات السابقة.",
+                actor=request.user, school=school, obj=attempt,
+                metadata={
+                    "homework_id": str(homework.pk),
+                    "student_id": str(student.pk),
+                    "attempt_number": next_number,
+                    "late": late,
+                },
+                request=request,
+            )
+        existing.refresh_from_db()
         return Response(
             self.get_serializer(existing).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
-    @action(detail=True, methods=["post"], url_path="grade")
-    def grade(self, request, pk=None):
+    @action(detail=True, methods=["post"], url_path="request-resubmission")
+    def request_resubmission(self, request, pk=None, **kwargs):
         school = self.get_school()
         submission = self.get_object()
-        require_school_role_or_permission(request, school, TEACHER_ROLES)
-        teacher = user_teacher_profiles(request.user, school).filter(is_active_teaching=True).first()
+        teacher = user_teacher_profiles(request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
         if not is_admin(request.user, school):
             if not teacher or submission.homework.teacher_id != teacher.pk:
-                raise PermissionDenied("لا يمكنك تصحيح تسليم واجب لمعلم آخر.")
-        try:
-            score = Decimal(str(request.data.get("score")))
-        except Exception:
-            raise ValidationError({"score": "الدرجة المدخلة غير صحيحة."})
-        if score < 0 or score > submission.homework.max_score:
-            raise ValidationError({
-                "score": f"الدرجة يجب أن تكون بين صفر و {submission.homework.max_score}.",
-            })
-        submission.score = score
-        submission.teacher_feedback = request.data.get("teacher_feedback", "")
-        submission.graded_by = teacher
-        submission.graded_at = timezone.now()
-        submission.status = HomeworkSubmission.Status.GRADED
+                raise PermissionDenied("لا يمكنك طلب إعادة تسليم واجب لا تشرف عليه.")
+        if submission.status not in {
+            HomeworkSubmission.Status.SUBMITTED,
+            HomeworkSubmission.Status.LATE,
+        }:
+            raise ValidationError("لا يمكن طلب إعادة التسليم إلا بعد وصول محاولة قابلة للمراجعة.")
+        reason = str(request.data.get("reason", "")).strip()
+        if not reason:
+            raise ValidationError({"reason": "اذكر سبب طلب إعادة التسليم ليظهر للطالب."})
+        submission.status = HomeworkSubmission.Status.RESUBMIT
+        submission.teacher_feedback = reason[:5000]
+        submission.score = None
+        submission.graded_by = None
+        submission.graded_at = None
         submission.save(update_fields=[
-            "score", "teacher_feedback", "graded_by", "graded_at",
-            "status", "updated_at",
+            "status", "teacher_feedback", "score", "graded_by",
+            "graded_at", "updated_at",
         ])
+        record_event(
+            action="homework.resubmission_requested",
+            description="طلب المعلم إعادة تسليم الواجب مع حفظ المحاولة السابقة.",
+            actor=request.user, school=school, obj=submission,
+            metadata={"reason": reason[:500], "homework_id": str(submission.homework_id)},
+            request=request,
+        )
         return Response(self.get_serializer(submission).data)
+
+    @action(
+        detail=True, methods=["get"],
+        url_path=r"attempts/(?P<attempt_id>[^/.]+)/attachment",
+    )
+    def attempt_attachment(self, request, pk=None, attempt_id=None, **kwargs):
+        submission = self.get_object()
+        attempt = get_object_or_404(
+            HomeworkSubmissionAttempt.objects.filter(
+                school=self.get_school(), submission=submission,
+                is_archived=False,
+            ),
+            pk=attempt_id,
+        )
+        if not attempt.attachment:
+            raise Http404("لا يوجد مرفق لهذه المحاولة.")
+        return FileResponse(
+            attempt.attachment.open("rb"),
+            as_attachment=True,
+            filename=os.path.basename(attempt.attachment.name),
+        )
+
+    @action(detail=True, methods=["post"], url_path="grade")
+    def grade(self, request, pk=None, **kwargs):
+        school = self.get_school()
+        with transaction.atomic():
+            submission = get_object_or_404(
+                HomeworkSubmission.objects.select_for_update().select_related("homework"),
+                pk=pk, school=school, is_archived=False,
+            )
+            teacher = user_teacher_profiles(request.user, school).filter(
+                is_active_teaching=True,
+            ).first()
+            if not is_admin(request.user, school):
+                if not teacher or submission.homework.teacher_id != teacher.pk:
+                    raise PermissionDenied("لا يمكنك تصحيح تسليم واجب لمعلم آخر.")
+            if submission.status not in {
+                HomeworkSubmission.Status.SUBMITTED,
+                HomeworkSubmission.Status.LATE,
+            }:
+                raise ValidationError("يجب أن تكون المحاولة مستلمة وغير معلقة لإعادة التسليم قبل التصحيح.")
+            try:
+                score = Decimal(str(request.data.get("score")))
+            except Exception:
+                raise ValidationError({"score": "الدرجة المدخلة غير صحيحة."})
+            if score < 0 or score > submission.homework.max_score:
+                raise ValidationError({
+                    "score": f"الدرجة يجب أن تكون بين صفر و {submission.homework.max_score}.",
+                })
+            submission.score = score
+            submission.teacher_feedback = request.data.get("teacher_feedback", "")
+            submission.graded_by = teacher
+            submission.graded_at = timezone.now()
+            submission.status = HomeworkSubmission.Status.GRADED
+            submission.save(update_fields=[
+                "score", "teacher_feedback", "graded_by", "graded_at",
+                "status", "updated_at",
+            ])
+            record_event(
+                action="homework.submission_graded",
+                description="تم تصحيح محاولة تسليم الواجب.",
+                actor=request.user, school=school, obj=submission,
+                metadata={"score": str(score), "max_score": str(submission.homework.max_score)},
+                request=request,
+            )
+        return Response(self.get_serializer(submission).data)
+
+    def perform_destroy(self, instance):
+        if instance.attempts.filter(is_archived=False).exists():
+            raise ValidationError("لا يمكن أرشفة سجل تسليم يحتوي على محاولات تاريخية.")
+        raise MethodNotAllowed("DELETE", detail="لا تحذف سجلات تسليم الواجبات؛ استخدم الأرشفة من إجراء إداري معتمد.")
 
 
 class AssessmentTypeViewSet(TenantModelViewSet):
     serializer_class = AssessmentTypeSerializer
     read_roles = READ_ROLES
     write_roles = ACADEMIC_ADMIN_ROLES
+
+    def perform_create(self, serializer):
+        with transaction.atomic():
+            instance = serializer.save(school=self.get_school())
+            try:
+                instance.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            instance.save()
+
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            instance = serializer.save()
+            try:
+                instance.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            instance.save()
 
 
 class GradeBookViewSet(TenantModelViewSet):
@@ -962,20 +1149,34 @@ class GradeBookViewSet(TenantModelViewSet):
     action_role_map = {
         "list": ADMIN_ROLES | {"teacher", "student", "guardian"},
         "retrieve": ADMIN_ROLES | {"teacher", "student", "guardian"},
+        "weighted_summary": ADMIN_ROLES | {"teacher", "student", "guardian"},
+        "create": TEACHER_ROLES,
+        "update": TEACHER_ROLES,
+        "partial_update": TEACHER_ROLES,
+        "submit_for_approval": TEACHER_ROLES,
+        "approve": ACADEMIC_ADMIN_ROLES,
         "publish": ACADEMIC_ADMIN_ROLES,
+        "reopen": ACADEMIC_ADMIN_ROLES,
     }
 
     def get_queryset(self):
         school = self.get_school()
         qs = GradeBook.objects.filter(
             school=school, is_archived=False,
-        ).select_related("student", "subject", "academic_term", "assessment_type", "graded_by")
+        ).select_related(
+            "student", "subject", "academic_term", "assessment_type", "graded_by",
+            "submitted_by", "approved_by", "published_by",
+        )
         if not is_admin(self.request.user, school):
             allowed = Q(pk__in=[])
             if has_school_roles(self.request.user, school, {"student"}):
                 student = user_student_profiles(self.request.user, school).first()
                 if student:
-                    allowed |= Q(student=student, is_published=True)
+                    allowed |= Q(
+                        student=student,
+                        is_published=True,
+                        workflow_status=GradeBook.WorkflowStatus.PUBLISHED,
+                    )
             if has_school_roles(self.request.user, school, {"guardian"}):
                 guardian = user_guardian_profiles(self.request.user, school).first()
                 if guardian:
@@ -984,6 +1185,7 @@ class GradeBookViewSet(TenantModelViewSet):
                             school=school, is_archived=False,
                         ),
                         is_published=True,
+                        workflow_status=GradeBook.WorkflowStatus.PUBLISHED,
                     )
             if has_school_roles(self.request.user, school, {"teacher"}):
                 teacher = user_teacher_profiles(self.request.user, school).filter(
@@ -1005,34 +1207,324 @@ class GradeBookViewSet(TenantModelViewSet):
             qs = qs.filter(academic_term_id=term_id)
         if student_id and is_admin(self.request.user, school):
             qs = qs.filter(student_id=student_id)
+        status_filter = self.request.query_params.get("workflow_status")
+        if status_filter and is_admin(self.request.user, school):
+            qs = qs.filter(workflow_status=status_filter)
         return qs.order_by("-graded_at")
+
+    def _assigned_teacher(self, student, subject, academic_year, school):
+        teacher = user_teacher_profiles(
+            self.request.user, school,
+        ).filter(is_active_teaching=True).first()
+        if not is_admin(self.request.user, school):
+            if teacher is None:
+                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
+            assigned = TeacherAssignment.objects.filter(
+                school=school, teacher=teacher, subject=subject,
+                section=student.section, academic_year=academic_year,
+                is_archived=False,
+            ).exists()
+            if not assigned:
+                raise PermissionDenied("المادة أو شعبة الطالب غير مسندة إليك.")
+        return teacher
 
     def perform_create(self, serializer):
         school = self.get_school()
-        teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
         data = serializer.validated_data
         academic_year = (
             data["academic_term"].academic_year
             if data.get("academic_term") else data["student"].academic_year
         )
-        if not is_admin(self.request.user, school):
-            if teacher is None:
-                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
-            assignment = TeacherAssignment.objects.filter(
-                school=school, teacher=teacher, subject=data["subject"],
-                section=data["student"].section, academic_year=academic_year,
-                is_archived=False,
-            ).exists()
-            if not assignment:
-                raise PermissionDenied("المادة أو شعبة الطالب غير مسندة إليك.")
-        serializer.save(school=school, graded_by=teacher, graded_at=timezone.now())
+        teacher = self._assigned_teacher(
+            data["student"], data["subject"], academic_year, school,
+        )
+        with transaction.atomic():
+            entry = serializer.save(
+                school=school, graded_by=teacher, graded_at=timezone.now(),
+                workflow_status=GradeBook.WorkflowStatus.DRAFT,
+                is_published=False,
+                branch=data["student"].branch,
+            )
+            try:
+                entry.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            entry.save()
+
+    def perform_update(self, serializer):
+        entry = serializer.instance
+        if entry.workflow_status != GradeBook.WorkflowStatus.DRAFT or entry.is_published:
+            raise ValidationError(
+                "لا يمكن تعديل درجة مرسلة أو معتمدة أو منشورة مباشرة؛ اطلب إعادة فتحها أولاً."
+            )
+        data = serializer.validated_data
+        student = data.get("student", entry.student)
+        subject = data.get("subject", entry.subject)
+        term = data.get("academic_term", entry.academic_term)
+        academic_year = term.academic_year if term else student.academic_year
+        teacher = self._assigned_teacher(student, subject, academic_year, self.get_school())
+        with transaction.atomic():
+            updated = serializer.save(graded_by=teacher, graded_at=timezone.now())
+            try:
+                updated.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            updated.save()
+        record_event(
+            action="gradebook.draft_updated",
+            description="تم تعديل درجة ما زالت في حالة المسودة.",
+            actor=self.request.user, school=self.get_school(), obj=entry,
+            metadata={"student_id": str(student.pk), "subject_id": str(subject.pk)},
+            request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        if instance.workflow_status != GradeBook.WorkflowStatus.DRAFT or instance.is_published:
+            raise ValidationError("لا يمكن أرشفة درجة مرسلة أو معتمدة أو منشورة؛ أعد فتحها واتبع مسار التصحيح.")
+        record_event(
+            action="gradebook.draft_archived",
+            description="تمت أرشفة مسودة درجة غير معتمدة.",
+            actor=self.request.user, school=self.get_school(), obj=instance,
+            request=self.request,
+        )
+        super().perform_destroy(instance)
+
+    @action(detail=False, methods=["get"], url_path="weighted-summary")
+    def weighted_summary(self, request, **kwargs):
+        school = self.get_school()
+        student = None
+        student_id = request.query_params.get("student_id")
+        subject_id = request.query_params.get("subject_id")
+        if not subject_id:
+            raise ValidationError({"subject_id": "معرف المادة مطلوب."})
+        if has_school_roles(request.user, school, {"student"}):
+            student = user_student_profiles(request.user, school).first()
+            if not student:
+                raise PermissionDenied("لا يوجد ملف طالب نشط مرتبط بحسابك.")
+        elif has_school_roles(request.user, school, {"guardian"}):
+            guardian = user_guardian_profiles(request.user, school).first()
+            student = guardian.children.filter(
+                pk=student_id, school=school, is_archived=False,
+            ).first() if guardian and student_id else None
+            if not student:
+                raise PermissionDenied("حدد أحد الأبناء المرتبطين بحسابك.")
+        else:
+            student = get_object_or_404(
+                Student, pk=student_id, school=school, is_archived=False,
+            ) if student_id else None
+            if not is_admin(request.user, school):
+                teacher = user_teacher_profiles(request.user, school).filter(
+                    is_active_teaching=True,
+                ).first()
+                if not teacher or not student:
+                    raise PermissionDenied("يجب أن يكون الطالب ضمن إسناداتك التدريسية.")
+                term_id = request.query_params.get("academic_term_id")
+                assignments = teacher.assignments.filter(
+                    school=school, section=student.section,
+                    subject_id=subject_id, is_archived=False,
+                )
+                term_id = request.query_params.get("academic_term_id")
+                if term_id:
+                    assignments = assignments.filter(academic_year_id__in=AcademicTerm.objects.filter(
+                        school=school, pk=term_id,
+                    ).values_list("academic_year_id", flat=True))
+                elif student.academic_year_id:
+                    assignments = assignments.filter(academic_year_id=student.academic_year_id)
+                if not assignments.exists():
+                    raise PermissionDenied("لا يمكنك عرض ملخص درجات طالب خارج المادة أو الشعبة المسندة إليك.")
+        if student is None:
+            raise ValidationError({"student_id": "معرف الطالب مطلوب لهذا التقرير."})
+        entries = GradeBook.objects.filter(
+            school=school, student=student, subject_id=subject_id,
+            is_archived=False, is_published=True,
+            workflow_status=GradeBook.WorkflowStatus.PUBLISHED,
+        ).select_related("assessment_type")
+        term_id = request.query_params.get("academic_term_id")
+        if term_id:
+            entries = entries.filter(academic_term_id=term_id)
+
+        grouped = {}
+        unweighted = []
+        for entry in entries:
+            if not entry.assessment_type_id:
+                unweighted.append(entry)
+                continue
+            component = grouped.setdefault(entry.assessment_type_id, {
+                "type": entry.assessment_type,
+                "score": Decimal("0.00"),
+                "max_score": Decimal("0.00"),
+                "count": 0,
+            })
+            component["score"] += entry.score
+            component["max_score"] += entry.max_score
+            component["count"] += 1
+
+        components = []
+        weighted_sum = Decimal("0.00")
+        included_weight = Decimal("0.00")
+        for component in grouped.values():
+            assessment_type = component["type"]
+            weight = assessment_type.weight_percentage
+            percentage = (
+                component["score"] / component["max_score"] * Decimal("100.00")
+                if component["max_score"] else Decimal("0.00")
+            )
+            weighted_sum += percentage * weight
+            included_weight += weight
+            components.append({
+                "assessment_type_id": str(assessment_type.pk),
+                "assessment_type": assessment_type.name,
+                "weight_percentage": str(weight),
+                "average_percentage": str(percentage.quantize(Decimal("0.01"))),
+                "weighted_contribution": str(
+                    (percentage * weight / Decimal("100.00")).quantize(Decimal("0.01"))
+                ),
+                "records_count": component["count"],
+            })
+        weighted_score = (
+            weighted_sum / included_weight
+            if included_weight else None
+        )
+        return Response({
+            "student_id": str(student.pk),
+            "student_name": student.get_full_name(),
+            "subject_id": str(subject_id),
+            "academic_term_id": str(term_id) if term_id else None,
+            "weighted_score_percentage": (
+                str(weighted_score.quantize(Decimal("0.01")))
+                if weighted_score is not None else None
+            ),
+            "included_weight_percentage": str(included_weight),
+            "components": components,
+            "unweighted_records_count": len(unweighted),
+        })
+
+    @action(detail=True, methods=["post"], url_path="submit-for-approval")
+    def submit_for_approval(self, request, pk=None, **kwargs):
+        entry = self.get_object()
+        if not is_admin(request.user, self.get_school()):
+            teacher = user_teacher_profiles(request.user, self.get_school()).filter(
+                is_active_teaching=True,
+            ).first()
+            if not teacher or entry.graded_by_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك إرسال درجة لم تُرصد بواسطة حسابك.")
+        if entry.workflow_status != GradeBook.WorkflowStatus.DRAFT:
+            raise ValidationError("لا يمكن إرسال الدرجة للمراجعة إلا من حالة المسودة.")
+        entry.workflow_status = GradeBook.WorkflowStatus.SUBMITTED
+        entry.submitted_by = request.user
+        entry.submitted_at = timezone.now()
+        entry.approved_by = None
+        entry.approved_at = None
+        entry.published_by = None
+        entry.published_at = None
+        entry.is_published = False
+        entry.save(update_fields=[
+            "workflow_status", "submitted_by", "submitted_at", "approved_by",
+            "approved_at", "published_by", "published_at", "is_published",
+            "updated_at",
+        ])
+        record_event(
+            action="gradebook.submitted_for_approval",
+            description="أرسلت الدرجة للمراجعة والاعتماد.",
+            actor=request.user, school=self.get_school(), obj=entry, request=request,
+        )
+        return Response(self.get_serializer(entry).data)
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None, **kwargs):
+        entry = self.get_object()
+        if entry.workflow_status != GradeBook.WorkflowStatus.SUBMITTED:
+            raise ValidationError("لا يعتمد إلا سجل أرسل للمراجعة.")
+        entry.workflow_status = GradeBook.WorkflowStatus.APPROVED
+        entry.approved_by = request.user
+        entry.approved_at = timezone.now()
+        entry.save(update_fields=[
+            "workflow_status", "approved_by", "approved_at", "updated_at",
+        ])
+        record_event(
+            action="gradebook.approved",
+            description="تم اعتماد الدرجة قبل نشرها.",
+            actor=request.user, school=self.get_school(), obj=entry, request=request,
+        )
+        return Response(self.get_serializer(entry).data)
 
     @action(detail=True, methods=["post"], url_path="publish")
-    def publish(self, request, pk=None):
+    def publish(self, request, pk=None, **kwargs):
         entry = self.get_object()
-        entry.is_published = bool(request.data.get("is_published", True))
-        entry.save(update_fields=["is_published", "updated_at"])
-        return Response({"id": str(entry.pk), "is_published": entry.is_published})
+        publish = request.data.get("is_published", True)
+        if not isinstance(publish, bool):
+            raise ValidationError({"is_published": "أرسل قيمة منطقية true أو false."})
+        if publish:
+            if entry.workflow_status == GradeBook.WorkflowStatus.PUBLISHED and entry.is_published:
+                return Response({"id": str(entry.pk), "is_published": True})
+            if entry.workflow_status != GradeBook.WorkflowStatus.APPROVED:
+                raise ValidationError("يجب اعتماد الدرجة قبل نشرها.")
+            entry.workflow_status = GradeBook.WorkflowStatus.PUBLISHED
+            entry.is_published = True
+            entry.published_by = request.user
+            entry.published_at = timezone.now()
+            action_name = "gradebook.published"
+            description = "تم نشر الدرجة بعد اعتمادها."
+            metadata = {}
+        else:
+            reason = str(request.data.get("reason", "")).strip()
+            if not reason:
+                raise ValidationError({"reason": "سبب إخفاء الدرجة مطلوب للتدقيق."})
+            if entry.workflow_status != GradeBook.WorkflowStatus.PUBLISHED or not entry.is_published:
+                raise ValidationError("الدرجة ليست منشورة حالياً.")
+            entry.workflow_status = GradeBook.WorkflowStatus.APPROVED
+            entry.is_published = False
+            entry.published_by = None
+            entry.published_at = None
+            action_name = "gradebook.unpublished"
+            description = "تم إخفاء الدرجة المنشورة."
+            metadata = {"reason": reason[:500]}
+        entry.save(update_fields=[
+            "workflow_status", "is_published", "published_by",
+            "published_at", "updated_at",
+        ])
+        record_event(
+            action=action_name, description=description,
+            actor=request.user, school=self.get_school(), obj=entry,
+            metadata=metadata, request=request,
+        )
+        return Response({
+            "id": str(entry.pk), "workflow_status": entry.workflow_status,
+            "is_published": entry.is_published,
+        })
+
+    @action(detail=True, methods=["post"], url_path="reopen")
+    def reopen(self, request, pk=None, **kwargs):
+        entry = self.get_object()
+        reason = str(request.data.get("reason", "")).strip()
+        if not reason:
+            raise ValidationError({"reason": "سبب إعادة فتح الدرجة مطلوب."})
+        if entry.workflow_status not in {
+            GradeBook.WorkflowStatus.APPROVED,
+            GradeBook.WorkflowStatus.PUBLISHED,
+        }:
+            raise ValidationError("يمكن إعادة فتح الدرجة المعتمدة أو المنشورة فقط.")
+        entry.workflow_status = GradeBook.WorkflowStatus.DRAFT
+        entry.is_published = False
+        entry.revision_reason = reason[:500]
+        entry.submitted_by = None
+        entry.submitted_at = None
+        entry.approved_by = None
+        entry.approved_at = None
+        entry.published_by = None
+        entry.published_at = None
+        entry.save(update_fields=[
+            "workflow_status", "is_published", "revision_reason",
+            "submitted_by", "submitted_at", "approved_by", "approved_at",
+            "published_by", "published_at", "updated_at",
+        ])
+        record_event(
+            action="gradebook.reopened",
+            description="أعيد فتح درجة سبق اعتمادها أو نشرها للتصحيح.",
+            actor=request.user, school=self.get_school(), obj=entry,
+            metadata={"reason": reason[:500]}, request=request,
+        )
+        return Response(self.get_serializer(entry).data)
 
 
 class QuestionBankViewSet(TenantModelViewSet):
@@ -1086,7 +1578,67 @@ class QuestionBankViewSet(TenantModelViewSet):
                 assignments = assignments.filter(section__grade=data["grade_level"])
             if not assignments.exists():
                 raise PermissionDenied("لا يمكنك إضافة سؤال لمادة أو صف غير مسند إليك.")
+        candidate = QuestionBank(
+            **data,
+            school=school,
+            created_by=self.request.user,
+        )
+        try:
+            candidate.full_clean()
+        except DjangoValidationError as exc:
+            raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
         serializer.save(school=school, created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        question = serializer.instance
+        teacher = user_teacher_profiles(self.request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
+        if not is_admin(self.request.user, school):
+            if not teacher or question.created_by_id != self.request.user.pk:
+                raise PermissionDenied("يمكن للمعلم تعديل الأسئلة التي أنشأها بنفسه فقط.")
+        if question.included_in_exams.filter(
+            Q(is_published=True) | Q(submissions__is_archived=False),
+            is_archived=False,
+        ).distinct().exists():
+            raise ValidationError("لا يمكن تعديل سؤال مرتبط باختبار منشور أو بدأت له محاولات.")
+        data = serializer.validated_data
+        subject = data.get("subject", question.subject)
+        grade_level = data.get("grade_level", question.grade_level)
+        if not is_admin(self.request.user, school):
+            assigned = teacher.assignments.filter(
+                school=school, subject=subject, is_archived=False,
+            )
+            if grade_level:
+                assigned = assigned.filter(section__grade=grade_level)
+            if not assigned.exists():
+                raise PermissionDenied("لا يمكنك نقل السؤال إلى مادة أو صف غير مسند إليك.")
+        with transaction.atomic():
+            updated = serializer.save()
+            try:
+                updated.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            updated.save()
+        record_event(
+            action="assessment.question_updated",
+            description="تم تعديل سؤال من بنك الأسئلة.",
+            actor=self.request.user, school=school, obj=updated,
+            metadata={"subject_id": str(updated.subject_id)},
+            request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        if instance.included_in_exams.exists():
+            raise ValidationError("لا يمكن أرشفة سؤال مرتبط باختبار؛ احتفظ به كسجل تاريخي.")
+        record_event(
+            action="assessment.question_archived",
+            description="تمت أرشفة سؤال غير مستخدم في أي اختبار.",
+            actor=self.request.user, school=self.get_school(), obj=instance,
+            request=self.request,
+        )
+        super().perform_destroy(instance)
 
 
 class OnlineExamViewSet(TenantModelViewSet):
@@ -1097,8 +1649,10 @@ class OnlineExamViewSet(TenantModelViewSet):
         "list": ADMIN_ROLES | {"teacher", "student"},
         "retrieve": ADMIN_ROLES | {"teacher", "student"},
         "paper": {"student"} | ADMIN_ROLES,
-        "start": {"student"} | ADMIN_ROLES,
-        "submit": {"student"} | ADMIN_ROLES,
+        "start": {"student"},
+        "submit": {"student"},
+        "publish": ACADEMIC_ADMIN_ROLES,
+        "report": ACADEMIC_ADMIN_ROLES,
     }
 
     def get_queryset(self):
@@ -1111,13 +1665,21 @@ class OnlineExamViewSet(TenantModelViewSet):
             if has_school_roles(self.request.user, school, {"student"}):
                 student = user_student_profiles(self.request.user, school).first()
                 if student:
-                    allowed |= (
-                        Q(is_published=True)
-                        & (
-                            Q(section=student.section)
-                            | Q(section__isnull=True, grade_level=student.grade_level)
-                        )
+                    student_exam_scope = Q(is_published=True) & (
+                        Q(section=student.section)
+                        | Q(section__isnull=True, grade_level=student.grade_level)
                     )
+                    if student.academic_year_id:
+                        student_exam_scope &= Q(
+                            academic_term__academic_year_id=student.academic_year_id,
+                        )
+                    if student.branch_id:
+                        student_exam_scope &= Q(
+                            Q(branch__isnull=True) | Q(branch=student.branch),
+                        )
+                    else:
+                        student_exam_scope &= Q(branch__isnull=True)
+                    allowed |= student_exam_scope
             if has_school_roles(self.request.user, school, {"teacher"}):
                 teacher = user_teacher_profiles(self.request.user, school).filter(
                     is_active_teaching=True,
@@ -1140,7 +1702,9 @@ class OnlineExamViewSet(TenantModelViewSet):
 
     def perform_create(self, serializer):
         school = self.get_school()
-        teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
+        teacher = user_teacher_profiles(self.request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
         data = serializer.validated_data
         section = data.get("section")
         academic_year = data["academic_term"].academic_year
@@ -1153,10 +1717,16 @@ class OnlineExamViewSet(TenantModelViewSet):
             raise ValidationError({"end_time": "وقت انتهاء الاختبار يجب أن يكون بعد بدايته."})
         if data["passing_marks"] > data["total_marks"]:
             raise ValidationError({"passing_marks": "درجة النجاح لا يمكن أن تتجاوز الدرجة العظمى."})
+        if data["duration_minutes"] < 1:
+            raise ValidationError({"duration_minutes": "مدة الاختبار يجب أن تكون دقيقة واحدة على الأقل."})
         questions = list(data.get("questions", []))
         question_total = sum((q.default_marks for q in questions), Decimal("0.00"))
         if question_total > data["total_marks"]:
             raise ValidationError({"questions": "مجموع درجات الأسئلة يتجاوز الدرجة العظمى للاختبار."})
+        if any(q.school_id != school.pk for q in questions):
+            raise ValidationError({"questions": "يجب أن تنتمي كل أسئلة الاختبار إلى المدرسة النشطة."})
+        if any(q.subject_id != data["subject"].pk for q in questions):
+            raise ValidationError({"questions": "يجب أن تنتمي كل أسئلة الاختبار إلى المادة المختارة."})
         if not is_admin(self.request.user, school):
             if teacher is None:
                 raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
@@ -1170,19 +1740,153 @@ class OnlineExamViewSet(TenantModelViewSet):
                 assignments = assignments.filter(section__grade=data["grade_level"])
             if not assignments.exists():
                 raise PermissionDenied("لا يمكنك إنشاء اختبار لمادة أو صف غير مسند إليك.")
-        serializer.save(school=school, created_by=self.request.user)
+        with transaction.atomic():
+            exam = serializer.save(
+                school=school, created_by=self.request.user, is_published=False,
+                published_by=None, published_at=None,
+            )
+            try:
+                exam.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            exam.save()
+
+    def perform_update(self, serializer):
+        exam = serializer.instance
+        school = self.get_school()
+        if exam.is_published:
+            raise ValidationError("ألغ نشر الاختبار أولاً قبل تعديل بياناته.")
+        if exam.submissions.filter(is_archived=False).exists():
+            raise ValidationError("لا يمكن تعديل اختبار بعد بدء أي محاولة؛ أنشئ نسخة جديدة.")
+        data = serializer.validated_data
+        subject = data.get("subject", exam.subject)
+        academic_term = data.get("academic_term", exam.academic_term)
+        grade_level = data.get("grade_level", exam.grade_level)
+        section = data.get("section", exam.section)
+        duration_minutes = data.get("duration_minutes", exam.duration_minutes)
+        total_marks = data.get("total_marks", exam.total_marks)
+        passing_marks = data.get("passing_marks", exam.passing_marks)
+        start_time = data.get("start_time", exam.start_time)
+        end_time = data.get("end_time", exam.end_time)
+        questions = list(data.get("questions", exam.questions.all()))
+        if end_time <= start_time or duration_minutes < 1 or passing_marks > total_marks:
+            raise ValidationError("بيانات التوقيت أو المدة أو درجات النجاح للاختبار غير صالحة.")
+        if section and (
+            section.school_id != school.pk or section.grade_id != grade_level.pk
+            or section.academic_year_id != academic_term.academic_year_id
+        ):
+            raise ValidationError({"section": "الشعبة يجب أن تتبع المدرسة والصف والسنة المحددة للاختبار."})
+        if any(question.school_id != school.pk or question.subject_id != subject.pk for question in questions):
+            raise ValidationError({"questions": "أسئلة الاختبار يجب أن تتبع المدرسة والمادة المختارة."})
+        if sum((question.default_marks for question in questions), Decimal("0.00")) > total_marks:
+            raise ValidationError({"questions": "مجموع درجات الأسئلة يتجاوز الدرجة العظمى للاختبار."})
+        teacher = user_teacher_profiles(self.request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
+        if not is_admin(self.request.user, school):
+            if teacher is None:
+                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك.")
+            academic_year = data.get("academic_term", exam.academic_term).academic_year
+            subject = data.get("subject", exam.subject)
+            section = data.get("section", exam.section)
+            grade_level = data.get("grade_level", exam.grade_level)
+            assigned = teacher.assignments.filter(
+                school=self.get_school(), subject=subject,
+                academic_year=academic_year, is_archived=False,
+            )
+            if section:
+                assigned = assigned.filter(section=section)
+            else:
+                assigned = assigned.filter(section__grade=grade_level)
+            if not assigned.exists():
+                raise PermissionDenied("لا يمكنك تعديل اختبار خارج المواد والشعب المسندة إليك.")
+        with transaction.atomic():
+            updated = serializer.save(is_published=False)
+            try:
+                updated.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            updated.save()
+
+    def perform_destroy(self, instance):
+        if instance.is_published or instance.submissions.filter(is_archived=False).exists():
+            raise ValidationError("لا يمكن أرشفة اختبار منشور أو لديه محاولات؛ ألغ نشره واحتفظ بسجله.")
+        super().perform_destroy(instance)
 
     def _student_can_take_exam(self, student, exam):
         if not student or not exam.is_published:
+            return False
+        if student.academic_year_id and exam.academic_term.academic_year_id != student.academic_year_id:
+            return False
+        if exam.branch_id and exam.branch_id != student.branch_id:
             return False
         if exam.section_id:
             return exam.section_id == student.section_id
         return exam.grade_level_id == student.grade_level_id
 
+    @action(detail=True, methods=["post"], url_path="publish")
+    def publish(self, request, pk=None, **kwargs):
+        exam = self.get_object()
+        publish = request.data.get("is_published", True)
+        if not isinstance(publish, bool):
+            raise ValidationError({"is_published": "أرسل قيمة منطقية true أو false."})
+        if publish:
+            if exam.is_published:
+                return Response({"id": str(exam.pk), "is_published": True})
+            if not exam.questions.exists():
+                raise ValidationError({"questions": "أضف سؤالاً واحداً على الأقل قبل نشر الاختبار."})
+            if exam.end_time <= exam.start_time or exam.passing_marks > exam.total_marks:
+                raise ValidationError("بيانات التوقيت أو درجات النجاح للاختبار غير صالحة.")
+            if exam.questions.exclude(school_id=exam.school_id).exists():
+                raise ValidationError({"questions": "يوجد سؤال لا يتبع المدرسة نفسها."})
+            if exam.questions.exclude(subject_id=exam.subject_id).exists():
+                raise ValidationError({"questions": "يوجد سؤال من مادة مختلفة عن مادة الاختبار."})
+            if sum((question.default_marks for question in exam.questions.all()), Decimal("0.00")) > exam.total_marks:
+                raise ValidationError({"questions": "مجموع درجات أسئلة الاختبار يتجاوز الدرجة العظمى."})
+            exam.is_published = True
+            exam.published_by = request.user
+            exam.published_at = timezone.now()
+            exam.unpublished_reason = ""
+            action_name = "assessment.exam_published"
+            description = "تم نشر الاختبار للطلاب بعد مراجعة بياناته وأسئلته."
+            metadata = {}
+        else:
+            reason = str(request.data.get("reason", "")).strip()
+            if not reason:
+                raise ValidationError({"reason": "سبب إلغاء نشر الاختبار مطلوب."})
+            if not exam.is_published:
+                return Response({"id": str(exam.pk), "is_published": False})
+            if exam.submissions.filter(
+                status=StudentOnlineExamSubmission.Status.IN_PROGRESS,
+                is_archived=False,
+            ).exists():
+                raise ValidationError("لا يمكن إلغاء نشر الاختبار أثناء وجود محاولات جارية.")
+            exam.is_published = False
+            exam.published_by = None
+            exam.published_at = None
+            exam.unpublished_reason = reason[:500]
+            action_name = "assessment.exam_unpublished"
+            description = "تم إلغاء نشر الاختبار مع تسجيل السبب."
+            metadata = {"reason": reason[:500]}
+        exam.save(update_fields=[
+            "is_published", "published_by", "published_at",
+            "unpublished_reason", "updated_at",
+        ])
+        record_event(
+            action=action_name, description=description,
+            actor=request.user, school=self.get_school(), obj=exam,
+            metadata=metadata, request=request,
+        )
+        return Response({"id": str(exam.pk), "is_published": exam.is_published})
+
     @action(detail=True, methods=["get"], url_path="paper")
-    def paper(self, request, pk=None):
+    def paper(self, request, pk=None, **kwargs):
         exam = self.get_object()
         student = user_student_profiles(request.user, self.get_school()).first()
+        if not has_school_roles(request.user, self.get_school(), {"student"}) and not is_admin(
+            request.user, self.get_school(),
+        ):
+            raise PermissionDenied("ورقة الاختبار متاحة للطالب المستهدف فقط.")
         if not is_admin(request.user, self.get_school()):
             if not self._student_can_take_exam(student, exam):
                 raise PermissionDenied("الاختبار غير متاح لهذا الطالب.")
@@ -1201,23 +1905,30 @@ class OnlineExamViewSet(TenantModelViewSet):
         })
 
     @action(detail=True, methods=["post"], url_path="start")
-    def start(self, request, pk=None):
+    def start(self, request, pk=None, **kwargs):
         exam = self.get_object()
         student = user_student_profiles(request.user, self.get_school()).first()
+        if not has_school_roles(request.user, self.get_school(), {"student"}):
+            raise PermissionDenied("بدء الاختبار متاح للطالب فقط.")
         if not self._student_can_take_exam(student, exam):
             raise PermissionDenied("هذا الاختبار غير متاح لحسابك.")
         now = timezone.now()
         if now < exam.start_time or now > exam.end_time:
             raise ValidationError("لا يمكن بدء الاختبار خارج الوقت المحدد.")
-        submission, created = StudentOnlineExamSubmission.objects.get_or_create(
-            school=self.get_school(), exam=exam, student=student,
-            defaults={
-                "started_at": now,
-                "status": StudentOnlineExamSubmission.Status.IN_PROGRESS,
-            },
-        )
-        if not created and submission.status != StudentOnlineExamSubmission.Status.IN_PROGRESS:
-            raise ValidationError("سبق تسليم هذا الاختبار.")
+        with transaction.atomic():
+            locked_exam = OnlineExam.objects.select_for_update().get(
+                pk=exam.pk, school=self.get_school(), is_archived=False,
+            )
+            submission, created = StudentOnlineExamSubmission.objects.get_or_create(
+                school=self.get_school(), exam=locked_exam, student=student,
+                defaults={
+                    "branch": exam.branch or student.branch,
+                    "started_at": now,
+                    "status": StudentOnlineExamSubmission.Status.IN_PROGRESS,
+                },
+            )
+            if not created and submission.status != StudentOnlineExamSubmission.Status.IN_PROGRESS:
+                raise ValidationError("سبق تسليم هذا الاختبار.")
         return Response({
             "submission_id": str(submission.pk),
             "started_at": submission.started_at,
@@ -1226,21 +1937,40 @@ class OnlineExamViewSet(TenantModelViewSet):
                 exam.end_time,
                 submission.started_at + timedelta(minutes=exam.duration_minutes),
             ),
+            "reconnected": not created,
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="submit")
-    def submit(self, request, pk=None):
+    def submit(self, request, pk=None, **kwargs):
         exam = self.get_object()
         student = user_student_profiles(request.user, self.get_school()).first()
+        if not has_school_roles(request.user, self.get_school(), {"student"}):
+            raise PermissionDenied("تسليم الاختبار متاح للطالب فقط.")
         if not self._student_can_take_exam(student, exam):
-            raise PermissionDenied("تسليم الاختبار متاح للطالب المستهدف فقط.")
+            raise PermissionDenied("تسليم الاختبار متاح للطالب المستهدف في سنته وفرعه فقط.")
         answers = request.data.get("answers")
         if not isinstance(answers, dict):
             raise ValidationError({"answers": "أرسل الإجابات ككائن JSON: question_id -> answer."})
         allowed_questions = list(exam.questions.all())
-        allowed_ids = {str(question.pk) for question in allowed_questions}
-        if set(answers) - allowed_ids:
+        question_map = {str(question.pk): question for question in allowed_questions}
+        if set(answers) - set(question_map):
             raise ValidationError({"answers": "تتضمن الإجابات سؤالاً لا ينتمي لهذا الاختبار."})
+        for question_id, answer in answers.items():
+            question = question_map[question_id]
+            if question.question_type == QuestionBank.QuestionType.MCQ:
+                valid_options = {
+                    str(option.get("id", "")).strip()
+                    for option in question.options_json
+                    if isinstance(option, dict) and option.get("id") is not None
+                }
+                if str(answer).strip() not in valid_options:
+                    raise ValidationError({"answers": f"اختيار غير صالح للسؤال {question_id}."})
+            elif question.question_type == QuestionBank.QuestionType.TRUE_FALSE:
+                if str(answer).strip().lower() not in {"true", "false", "صح", "خطأ"}:
+                    raise ValidationError({"answers": f"إجابة الصح والخطأ غير صالحة للسؤال {question_id}."})
+            elif not isinstance(answer, (str, int, float)):
+                raise ValidationError({"answers": f"صيغة الإجابة غير صالحة للسؤال {question_id}."})
+
         with transaction.atomic():
             submission = get_object_or_404(
                 StudentOnlineExamSubmission.objects.select_for_update(),
@@ -1261,34 +1991,86 @@ class OnlineExamViewSet(TenantModelViewSet):
             submission.status = StudentOnlineExamSubmission.Status.SUBMITTED
             submission.auto_score = Decimal("0.00")
             for question in allowed_questions:
-                if question.question_type in {"mcq", "true_false"}:
+                if question.question_type in {
+                    QuestionBank.QuestionType.MCQ,
+                    QuestionBank.QuestionType.TRUE_FALSE,
+                }:
                     student_answer = str(answers.get(str(question.pk), "")).strip().lower()
                     correct_answer = str(question.correct_answer).strip().lower()
+                    if question.question_type == QuestionBank.QuestionType.TRUE_FALSE:
+                        student_answer = "true" if student_answer in {"true", "صح"} else "false"
+                        correct_answer = "true" if correct_answer in {"true", "صح"} else "false"
                     if student_answer and student_answer == correct_answer:
                         submission.auto_score += question.default_marks
             if submission.auto_score > exam.total_marks:
                 raise ValidationError("مجموع درجات الأسئلة الموضوعية يتجاوز الدرجة العظمى للاختبار.")
             submission.final_score = submission.auto_score
+            submission.result_published = False
+            submission.result_published_at = None
+            submission.result_published_by = None
             submission.save(update_fields=[
-                "answers_json", "submitted_at", "status",
-                "auto_score", "final_score", "updated_at",
+                "answers_json", "submitted_at", "status", "auto_score",
+                "final_score", "result_published", "result_published_at",
+                "result_published_by", "updated_at",
             ])
+            record_event(
+                action="assessment.exam_submitted",
+                description="سلّم الطالب إجاباته وتم حفظها واحتساب الجزء الموضوعي.",
+                actor=request.user, school=self.get_school(), obj=submission,
+                metadata={"exam_id": str(exam.pk), "auto_score": str(submission.auto_score)},
+                request=request,
+            )
         return Response({
             "submission_id": str(submission.pk),
             "status": submission.status,
             "submitted_at": submission.submitted_at,
-            "auto_score": str(submission.auto_score),
+            "result_published": False,
+        })
+
+    @action(detail=True, methods=["get"], url_path="report")
+    def report(self, request, pk=None, **kwargs):
+        exam = self.get_object()
+        attempts = exam.submissions.filter(is_archived=False)
+        published = attempts.filter(result_published=True)
+        average = published.aggregate(value=Sum("final_score"))["value"]
+        completed = attempts.exclude(status=StudentOnlineExamSubmission.Status.IN_PROGRESS).count()
+        if exam.section_id:
+            target_students = Student.objects.filter(
+                school=exam.school, section_id=exam.section_id,
+                academic_year=exam.academic_term.academic_year,
+                is_archived=False,
+            ).count()
+        else:
+            target_students = Student.objects.filter(
+                school=exam.school, grade_level_id=exam.grade_level_id,
+                academic_year=exam.academic_term.academic_year,
+                is_archived=False,
+            ).count()
+        return Response({
+            "exam_id": str(exam.pk),
+            "target_students": target_students,
+            "started": attempts.count(),
+            "completed": completed,
+            "in_progress": attempts.filter(status=StudentOnlineExamSubmission.Status.IN_PROGRESS).count(),
+            "graded": attempts.filter(status=StudentOnlineExamSubmission.Status.GRADED).count(),
+            "published_results": published.count(),
+            "average_published_score": str(
+                (average / published.count()).quantize(Decimal("0.01"))
+            ) if published.exists() and average is not None else None,
+            "unstarted": max(target_students - attempts.count(), 0),
         })
 
 
 class ExamSubmissionViewSet(TenantModelViewSet):
     serializer_class = ExamSubmissionReviewSerializer
-    read_roles = ACADEMIC_ADMIN_ROLES | {"teacher", "student"}
+    read_roles = ACADEMIC_ADMIN_ROLES | {"teacher", "student", "guardian"}
     write_roles = ACADEMIC_ADMIN_ROLES
     action_role_map = {
-        "list": ACADEMIC_ADMIN_ROLES | {"teacher", "student"},
-        "retrieve": ACADEMIC_ADMIN_ROLES | {"teacher", "student"},
+        "list": ACADEMIC_ADMIN_ROLES | {"teacher", "student", "guardian"},
+        "retrieve": ACADEMIC_ADMIN_ROLES | {"teacher", "student", "guardian"},
         "grade": ACADEMIC_ADMIN_ROLES | {"teacher"},
+        "publish": ACADEMIC_ADMIN_ROLES,
+        "reopen": ACADEMIC_ADMIN_ROLES,
     }
 
     def get_queryset(self):
@@ -1302,6 +2084,13 @@ class ExamSubmissionViewSet(TenantModelViewSet):
                 student = user_student_profiles(self.request.user, school).first()
                 if student:
                     allowed |= Q(student=student)
+            if has_school_roles(self.request.user, school, {"guardian"}):
+                guardian = user_guardian_profiles(self.request.user, school).first()
+                if guardian:
+                    allowed |= Q(
+                        student__in=guardian.children.filter(school=school, is_archived=False),
+                        result_published=True,
+                    )
             if has_school_roles(self.request.user, school, {"teacher"}):
                 teacher = user_teacher_profiles(self.request.user, school).filter(
                     is_active_teaching=True,
@@ -1309,15 +2098,16 @@ class ExamSubmissionViewSet(TenantModelViewSet):
                 if teacher:
                     assignments = teacher.assignments.filter(
                         school=school, is_archived=False,
-                    ).values_list("section_id", "section__grade_id", "subject_id")
-                    for section_id, grade_id, subject_id in assignments:
+                    ).values_list("section_id", "section__grade_id", "subject_id", "academic_year_id")
+                    for section_id, grade_id, subject_id, year_id in assignments:
                         allowed |= Q(
-                            exam__section_id=section_id,
-                            exam__subject_id=subject_id,
+                            exam__section_id=section_id, exam__subject_id=subject_id,
+                            exam__academic_term__academic_year_id=year_id,
                         ) | Q(
                             exam__section__isnull=True,
                             exam__grade_level_id=grade_id,
                             exam__subject_id=subject_id,
+                            exam__academic_term__academic_year_id=year_id,
                         )
             qs = qs.filter(allowed)
         return qs.order_by("-submitted_at")
@@ -1325,20 +2115,33 @@ class ExamSubmissionViewSet(TenantModelViewSet):
     def create(self, request, *args, **kwargs):
         raise MethodNotAllowed("POST", detail="تنشأ محاولة الاختبار من خلال POST /online-exams/{id}/start/.")
 
+    def update(self, request, *args, **kwargs):
+        raise MethodNotAllowed("PUT", detail="لا تعدّل إجابات أو نتائج محاولة الاختبار مباشرة؛ استخدم إجراءات التصحيح وإعادة الفتح.")
+
+    def partial_update(self, request, *args, **kwargs):
+        raise MethodNotAllowed("PATCH", detail="لا تعدّل إجابات أو نتائج محاولة الاختبار مباشرة؛ استخدم إجراءات التصحيح وإعادة الفتح.")
+
+    def perform_destroy(self, instance):
+        raise ValidationError("محاولات الاختبار سجلات تاريخية لا تحذف بعد بدئها.")
+
     @action(detail=True, methods=["post"], url_path="grade")
-    def grade(self, request, pk=None):
+    def grade(self, request, pk=None, **kwargs):
         school = self.get_school()
         with transaction.atomic():
             submission = get_object_or_404(
                 StudentOnlineExamSubmission.objects.select_for_update().select_related("exam"),
                 pk=pk, school=school, is_archived=False,
             )
-            teacher = user_teacher_profiles(request.user, school).filter(is_active_teaching=True).first()
+            teacher = user_teacher_profiles(request.user, school).filter(
+                is_active_teaching=True,
+            ).first()
             if not is_admin(request.user, school):
                 if not teacher:
                     raise PermissionDenied("يجب ربط حسابك بملف معلم.")
                 assigned = teacher.assignments.filter(
-                    subject=submission.exam.subject, is_archived=False,
+                    school=school, subject=submission.exam.subject,
+                    academic_year=submission.exam.academic_term.academic_year,
+                    is_archived=False,
                 )
                 if submission.exam.section_id:
                     assigned = assigned.filter(section_id=submission.exam.section_id)
@@ -1346,43 +2149,306 @@ class ExamSubmissionViewSet(TenantModelViewSet):
                     assigned = assigned.filter(section__grade_id=submission.exam.grade_level_id)
                 if not assigned.exists():
                     raise PermissionDenied("لا يمكنك تصحيح اختبار غير مسند إليك.")
-            if submission.status not in {
-                StudentOnlineExamSubmission.Status.SUBMITTED,
-                StudentOnlineExamSubmission.Status.GRADED,
-            }:
-                raise ValidationError("لا يمكن تصحيح محاولة لم تُسلّم بعد.")
+            if submission.status != StudentOnlineExamSubmission.Status.SUBMITTED:
+                raise ValidationError("لا يمكن تصحيح إلا محاولة لم تُصحح بعد؛ استخدم إعادة الفتح لإعادة التصحيح.")
             try:
                 manual_score = Decimal(str(request.data.get("manual_score", "0")))
             except Exception:
                 raise ValidationError({"manual_score": "الدرجة المقالية غير صحيحة."})
-            if (
-                manual_score < 0
-                or submission.auto_score + manual_score > submission.exam.total_marks
-            ):
+            manual_max = sum(
+                (
+                    question.default_marks for question in submission.exam.questions.all()
+                    if question.question_type in {
+                        QuestionBank.QuestionType.SHORT_ANSWER,
+                        QuestionBank.QuestionType.ESSAY,
+                    }
+                ),
+                Decimal("0.00"),
+            )
+            if manual_score < 0 or manual_score > manual_max:
                 raise ValidationError({
-                    "manual_score": "إجمالي الدرجة يتجاوز الدرجة العظمى للاختبار أو أقل من الصفر.",
+                    "manual_score": f"درجة الأسئلة المقالية/القصيرة يجب أن تكون بين صفر و {manual_max}.",
                 })
+            if submission.auto_score + manual_score > submission.exam.total_marks:
+                raise ValidationError({"manual_score": "إجمالي الدرجة يتجاوز الدرجة العظمى للاختبار."})
             submission.manual_score = manual_score
             submission.final_score = submission.auto_score + manual_score
             submission.teacher_feedback = request.data.get("teacher_feedback", "")
             submission.graded_by = request.user
             submission.status = StudentOnlineExamSubmission.Status.GRADED
+            submission.result_published = False
+            submission.result_published_at = None
+            submission.result_published_by = None
             submission.save(update_fields=[
-                "manual_score", "final_score", "teacher_feedback",
-                "graded_by", "status", "updated_at",
+                "manual_score", "final_score", "teacher_feedback", "graded_by",
+                "status", "result_published", "result_published_at",
+                "result_published_by", "updated_at",
             ])
+            record_event(
+                action="assessment.exam_submission_graded",
+                description="تم تصحيح محاولة الاختبار ولم تُنشر النتيجة بعد.",
+                actor=request.user, school=school, obj=submission,
+                metadata={
+                    "auto_score": str(submission.auto_score),
+                    "manual_score": str(manual_score),
+                    "final_score": str(submission.final_score),
+                },
+                request=request,
+            )
         return Response({
             "id": str(submission.pk), "status": submission.status,
             "auto_score": str(submission.auto_score),
             "manual_score": str(submission.manual_score),
             "final_score": str(submission.final_score),
+            "result_published": False,
         })
+
+    @action(detail=True, methods=["post"], url_path="publish")
+    def publish(self, request, pk=None, **kwargs):
+        submission = self.get_object()
+        publish = request.data.get("is_published", True)
+        if not isinstance(publish, bool):
+            raise ValidationError({"is_published": "أرسل قيمة منطقية true أو false."})
+        if publish:
+            if submission.status != StudentOnlineExamSubmission.Status.GRADED:
+                raise ValidationError("يجب تصحيح المحاولة قبل نشر نتيجتها.")
+            submission.result_published = True
+            submission.result_published_at = timezone.now()
+            submission.result_published_by = request.user
+            submission.result_revision_reason = ""
+            action_name = "assessment.exam_result_published"
+            description = "تم نشر نتيجة الاختبار للطالب وولي الأمر."
+            metadata = {}
+        else:
+            reason = str(request.data.get("reason", "")).strip()
+            if not reason:
+                raise ValidationError({"reason": "سبب إخفاء النتيجة مطلوب للتدقيق."})
+            if not submission.result_published:
+                return Response({"id": str(submission.pk), "result_published": False})
+            submission.result_published = False
+            submission.result_published_at = None
+            submission.result_published_by = None
+            submission.result_revision_reason = reason[:500]
+            action_name = "assessment.exam_result_unpublished"
+            description = "تم إخفاء نتيجة منشورة مع تسجيل السبب."
+            metadata = {"reason": reason[:500]}
+        submission.save(update_fields=[
+            "result_published", "result_published_at", "result_published_by",
+            "result_revision_reason", "updated_at",
+        ])
+        record_event(
+            action=action_name, description=description,
+            actor=request.user, school=self.get_school(), obj=submission,
+            metadata=metadata, request=request,
+        )
+        return Response({
+            "id": str(submission.pk),
+            "result_published": submission.result_published,
+            "result_published_at": submission.result_published_at,
+        })
+
+    @action(detail=True, methods=["post"], url_path="reopen")
+    def reopen(self, request, pk=None, **kwargs):
+        submission = self.get_object()
+        reason = str(request.data.get("reason", "")).strip()
+        if not reason:
+            raise ValidationError({"reason": "سبب إعادة فتح النتيجة مطلوب."})
+        if submission.status != StudentOnlineExamSubmission.Status.GRADED:
+            raise ValidationError("يمكن إعادة فتح محاولة مصححة فقط.")
+        submission.status = StudentOnlineExamSubmission.Status.SUBMITTED
+        submission.result_published = False
+        submission.result_published_at = None
+        submission.result_published_by = None
+        submission.result_revision_reason = reason[:500]
+        submission.manual_score = Decimal("0.00")
+        submission.final_score = submission.auto_score
+        submission.graded_by = None
+        submission.teacher_feedback = ""
+        submission.save(update_fields=[
+            "status", "result_published", "result_published_at",
+            "result_published_by", "result_revision_reason", "manual_score",
+            "final_score", "graded_by", "teacher_feedback", "updated_at",
+        ])
+        record_event(
+            action="assessment.exam_result_reopened",
+            description="أعيد فتح نتيجة اختبار للتصحيح بعد تسجيل السبب.",
+            actor=request.user, school=self.get_school(), obj=submission,
+            metadata={"reason": reason[:500]}, request=request,
+        )
+        return Response({"id": str(submission.pk), "status": submission.status})
 
 
 class ExamCommitteeViewSet(TenantModelViewSet):
     serializer_class = ExamCommitteeSerializer
     read_roles = ACADEMIC_ADMIN_ROLES | {"teacher", "student"}
     write_roles = ACADEMIC_ADMIN_ROLES
+
+    def _validate_head_supervisor(self, supervisor, branch, school):
+        if supervisor is None:
+            return
+        if supervisor.school_id != school.pk or supervisor.is_archived or not supervisor.is_active_teaching:
+            raise ValidationError({"head_supervisor": "رئيس اللجنة يجب أن يكون معلماً نشطاً في المدرسة نفسها."})
+        if branch and supervisor.branch_id and branch.pk != supervisor.branch_id:
+            raise ValidationError({"head_supervisor": "رئيس اللجنة يتبع فرعاً مختلفاً."})
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        data = serializer.validated_data
+        branch = data.get("branch")
+        supervisor = data.get("head_supervisor")
+        self._validate_head_supervisor(supervisor, branch, school)
+        with transaction.atomic():
+            committee = serializer.save(school=school)
+            try:
+                committee.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            committee.save()
+        record_event(
+            action="assessment.exam_committee_created",
+            description="تم إنشاء لجنة اختبار.",
+            actor=self.request.user, school=school, obj=committee, request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        data = serializer.validated_data
+        branch = data.get("branch", serializer.instance.branch)
+        supervisor = data.get("head_supervisor", serializer.instance.head_supervisor)
+        self._validate_head_supervisor(supervisor, branch, school)
+        with transaction.atomic():
+            committee = serializer.save()
+            try:
+                committee.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            committee.save()
+        record_event(
+            action="assessment.exam_committee_updated",
+            description="تم تعديل لجنة اختبار.",
+            actor=self.request.user, school=school, obj=committee, request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        if instance.seatings.filter(is_archived=False).exists():
+            raise ValidationError("لا يمكن أرشفة لجنة لديها أرقام جلوس؛ احتفظ بسجلها.")
+        record_event(
+            action="assessment.exam_committee_archived",
+            description="تمت أرشفة لجنة اختبار لا تحتوي على أرقام جلوس.",
+            actor=self.request.user, school=self.get_school(), obj=instance,
+            request=self.request,
+        )
+        super().perform_destroy(instance)
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not is_admin(
+            self.request.user, self.get_school(),
+        ):
+            teacher = user_teacher_profiles(self.request.user, self.get_school()).filter(
+                is_active_teaching=True,
+            ).first()
+            if teacher:
+                qs = qs.filter(
+                    Q(head_supervisor=teacher)
+                    | Q(proctor_assignments__teacher=teacher, proctor_assignments__is_archived=False)
+                ).distinct()
+            else:
+                qs = qs.none()
+        elif has_school_roles(self.request.user, self.get_school(), {"student"}) and not is_admin(
+            self.request.user, self.get_school(),
+        ):
+            student = user_student_profiles(self.request.user, self.get_school()).first()
+            qs = qs.filter(seatings__student=student).distinct() if student else qs.none()
+        return qs
+
+
+class ExamCommitteeProctorViewSet(TenantModelViewSet):
+    serializer_class = ExamCommitteeProctorSerializer
+    read_roles = ACADEMIC_ADMIN_ROLES | {"teacher"}
+    write_roles = ACADEMIC_ADMIN_ROLES
+    action_role_map = {
+        "list": ACADEMIC_ADMIN_ROLES | {"teacher"},
+        "retrieve": ACADEMIC_ADMIN_ROLES | {"teacher"},
+        "create": ACADEMIC_ADMIN_ROLES,
+        "update": ACADEMIC_ADMIN_ROLES,
+        "partial_update": ACADEMIC_ADMIN_ROLES,
+        "destroy": ACADEMIC_ADMIN_ROLES,
+    }
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("committee", "teacher", "teacher__user")
+        if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not is_admin(
+            self.request.user, self.get_school(),
+        ):
+            teacher = user_teacher_profiles(self.request.user, self.get_school()).filter(
+                is_active_teaching=True,
+            ).first()
+            qs = qs.filter(teacher=teacher) if teacher else qs.none()
+        return qs
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        teacher = serializer.validated_data["teacher"]
+        committee = serializer.validated_data["committee"]
+        if teacher.school_id != school.pk or committee.school_id != school.pk:
+            raise ValidationError("المعلم واللجنة يجب أن يتبعا المدرسة النشطة.")
+        if not teacher.is_active_teaching or teacher.is_archived:
+            raise ValidationError({"teacher": "لا يمكن تكليف معلم غير نشط أو مؤرشف."})
+        if committee.branch_id and teacher.branch_id and committee.branch_id != teacher.branch_id:
+            raise ValidationError({"teacher": "المعلم يتبع فرعاً مختلفاً عن اللجنة."})
+        with transaction.atomic():
+            assignment = serializer.save(
+                school=school, branch=committee.branch,
+                assigned_by=self.request.user, assigned_at=timezone.now(),
+            )
+            try:
+                assignment.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            assignment.save()
+        record_event(
+            action="assessment.exam_proctor_assigned",
+            description="تم تكليف معلم بمراقبة لجنة اختبار.",
+            actor=self.request.user, school=school,
+            obj=serializer.instance,
+            metadata={"committee_id": str(committee.pk), "teacher_id": str(teacher.pk)},
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        teacher = serializer.validated_data.get("teacher", serializer.instance.teacher)
+        committee = serializer.validated_data.get("committee", serializer.instance.committee)
+        if teacher.school_id != school.pk or committee.school_id != school.pk:
+            raise ValidationError("المعلم واللجنة يجب أن يتبعا المدرسة النشطة.")
+        if not teacher.is_active_teaching or teacher.is_archived:
+            raise ValidationError({"teacher": "لا يمكن تكليف معلم غير نشط أو مؤرشف."})
+        if committee.branch_id and teacher.branch_id and committee.branch_id != teacher.branch_id:
+            raise ValidationError({"teacher": "المعلم يتبع فرعاً مختلفاً عن اللجنة."})
+        with transaction.atomic():
+            assignment = serializer.save(branch=committee.branch)
+            try:
+                assignment.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            assignment.save()
+        record_event(
+            action="assessment.exam_proctor_updated",
+            description="تم تحديث تكليف مراقب لجنة.",
+            actor=self.request.user, school=school, obj=assignment,
+            metadata={"committee_id": str(committee.pk), "teacher_id": str(teacher.pk)},
+            request=self.request,
+        )
+
+    def perform_destroy(self, instance):
+        record_event(
+            action="assessment.exam_proctor_unassigned",
+            description="تم إلغاء تكليف مراقب لجنة.",
+            actor=self.request.user, school=self.get_school(), obj=instance,
+            request=self.request,
+        )
+        super().perform_destroy(instance)
 
 
 class ExamSeatingViewSet(TenantModelViewSet):
@@ -1391,11 +2457,87 @@ class ExamSeatingViewSet(TenantModelViewSet):
     write_roles = ACADEMIC_ADMIN_ROLES
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("student", "committee", "academic_year")
-        if has_school_roles(self.request.user, self.get_school(), {"student"}) and not is_admin(self.request.user, self.get_school()):
-            student = user_student_profiles(self.request.user, self.get_school()).first()
+        qs = super().get_queryset().select_related(
+            "student", "committee", "academic_year",
+        )
+        school = self.get_school()
+        if has_school_roles(self.request.user, school, {"student"}) and not is_admin(
+            self.request.user, school,
+        ):
+            student = user_student_profiles(self.request.user, school).first()
             qs = qs.filter(student=student) if student else qs.none()
+        elif has_school_roles(self.request.user, school, {"teacher"}) and not is_admin(
+            self.request.user, school,
+        ):
+            teacher = user_teacher_profiles(self.request.user, school).filter(
+                is_active_teaching=True,
+            ).first()
+            if teacher:
+                qs = qs.filter(
+                    Q(committee__head_supervisor=teacher)
+                    | Q(committee__proctor_assignments__teacher=teacher,
+                        committee__proctor_assignments__is_archived=False)
+                ).distinct()
+            else:
+                qs = qs.none()
         return qs
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        data = serializer.validated_data
+        committee = data.get("committee", serializer.instance.committee)
+        student = data.get("student", serializer.instance.student)
+        academic_year = data.get("academic_year", serializer.instance.academic_year)
+        if committee.school_id != school.pk or student.school_id != school.pk or academic_year.school_id != school.pk:
+            raise ValidationError("اللجنة والطالب والسنة يجب أن تتبع المدرسة النشطة.")
+        if student.academic_year_id and student.academic_year_id != academic_year.pk:
+            raise ValidationError({"academic_year": "سنة رقم الجلوس لا تطابق سنة تسجيل الطالب."})
+        if committee.branch_id and student.branch_id and committee.branch_id != student.branch_id:
+            raise ValidationError({"student": "الطالب يتبع فرعاً مختلفاً عن لجنة الاختبار."})
+        with transaction.atomic():
+            locked_committee = ExamCommittee.objects.select_for_update().get(pk=committee.pk)
+            seating = serializer.save(branch=locked_committee.branch)
+            try:
+                seating.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            seating.save()
+        record_event(
+            action="assessment.exam_seating_updated",
+            description="تم تعديل توزيع رقم جلوس الطالب.",
+            actor=self.request.user, school=school, obj=seating,
+            metadata={"committee_id": str(committee.pk), "student_id": str(student.pk)},
+            request=self.request,
+        )
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        committee = serializer.validated_data["committee"]
+        student = serializer.validated_data["student"]
+        academic_year = serializer.validated_data["academic_year"]
+        if student.academic_year_id and student.academic_year_id != academic_year.pk:
+            raise ValidationError({"academic_year": "سنة رقم الجلوس لا تطابق سنة تسجيل الطالب."})
+        if committee.branch_id and student.branch_id and committee.branch_id != student.branch_id:
+            raise ValidationError({"student": "الطالب يتبع فرعاً مختلفاً عن لجنة الاختبار."})
+        with transaction.atomic():
+            locked_committee = ExamCommittee.objects.select_for_update().get(pk=committee.pk)
+            seating = serializer.save(school=school, branch=locked_committee.branch)
+            try:
+                seating.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            seating.save()
+        record_event(
+            action="assessment.exam_seating_created",
+            description="تم تخصيص رقم جلوس للطالب في لجنة اختبار.",
+            actor=self.request.user, school=school, obj=serializer.instance,
+            metadata={
+                "committee_id": str(committee.pk),
+                "student_id": str(student.pk),
+                "seating_number": serializer.instance.seating_number,
+            },
+            request=self.request,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1457,7 +2599,7 @@ class TimetablePlanViewSet(TenantModelViewSet):
         super().perform_destroy(instance)
 
     @action(detail=True, methods=["post"], url_path="copy")
-    def copy(self, request, pk=None):
+    def copy(self, request, pk=None, **kwargs):
         source = self.get_object()
         data = TimetablePlanCopyInputSerializer(data=request.data)
         data.is_valid(raise_exception=True)
@@ -1480,7 +2622,7 @@ class TimetablePlanViewSet(TenantModelViewSet):
         return Response(self.get_serializer(plan).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="submit")
-    def submit(self, request, pk=None):
+    def submit(self, request, pk=None, **kwargs):
         from apps.timetable.services import submit_timetable_plan
         try:
             plan = submit_timetable_plan(self.get_object(), submitted_by=request.user)
@@ -1489,7 +2631,7 @@ class TimetablePlanViewSet(TenantModelViewSet):
         return Response(self.get_serializer(plan).data)
 
     @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
+    def approve(self, request, pk=None, **kwargs):
         from apps.timetable.services import approve_timetable_plan
         try:
             plan = approve_timetable_plan(self.get_object(), approved_by=request.user)
@@ -1498,7 +2640,7 @@ class TimetablePlanViewSet(TenantModelViewSet):
         return Response(self.get_serializer(plan).data)
 
     @action(detail=True, methods=["post"], url_path="publish")
-    def publish(self, request, pk=None):
+    def publish(self, request, pk=None, **kwargs):
         from apps.timetable.services import publish_timetable_plan
         try:
             plan = publish_timetable_plan(self.get_object(), published_by=request.user)
@@ -1616,6 +2758,34 @@ class DailyLessonLogViewSet(TenantModelViewSet):
             serializer.save(school=school, branch=schedule.branch)
         except DjangoValidationError as exc:
             raise ValidationError(detail=str(exc))
+        record_event(
+            action="timetable.lesson_log_created",
+            description="تم توثيق تنفيذ الحصة الدراسية.",
+            actor=self.request.user, school=school, obj=serializer.instance,
+            metadata={"schedule_id": str(schedule.pk), "lesson_date": str(serializer.instance.date)},
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        schedule = serializer.validated_data.get("schedule", serializer.instance.schedule)
+        teacher = user_teacher_profiles(self.request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
+        if not is_admin(self.request.user, school):
+            if not teacher or schedule.teacher_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك تعديل سجل تنفيذ حصة لمعلم آخر.")
+        try:
+            serializer.save(branch=schedule.branch)
+        except DjangoValidationError as exc:
+            raise ValidationError(detail=str(exc))
+        record_event(
+            action="timetable.lesson_log_updated",
+            description="تم تعديل سجل تنفيذ حصة دراسية.",
+            actor=self.request.user, school=school, obj=serializer.instance,
+            metadata={"schedule_id": str(schedule.pk), "lesson_date": str(serializer.instance.date)},
+            request=self.request,
+        )
 
 class MyWeeklyTimetableAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1884,7 +3054,7 @@ class JournalEntryViewSet(TenantModelViewSet):
         instance.delete()
 
     @action(detail=True, methods=["post"], url_path="post")
-    def post(self, request, pk=None):
+    def post(self, request, pk=None, **kwargs):
         with transaction.atomic():
             entry = get_object_or_404(
                 JournalEntry.objects.select_for_update(),
@@ -1896,7 +3066,7 @@ class JournalEntryViewSet(TenantModelViewSet):
         return Response(self.get_serializer(entry).data)
 
     @action(detail=True, methods=["post"], url_path="reverse")
-    def reverse(self, request, pk=None):
+    def reverse(self, request, pk=None, **kwargs):
         reason = (request.data.get("reason") or "").strip()
         if len(reason) < 3:
             raise ValidationError({"reason": "سبب عكس القيد مطلوب."})
@@ -1984,7 +3154,7 @@ class PaymentVoucherViewSet(VoucherBaseViewSet):
         return Response(self.get_serializer(voucher).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="post")
-    def post(self, request, pk=None):
+    def post(self, request, pk=None, **kwargs):
         with transaction.atomic():
             voucher = get_object_or_404(
                 PaymentVoucher.objects.select_for_update(),
@@ -2042,7 +3212,7 @@ class ReceiptVoucherViewSet(VoucherBaseViewSet):
         return Response(self.get_serializer(voucher).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="post")
-    def post(self, request, pk=None):
+    def post(self, request, pk=None, **kwargs):
         with transaction.atomic():
             voucher = get_object_or_404(
                 ReceiptVoucher.objects.select_for_update(),
@@ -2145,7 +3315,7 @@ class PurchaseOrderViewSet(TenantModelViewSet):
         serializer.save()
 
     @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
+    def approve(self, request, pk=None, **kwargs):
         with transaction.atomic():
             order = get_object_or_404(
                 PurchaseOrder.objects.select_for_update(),
@@ -2167,7 +3337,7 @@ class PurchaseOrderViewSet(TenantModelViewSet):
         return Response(self.get_serializer(order).data)
 
     @action(detail=True, methods=["post"], url_path="receive")
-    def receive(self, request, pk=None):
+    def receive(self, request, pk=None, **kwargs):
         order = self.get_object()
         movements = order.receive_into_warehouse(user=request.user)
         return Response({"status": order.status, "created_movements": [str(x.pk) for x in movements]})
@@ -2269,7 +3439,7 @@ class VendorInvoiceViewSet(TenantModelViewSet):
         super().perform_destroy(instance)
 
     @action(detail=True, methods=["post"], url_path="approve")
-    def approve(self, request, pk=None):
+    def approve(self, request, pk=None, **kwargs):
         with transaction.atomic():
             invoice = get_object_or_404(
                 VendorInvoice.objects.select_for_update(),
@@ -2282,7 +3452,7 @@ class VendorInvoiceViewSet(TenantModelViewSet):
         return Response(self.get_serializer(invoice).data)
 
     @action(detail=True, methods=["post"], url_path="post")
-    def post(self, request, pk=None):
+    def post(self, request, pk=None, **kwargs):
         from apps.accounting.services.auto_posting import (
             _get_account_or_seed, _get_active_fiscal_period,
         )
@@ -2314,7 +3484,7 @@ class VendorInvoiceViewSet(TenantModelViewSet):
         return Response(self.get_serializer(invoice).data)
 
     @action(detail=True, methods=["post"], url_path="record-payment")
-    def record_payment(self, request, pk=None):
+    def record_payment(self, request, pk=None, **kwargs):
         try:
             amount = Decimal(str(request.data.get("amount")))
         except Exception as exc:
@@ -2534,14 +3704,14 @@ class PushDeviceViewSet(viewsets.ModelViewSet):
         )
 
     @action(detail=True, methods=["post"], url_path="deactivate")
-    def deactivate(self, request, pk=None):
+    def deactivate(self, request, pk=None, **kwargs):
         device = get_object_or_404(PushDevice, pk=pk, user=request.user)
         device.is_active = False
         device.save(update_fields=["is_active", "updated_at"])
         return Response({"id": str(device.pk), "is_active": False})
 
     @action(detail=True, methods=["post"], url_path="heartbeat")
-    def heartbeat(self, request, pk=None):
+    def heartbeat(self, request, pk=None, **kwargs):
         device = get_object_or_404(PushDevice, pk=pk, user=request.user)
         device.last_seen_at = timezone.now()
         device.is_active = True
@@ -2665,7 +3835,7 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         return ConversationParticipant.Role.STAFF
 
     @action(detail=True, methods=["get", "post"], url_path="messages")
-    def messages(self, request, pk=None):
+    def messages(self, request, pk=None, **kwargs):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
         self.get_participant(conv)
         if request.method == "GET":
@@ -2723,7 +3893,7 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         return Response(ConversationMessageSerializer(message).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="read")
-    def mark_read(self, request, pk=None):
+    def mark_read(self, request, pk=None, **kwargs):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
         participant = self.get_participant(conv)
         participant.last_read_at = timezone.now()
@@ -2731,7 +3901,7 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         return Response({"conversation_id": str(conv.pk), "last_read_at": participant.last_read_at})
 
     @action(detail=True, methods=["post"], url_path="mute")
-    def mute(self, request, pk=None):
+    def mute(self, request, pk=None, **kwargs):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
         participant = self.get_participant(conv)
         participant.is_muted = bool(request.data.get("muted", True))
@@ -2739,7 +3909,7 @@ class SchoolConversationViewSet(viewsets.ViewSet):
         return Response({"conversation_id": str(conv.pk), "is_muted": participant.is_muted})
 
     @action(detail=True, methods=["post"], url_path="close")
-    def close(self, request, pk=None):
+    def close(self, request, pk=None, **kwargs):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
         self.get_participant(conv)
         require_school_role_or_permission(request, self.get_school(), ADMIN_ROLES)
