@@ -364,7 +364,7 @@ class PaymentReceipt(TenantOwnedModel):
                 raise ValidationError({"invoice": "لا يمكن سداد أو ربط سند بفاتورة ملغاة."})
 
     def save(self, *args, **kwargs):
-        if is_new and self.student_id:
+        if self._state.adding and self.student_id:
             _inherit_branch(self, self.student)
             if self.invoice_id:
                 _inherit_branch(self, self.invoice)
