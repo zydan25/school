@@ -3,7 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest import skipUnless
 
-from django.db import close_old_connections, connection
+from django.db import close_old_connections, connections, connection
 from django.core.exceptions import ValidationError
 from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
@@ -578,6 +578,7 @@ class Stage7FinancialConcurrencyTests(TransactionTestCase):
                 )
                 return str(tx.pk)
             finally:
+                connections.close_all()
                 close_old_connections()
 
         with ThreadPoolExecutor(max_workers=2) as executor:
