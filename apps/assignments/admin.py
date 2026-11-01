@@ -40,7 +40,11 @@ class HomeworkSubmissionAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("status", "school")
     search_fields = ("student__first_name", "student__last_name", "homework__title", "school__name")
     autocomplete_fields = ("school", "branch", "homework", "student", "graded_by")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = (
+        "id", "created_at", "updated_at", "school", "branch", "homework",
+        "student", "submission_text", "attachment", "submitted_at", "status",
+        "score", "teacher_feedback", "graded_by", "graded_at",
+    )
 
 
 @admin.register(HomeworkSubmissionAttempt)
