@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, time, timedelta
 
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.core.models import TenantOwnedModel
@@ -62,11 +62,10 @@ class SchoolBellSchedule(TenantOwnedModel):
         verbose_name_plural = "قوالب مواعيد الحصص واليوم الدراسي"
         ordering = ["-is_default", "name"]
         constraints = [
-            models.UniqueConstraint(
-                fields=["school", "academic_year", "name"],
-                condition=models.Q(is_archived=False),
-                name="timetable_bellsched_school_name_uniq",
-            )
+            models.UniqueConstraint(fields=["school", "academic_year", "name"], condition=models.Q(is_archived=False, branch__isnull=True), name="tt_bell_name_global_uq"),
+            models.UniqueConstraint(fields=["school", "branch", "academic_year", "name"], condition=models.Q(is_archived=False, branch__isnull=False), name="tt_bell_name_branch_uq"),
+            models.UniqueConstraint(fields=["school", "academic_year"], condition=models.Q(is_archived=False, is_active=True, is_default=True, branch__isnull=True), name="tt_bell_default_global_uq"),
+            models.UniqueConstraint(fields=["school", "branch", "academic_year"], condition=models.Q(is_archived=False, is_active=True, is_default=True, branch__isnull=False), name="tt_bell_default_branch_uq"),
         ]
 
     def __str__(self) -> str:
@@ -77,6 +76,8 @@ class SchoolBellSchedule(TenantOwnedModel):
         super().clean()
         if self.school_id and self.academic_year_id and self.academic_year.school_id != self.school_id:
             raise ValidationError({"academic_year": "السنة الدراسية لا تتبع نفس المدرسة."})
+        if self.academic_year_id and self.academic_year.branch_id and self.academic_year.branch_id != self.branch_id:
+            raise ValidationError({"academic_year": "قالب الجرس يجب أن يتبع فرع السنة الدراسية."})
 
         if self.day_start_time and self.day_end_time and self.day_start_time >= self.day_end_time:
             raise ValidationError({"day_end_time": "وقت نهاية اليوم الدراسي يجب أن يكون بعد وقت البداية."})
@@ -91,13 +92,13 @@ class SchoolBellSchedule(TenantOwnedModel):
             raise ValidationError({"periods_per_day": "عدد الحصص في اليوم يجب أن يكون بين 1 و 14 حصة."})
 
     def save(self, *args, **kwargs):
-        if self.is_default and self.school_id:
-            SchoolBellSchedule.objects.filter(
-                school_id=self.school_id,
-                academic_year_id=self.academic_year_id,
-                is_default=True,
-            ).exclude(pk=self.pk).update(is_default=False)
-        super().save(*args, **kwargs)
+        with transaction.atomic():
+            if self.is_default and self.is_active and self.school_id:
+                SchoolBellSchedule.objects.select_for_update().filter(
+                    school_id=self.school_id, academic_year_id=self.academic_year_id,
+                    branch_id=self.branch_id, is_default=True, is_active=True, is_archived=False,
+                ).exclude(pk=self.pk).update(is_default=False)
+            return super().save(*args, **kwargs)
 
 
 class SchedulePeriodTemplate(TenantOwnedModel):
@@ -154,6 +155,15 @@ class SchedulePeriodTemplate(TenantOwnedModel):
         super().clean()
         if self.schedule_id and self.schedule.school_id != self.school_id:
             raise ValidationError({"schedule": "قالب التوقيت المحدد لا يتبع نفس المدرسة."})
+        if self.schedule_id and self.schedule.branch_id and self.schedule.branch_id != self.branch_id:
+            raise ValidationError({"schedule": "الفترة يجب أن تتبع فرع قالب الجرس نفسه."})
+        if self.schedule_id and self.period_type == self.PeriodType.PERIOD:
+            if self.period_number is None or not 1 <= self.period_number <= self.schedule.periods_per_day:
+                raise ValidationError({"period_number": "رقم الحصة خارج عدد الحصص المحدد في قالب الجرس."})
+        elif self.period_type != self.PeriodType.PERIOD and self.period_number is not None:
+            raise ValidationError({"period_number": "لا تحدد رقم حصة لفترة طابور أو استراحة أو نشاط."})
+        if self.schedule_id and not (self.schedule.day_start_time <= self.start_time < self.end_time <= self.schedule.day_end_time):
+            raise ValidationError({"start_time": "الفترة يجب أن تقع بالكامل داخل حدود اليوم الدراسي."})
 
         if self.start_time and self.end_time and self.start_time >= self.end_time:
             raise ValidationError({"end_time": "وقت نهاية الفترة يجب أن يكون بعد وقت بدايتها."})
@@ -187,6 +197,67 @@ class SchedulePeriodTemplate(TenantOwnedModel):
                     )
 
 
+class TimetablePlan(TenantOwnedModel):
+    """نسخة من الجدول الأسبوعي تمر بدورة مراجعة واعتماد ونشر مؤرخة."""
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة"
+        IN_REVIEW = "in_review", "قيد المراجعة"
+        APPROVED = "approved", "معتمدة للنشر"
+        PUBLISHED = "published", "منشورة ونافذة"
+        RETIRED = "retired", "منتهية"
+
+    academic_year = models.ForeignKey("academics.AcademicYear", on_delete=models.PROTECT, related_name="timetable_plans")
+    academic_term = models.ForeignKey("academics.AcademicTerm", on_delete=models.PROTECT, null=True, blank=True, related_name="timetable_plans")
+    bell_schedule = models.ForeignKey(SchoolBellSchedule, on_delete=models.PROTECT, null=True, blank=True, related_name="timetable_plans")
+    based_on = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True, related_name="derived_versions")
+    name = models.CharField(max_length=150)
+    version = models.PositiveIntegerField(default=1)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    effective_from = models.DateField()
+    effective_to = models.DateField(null=True, blank=True)
+    is_current = models.BooleanField(default=False, db_index=True)
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="submitted_timetable_plans")
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="approved_timetable_plans")
+    approved_at = models.DateTimeField(null=True, blank=True)
+    published_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="published_timetable_plans")
+    published_at = models.DateTimeField(null=True, blank=True)
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-academic_year__starts_on", "-version"]
+        constraints = [
+            models.UniqueConstraint(fields=["school", "academic_year", "version"], condition=models.Q(is_archived=False, branch__isnull=True), name="tt_plan_version_global_uq"),
+            models.UniqueConstraint(fields=["school", "branch", "academic_year", "version"], condition=models.Q(is_archived=False, branch__isnull=False), name="tt_plan_version_branch_uq"),
+            models.UniqueConstraint(fields=["school", "academic_year"], condition=models.Q(is_archived=False, status="published", is_current=True, branch__isnull=True), name="tt_plan_current_global_uq"),
+            models.UniqueConstraint(fields=["school", "branch", "academic_year"], condition=models.Q(is_archived=False, status="published", is_current=True, branch__isnull=False), name="tt_plan_current_branch_uq"),
+        ]
+        indexes = [models.Index(fields=["school", "academic_year", "status"])]
+
+    def clean(self):
+        super().clean()
+        if self.academic_year_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة المحددة."})
+        if self.academic_year_id and self.academic_year.branch_id and self.academic_year.branch_id != self.branch_id:
+            raise ValidationError({"branch": "نسخة الجدول يجب أن تتبع فرع السنة الدراسية."})
+        if self.academic_term_id and (self.academic_term.school_id != self.school_id or self.academic_term.academic_year_id != self.academic_year_id):
+            raise ValidationError({"academic_term": "الفصل الدراسي لا يتبع السنة والمدرسة للنسخة."})
+        if self.bell_schedule_id and (self.bell_schedule.school_id != self.school_id or self.bell_schedule.academic_year_id != self.academic_year_id):
+            raise ValidationError({"bell_schedule": "قالب الجرس لا يتبع السنة والمدرسة للنسخة."})
+        if self.bell_schedule_id and self.bell_schedule.branch_id and self.bell_schedule.branch_id != self.branch_id:
+            raise ValidationError({"bell_schedule": "قالب الجرس يتبع فرعاً مختلفاً."})
+        if self.based_on_id and (self.based_on.school_id != self.school_id or self.based_on.academic_year_id != self.academic_year_id or self.based_on.branch_id != self.branch_id):
+            raise ValidationError({"based_on": "النسخة المصدر يجب أن تتبع المدرسة والسنة والفرع نفسه."})
+        if self.effective_to and self.effective_to < self.effective_from:
+            raise ValidationError({"effective_to": "تاريخ نهاية السريان يسبق تاريخ بدايته."})
+        if self.academic_year_id and not (self.academic_year.starts_on <= self.effective_from <= self.academic_year.ends_on):
+            raise ValidationError({"effective_from": "تاريخ السريان يجب أن يقع داخل السنة الدراسية."})
+        if self.effective_to and self.academic_year_id and self.effective_to > self.academic_year.ends_on:
+            raise ValidationError({"effective_to": "تاريخ نهاية السريان يتجاوز نهاية السنة الدراسية."})
+        if self.is_current and self.status != self.Status.PUBLISHED:
+            raise ValidationError({"is_current": "لا يمكن جعل نسخة غير منشورة هي النسخة الحالية."})
+
+
 class ClassSchedule(TenantOwnedModel):
     """الجدول الأسبوعي المعتمد للحصص المدرسية."""
     class WeekDay(models.IntegerChoices):
@@ -198,6 +269,10 @@ class ClassSchedule(TenantOwnedModel):
         FRIDAY = 6, "الجمعة"
         SATURDAY = 7, "السبت"
 
+    timetable_plan = models.ForeignKey(
+        TimetablePlan, null=True, blank=True, on_delete=models.PROTECT,
+        related_name="class_schedules", verbose_name="نسخة الجدول المعتمدة",
+    )
     bell_schedule = models.ForeignKey(
         SchoolBellSchedule,
         verbose_name="قالب توقيت الحصص المرتبط",
@@ -255,18 +330,10 @@ class ClassSchedule(TenantOwnedModel):
         verbose_name = "حصة دراسية مجدولة"
         verbose_name_plural = "جدول الحصص المدرسية"
         constraints = [
-            # منع تعارض الشعبة في نفس اليوم والحصة
-            models.UniqueConstraint(
-                fields=["school", "academic_year", "section", "day_of_week", "period_number"],
-                condition=models.Q(is_archived=False),
-                name="timetable_schedule_section_period_uniq",
-            ),
-            # منع تعارض المعلم في حصتين متزامنتين بنفس رقم الحصة
-            models.UniqueConstraint(
-                fields=["school", "academic_year", "teacher", "day_of_week", "period_number"],
-                condition=models.Q(is_archived=False),
-                name="timetable_schedule_teacher_period_uniq",
-            ),
+            models.UniqueConstraint(fields=["school", "academic_year", "section", "day_of_week", "period_number"], condition=models.Q(is_archived=False, timetable_plan__isnull=True), name="tt_sched_legacy_section_uq"),
+            models.UniqueConstraint(fields=["school", "academic_year", "teacher", "day_of_week", "period_number"], condition=models.Q(is_archived=False, timetable_plan__isnull=True), name="tt_sched_legacy_teacher_uq"),
+            models.UniqueConstraint(fields=["timetable_plan", "section", "day_of_week", "period_number"], condition=models.Q(is_archived=False, timetable_plan__isnull=False), name="tt_sched_plan_section_uq"),
+            models.UniqueConstraint(fields=["timetable_plan", "teacher", "day_of_week", "period_number"], condition=models.Q(is_archived=False, timetable_plan__isnull=False), name="tt_sched_plan_teacher_uq"),
         ]
         indexes = [
             models.Index(fields=["school", "section", "day_of_week"]),
