@@ -147,7 +147,7 @@ def reverse_treasury_transfer(
     reason: str,
     reversed_by=None,
 ) -> TreasuryTransfer:
-    locked = TreasuryTransfer.objects.select_for_update().select_related(
+    locked = TreasuryTransfer.objects.select_for_update(of=("self",)).select_related(
         "journal_entry",
     ).get(pk=transfer.pk)
     if locked.status == TreasuryTransfer.Status.REVERSED:
@@ -187,14 +187,14 @@ def _complete_bank_reconciliation(
     reconciled_by,
 ) -> tuple[BankReconciliation, str | None]:
     """الجزء الذري: احسب واحفظ نتائج المطابقة قبل إبلاغ المستدعي بالفرق."""
-    locked = BankReconciliation.objects.select_for_update().select_related(
+    locked = BankReconciliation.objects.select_for_update(of=("self",)).select_related(
         "treasury_account__account",
     ).get(pk=reconciliation.pk)
     if locked.status == BankReconciliation.Status.RECONCILED:
         return locked, None
 
     lines = list(
-        BankStatementLine.objects.select_for_update().filter(
+        BankStatementLine.objects.select_for_update(of=("self",)).filter(
             reconciliation=locked,
             is_archived=False,
         ).select_related("journal_line__journal_entry")
