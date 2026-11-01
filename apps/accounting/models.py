@@ -1054,9 +1054,11 @@ class BankReconciliationQuerySet(TenantQuerySet):
         return super().update(**kwargs)
 
     def delete(self):
-        if self.filter(status="reconciled").exists():
-            raise ValidationError("لا يمكن حذف مطابقة بنكية معتمدة.")
-        return super().delete()
+        with transaction.atomic():
+            locked = list(self.select_for_update(of=("self",)))
+            if any(item.status == BankReconciliation.Status.RECONCILED for item in locked):
+                raise ValidationError("لا يمكن حذف مطابقة بنكية معتمدة.")
+            return super().delete()
 
 
 class BankReconciliation(TenantOwnedModel):
@@ -1147,10 +1149,19 @@ class BankReconciliation(TenantOwnedModel):
             )
             if any(getattr(original, field) != getattr(self, field) for field in fields):
                 raise ValidationError("المطابقة البنكية المعتمدة سجل مالي ثابت لا يقبل التعديل.")
+        elif original and BankStatementLine.objects.filter(
+            reconciliation_id=self.pk,
+            is_archived=False,
+        ).exists():
+            fields = ("school_id", "treasury_account_id", "start_date", "end_date")
+            if any(getattr(original, field) != getattr(self, field) for field in fields):
+                raise ValidationError("لا يمكن تغيير نطاق المطابقة أو حسابها بعد إدخال حركات كشف البنك.")
         return super().save(*args, **kwargs)
 
+    @transaction.atomic
     def delete(self, *args, **kwargs):
-        if self.status == self.Status.RECONCILED:
+        locked = BankReconciliation.objects.select_for_update(of=("self",)).get(pk=self.pk)
+        if locked.status == self.Status.RECONCILED:
             raise ValidationError("لا يمكن حذف مطابقة بنكية معتمدة.")
         return super().delete(*args, **kwargs)
 
