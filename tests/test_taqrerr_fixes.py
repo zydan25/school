@@ -707,6 +707,32 @@ class TaqrerrFixesVerificationTests(TestCase):
         self.assertEqual(own_detail.status_code, status.HTTP_200_OK)
         self.assertEqual(other_detail.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_monthly_payroll_combines_sequential_contracts_in_one_payslip(self):
+        """عقدان متتاليان داخل الشهر ينتجان قسيمة واحدة براتب موزون حسب تاريخ السريان."""
+        EmployeeContract.objects.create(
+            school=self.school,
+            teacher=self.teacher_profile,
+            contract_number="CNT-OCT-FIRST",
+            basic_salary=Decimal("3100.00"),
+            start_date=date(2026, 10, 1),
+            end_date=date(2026, 10, 15),
+            is_active=True,
+        )
+        EmployeeContract.objects.create(
+            school=self.school,
+            teacher=self.teacher_profile,
+            contract_number="CNT-OCT-SECOND",
+            basic_salary=Decimal("6200.00"),
+            start_date=date(2026, 10, 16),
+            end_date=None,
+            is_active=True,
+        )
+        run = generate_monthly_payroll(self.school, year=2026, month=10)
+        self.assertEqual(run.payslips.count(), 1)
+        slip = run.payslips.get(teacher=self.teacher_profile)
+        self.assertEqual(slip.basic_salary, Decimal("4700.00"))
+        self.assertEqual(slip.net_salary, Decimal("4700.00"))
+
     def test_employee_contract_rejects_overlapping_active_contracts(self):
         """منع وجود عقدين نشطين متداخلين للموظف نفسه."""
         EmployeeContract.objects.create(

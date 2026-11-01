@@ -28,65 +28,116 @@ def generate_monthly_payroll(
     name: str = "",
     created_by=None,
 ) -> PayrollRun:
-    """
-    توليد مسير الرواتب الشهري المجمع للمدرسة استناداً لعقود العمل النشطة والسلف القائمة وسجلات الحضور والغياب.
-    """
+    """Generate one accurate monthly payslip per employee from effective contracts."""
     if not name:
         name = f"مسير رواتب شهر {month:02d} / {year}"
 
     month_start = datetime.date(year, month, 1)
     last_day_num = calendar.monthrange(year, month)[1]
     month_end = datetime.date(year, month, last_day_num)
+    money = lambda value: value.quantize(Decimal("0.01"))
 
     with transaction.atomic():
         run, created = PayrollRun.objects.get_or_create(
             school=school,
             year=year,
             month=month,
-            defaults={
-                "name": name,
-                "status": PayrollRun.Status.DRAFT,
-            },
+            defaults={"name": name, "status": PayrollRun.Status.DRAFT},
         )
         run = PayrollRun.objects.select_for_update().get(pk=run.pk)
         if not created:
-            # Only an unapproved draft may be regenerated.
             if run.status != PayrollRun.Status.DRAFT:
                 raise ValidationError("لا يمكن إعادة توليد مسير رواتب معتمد أو مرحل أو مدفوع.")
             run.payslips.filter(is_archived=False).delete()
 
-        # Fetch contracts active during this payroll month
-        contracts = EmployeeContract.objects.filter(
-            school=school,
-            is_active=True,
-            is_archived=False,
-            start_date__lte=month_end,
-        ).filter(
-            Q(end_date__isnull=True) | Q(end_date__gte=month_start)
-        ).select_related("teacher", "staff_member").select_for_update(of=("self",))
-
-        t_basic = Decimal("0.00")
-        t_allowances = Decimal("0.00")
-        t_deductions = Decimal("0.00")
-        t_net = Decimal("0.00")
+        contracts = list(
+            EmployeeContract.objects.filter(
+                school=school,
+                is_active=True,
+                is_archived=False,
+                start_date__lte=month_end,
+            ).filter(
+                Q(end_date__isnull=True) | Q(end_date__gte=month_start)
+            ).select_related(
+                "teacher__user", "staff_member__user", "branch",
+            ).select_for_update(of=("self",)).order_by("start_date", "pk")
+        )
 
         from apps.staff.models import LeaveRequest, StaffAttendance
 
-        for c in contracts:
+        employee_groups = {}
+        for contract in contracts:
             if (
-                (c.teacher_id and not c.teacher.is_active_teaching)
-                or (c.staff_member_id and not c.staff_member.is_active)
+                (contract.teacher_id and not contract.teacher.is_active_teaching)
+                or (contract.staff_member_id and not contract.staff_member.is_active)
             ):
                 continue
-            teacher = c.teacher
-            staff_member = c.staff_member
-            basic = c.basic_salary
-            housing = c.housing_allowance
-            transport = c.transport_allowance
-            other_all = c.other_allowances
-            insurance = c.insurance_deduction
+            employee_key = (
+                ("teacher", contract.teacher_id)
+                if contract.teacher_id
+                else ("staff_member", contract.staff_member_id)
+            )
+            employee_groups.setdefault(employee_key, []).append(contract)
 
-            # Calculate total loan deductions across all active loans for this employee whose start date has arrived
+        totals = {
+            "basic": Decimal("0.00"),
+            "allowances": Decimal("0.00"),
+            "deductions": Decimal("0.00"),
+            "net": Decimal("0.00"),
+        }
+
+        for (employee_kind, employee_id), employee_contracts in employee_groups.items():
+            teacher = employee_contracts[0].teacher if employee_kind == "teacher" else None
+            staff_member = (
+                employee_contracts[0].staff_member if employee_kind == "staff_member" else None
+            )
+
+            # Salary components are weighted by the portion of the calendar month
+            # covered by each non-overlapping contract. This supports contract
+            # renewals and salary changes that take effect within a month.
+            covered_contracts = {}
+            component_totals = {
+                "basic": Decimal("0.00"),
+                "housing": Decimal("0.00"),
+                "transport": Decimal("0.00"),
+                "other": Decimal("0.00"),
+                "insurance": Decimal("0.00"),
+            }
+            for contract in employee_contracts:
+                active_start = max(month_start, contract.start_date)
+                active_end = min(month_end, contract.end_date or month_end)
+                if active_start > active_end:
+                    continue
+                covered_days = (active_end - active_start).days + 1
+                ratio = Decimal(covered_days) / Decimal(last_day_num)
+                component_totals["basic"] += contract.basic_salary * ratio
+                component_totals["housing"] += contract.housing_allowance * ratio
+                component_totals["transport"] += contract.transport_allowance * ratio
+                component_totals["other"] += contract.other_allowances * ratio
+                component_totals["insurance"] += contract.insurance_deduction * ratio
+
+                current_day = active_start
+                while current_day <= active_end:
+                    if current_day in covered_contracts:
+                        raise ValidationError(
+                            f"توجد عقود متداخلة للموظف {employee_id} في تاريخ {current_day}؛ "
+                            "صحح تواريخ العقود قبل توليد المسير."
+                        )
+                    covered_contracts[current_day] = contract
+                    current_day += datetime.timedelta(days=1)
+
+            if not covered_contracts:
+                continue
+
+            basic = money(component_totals["basic"])
+            housing = money(component_totals["housing"])
+            transport = money(component_totals["transport"])
+            other_all = money(component_totals["other"])
+            insurance = money(component_totals["insurance"])
+            active_branch_ids = {
+                contract.branch_id for contract in employee_contracts if contract.branch_id
+            }
+
             loans_qs = EmployeeLoanAdvance.objects.select_for_update().filter(
                 school=school,
                 status=EmployeeLoanAdvance.Status.ACTIVE,
@@ -95,22 +146,18 @@ def generate_monthly_payroll(
             )
             if teacher:
                 loans_qs = loans_qs.filter(teacher=teacher)
-            elif staff_member:
-                loans_qs = loans_qs.filter(staff_member=staff_member)
             else:
-                loans_qs = loans_qs.none()
-            if c.branch_id:
+                loans_qs = loans_qs.filter(staff_member=staff_member)
+            if active_branch_ids:
                 loans_qs = loans_qs.filter(
-                    Q(branch_id=c.branch_id) | Q(branch__isnull=True)
+                    Q(branch_id__in=active_branch_ids) | Q(branch__isnull=True)
                 )
 
             loan_ded = Decimal("0.00")
-            for loan in loans_qs:
+            for loan in loans_qs.order_by("start_date", "created_at", "pk"):
                 loan_ded += min(loan.monthly_installment, loan.remaining_amount)
+            loan_ded = money(loan_ded)
 
-            # Attendance rows are the source of worked days. Approved paid leave
-            # removes an unexcused mark; approved unpaid leave overrides a worked
-            # or excused mark only when a matching attendance row exists.
             employee_attendance = StaffAttendance.objects.filter(
                 school=school,
                 date__range=(month_start, month_end),
@@ -148,27 +195,41 @@ def generate_monthly_payroll(
                     target.add(current_day)
                     current_day += datetime.timedelta(days=1)
 
+            active_days = set(covered_contracts)
             absence_dates = (
                 (unexcused_dates - paid_leave_dates)
-                | (unpaid_leave_dates & attendance_dates)
-            ) - paid_leave_dates
-            daily_rate = (basic / Decimal("30")).quantize(Decimal("0.01"))
-            absence_ded = (
-                Decimal(len(absence_dates)) * daily_rate
-            ).quantize(Decimal("0.01"))
+                | unpaid_leave_dates
+            ) & active_days
+            absence_dates -= paid_leave_dates
+            absence_ded = Decimal("0.00")
+            for absence_day in absence_dates:
+                daily_basic = covered_contracts[absence_day].basic_salary / Decimal("30")
+                absence_ded += daily_basic.quantize(Decimal("0.01"))
+            absence_ded = money(absence_ded)
 
             overtime = Decimal("0.00")
-            earnings = basic + housing + transport + other_all + overtime
-            deductions = insurance + loan_ded + absence_ded
+            earnings = money(basic + housing + transport + other_all + overtime)
+            deductions = money(insurance + loan_ded + absence_ded)
             if deductions > earnings:
-                raise ValidationError(
-                    f"استقطاعات الموظف {c.contract_number} تتجاوز إجمالي مستحقاته؛ راجع الغياب والسلف والتأمينات."
+                employee_label = (
+                    teacher.user.get_full_name() if teacher
+                    else staff_member.user.get_full_name()
                 )
-            net = earnings - deductions
+                raise ValidationError(
+                    f"استقطاعات الموظف {employee_label or employee_id} تتجاوز إجمالي مستحقاته؛ "
+                    "راجع الغياب والسلف والتأمينات."
+                )
+            net = money(earnings - deductions)
 
+            unique_branch_ids = {contract.branch_id for contract in employee_contracts}
+            payslip_branch = (
+                employee_contracts[0].branch
+                if len(unique_branch_ids) == 1
+                else None
+            )
             Payslip.objects.create(
                 school=school,
-                branch=c.branch,
+                branch=payslip_branch,
                 payroll_run=run,
                 teacher=teacher,
                 staff_member=staff_member,
@@ -183,17 +244,18 @@ def generate_monthly_payroll(
                 net_salary=net,
             )
 
-            t_basic += basic
-            t_allowances += (housing + transport + other_all + overtime)
-            t_deductions += deductions
-            t_net += net
+            totals["basic"] += basic
+            totals["allowances"] += housing + transport + other_all + overtime
+            totals["deductions"] += deductions
+            totals["net"] += net
 
-        run.total_basic = t_basic
-        run.total_allowances = t_allowances
-        run.total_deductions = t_deductions
-        run.total_net = t_net
-        run.save()
-
+        run.total_basic = money(totals["basic"])
+        run.total_allowances = money(totals["allowances"])
+        run.total_deductions = money(totals["deductions"])
+        run.total_net = money(totals["net"])
+        run.save(update_fields=[
+            "total_basic", "total_allowances", "total_deductions", "total_net", "updated_at",
+        ])
         return run
 
 
