@@ -74,7 +74,9 @@ class EmployeeContractSerializer(serializers.ModelSerializer):
         if is_active and start_date:
             overlaps = EmployeeContract.objects.filter(
                 school=school, is_active=True, is_archived=False,
-            ).exclude(pk=instance.pk if instance else None)
+            )
+            if instance:
+                overlaps = overlaps.exclude(pk=instance.pk)
             if teacher:
                 overlaps = overlaps.filter(teacher=teacher, staff_member__isnull=True)
             else:

@@ -16,9 +16,13 @@ from apps.payroll.api.views import (
     PayrollRunListAPIView,
     PayrollRunPostAPIView,
     PayrollRunReverseAPIView,
+    MyPayslipDetailAPIView,
+    MyPayslipListAPIView,
 )
 
 urlpatterns = [
+    path("me/payslips/", MyPayslipListAPIView.as_view(), name="my-payslips"),
+    path("me/payslips/<uuid:pk>/", MyPayslipDetailAPIView.as_view(), name="my-payslip-detail"),
     path("contracts/", EmployeeContractListCreateAPIView.as_view(), name="employee-contract-list-create"),
     path("contracts/<uuid:pk>/", EmployeeContractDetailAPIView.as_view(), name="employee-contract-detail"),
     path("loans/", EmployeeLoanAdvanceListCreateAPIView.as_view(), name="employee-loan-list-create"),

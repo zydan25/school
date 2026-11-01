@@ -69,9 +69,14 @@ def generate_monthly_payroll(
         t_deductions = Decimal("0.00")
         t_net = Decimal("0.00")
 
-        from apps.staff.models import StaffAttendance
+        from apps.staff.models import LeaveRequest, StaffAttendance
 
         for c in contracts:
+            if (
+                (c.teacher_id and not c.teacher.is_active_teaching)
+                or (c.staff_member_id and not c.staff_member.is_active)
+            ):
+                continue
             teacher = c.teacher
             staff_member = c.staff_member
             basic = c.basic_salary
@@ -81,7 +86,7 @@ def generate_monthly_payroll(
             insurance = c.insurance_deduction
 
             # Calculate total loan deductions across all active loans for this employee whose start date has arrived
-            loans_qs = EmployeeLoanAdvance.objects.filter(
+            loans_qs = EmployeeLoanAdvance.objects.select_for_update().filter(
                 school=school,
                 status=EmployeeLoanAdvance.Status.ACTIVE,
                 start_date__lte=month_end,
@@ -98,30 +103,66 @@ def generate_monthly_payroll(
             for loan in loans_qs:
                 loan_ded += min(loan.monthly_installment, loan.remaining_amount)
 
-            # Calculate absence deduction from StaffAttendance
-            att_qs = StaffAttendance.objects.filter(
+            # Attendance rows are the source of worked days. Approved paid leave
+            # removes an unexcused mark; approved unpaid leave overrides a worked
+            # or excused mark only when a matching attendance row exists.
+            employee_attendance = StaffAttendance.objects.filter(
                 school=school,
                 date__range=(month_start, month_end),
-                status=StaffAttendance.Status.UNEXCUSED,
                 is_archived=False,
             )
             if teacher:
-                att_qs = att_qs.filter(teacher=teacher)
-            elif staff_member:
-                att_qs = att_qs.filter(staff_member=staff_member)
+                employee_attendance = employee_attendance.filter(teacher=teacher)
             else:
-                att_qs = att_qs.none()
+                employee_attendance = employee_attendance.filter(staff_member=staff_member)
+            attendance_dates = set(employee_attendance.values_list("date", flat=True))
+            unexcused_dates = set(employee_attendance.filter(
+                status=StaffAttendance.Status.UNEXCUSED,
+            ).values_list("date", flat=True))
 
-            absent_count = att_qs.count()
+            leave_qs = LeaveRequest.objects.filter(
+                school=school,
+                status=LeaveRequest.Status.APPROVED,
+                start_date__lte=month_end,
+                end_date__gte=month_start,
+                is_archived=False,
+            ).select_related("leave_type")
+            if teacher:
+                leave_qs = leave_qs.filter(teacher=teacher)
+            else:
+                leave_qs = leave_qs.filter(staff_member=staff_member)
+
+            paid_leave_dates = set()
+            unpaid_leave_dates = set()
+            for leave in leave_qs:
+                overlap_start = max(month_start, leave.start_date)
+                overlap_end = min(month_end, leave.end_date)
+                target = paid_leave_dates if leave.leave_type.is_paid else unpaid_leave_dates
+                current_day = overlap_start
+                while current_day <= overlap_end:
+                    target.add(current_day)
+                    current_day += datetime.timedelta(days=1)
+
+            absence_dates = (unexcused_dates - paid_leave_dates) | (
+                unpaid_leave_dates & attendance_dates
+            )
             daily_rate = (basic / Decimal("30")).quantize(Decimal("0.01"))
-            absence_ded = (Decimal(absent_count) * daily_rate).quantize(Decimal("0.01"))
+            absence_ded = (
+                Decimal(len(absence_dates)) * daily_rate
+            ).quantize(Decimal("0.01"))
 
-            earnings = basic + housing + transport + other_all
+            overtime = Decimal("0.00")
+            earnings = basic + housing + transport + other_all + overtime
             deductions = insurance + loan_ded + absence_ded
-            net = max(Decimal("0.00"), earnings - deductions)
+            if deductions > earnings:
+                raise ValidationError(
+                    f"استقطاعات الموظف {c.contract_number} تتجاوز إجمالي مستحقاته؛ راجع الغياب والسلف والتأمينات."
+                )
+            net = earnings - deductions
 
             Payslip.objects.create(
                 school=school,
+                branch=c.branch,
                 payroll_run=run,
                 teacher=teacher,
                 staff_member=staff_member,
@@ -130,13 +171,14 @@ def generate_monthly_payroll(
                 transport_allowance=transport,
                 other_allowances=other_all,
                 insurance_deduction=insurance,
+                overtime_amount=overtime,
                 loan_deduction=loan_ded,
                 absence_deduction=absence_ded,
                 net_salary=net,
             )
 
             t_basic += basic
-            t_allowances += (housing + transport + other_all)
+            t_allowances += (housing + transport + other_all + overtime)
             t_deductions += deductions
             t_net += net
 
@@ -150,18 +192,19 @@ def generate_monthly_payroll(
 
 
 def approve_payroll_run(payroll_run: PayrollRun, approved_by=None) -> PayrollRun:
-    """
-    اعتماد مسير الرواتب رسمياً بعد مراجعة قسائم الموظفين وقبل ترحيله محاسبياً.
-    """
-    if payroll_run.status != PayrollRun.Status.DRAFT:
-        raise ValidationError("يمكن اعتماد مسير الرواتب فقط عندما يكون في حالة مسودة.")
-    if not payroll_run.payslips.exists():
-        raise ValidationError("لا يمكن اعتماد مسير رواتب فارغ لا يحتوي على قسائم رواتب.")
-
-    payroll_run.status = PayrollRun.Status.APPROVED
-    payroll_run.approved_by = approved_by
-    payroll_run.save(update_fields=["status", "approved_by", "updated_at"])
-    return payroll_run
+    """اعتماد مسير الرواتب ذرياً بعد مراجعة وجود قسائم فعلية."""
+    with transaction.atomic():
+        locked = PayrollRun.objects.select_for_update().get(pk=payroll_run.pk)
+        if locked.status != PayrollRun.Status.DRAFT:
+            raise ValidationError("يمكن اعتماد مسير الرواتب فقط عندما يكون في حالة مسودة.")
+        if not locked.payslips.filter(is_archived=False).exists():
+            raise ValidationError("لا يمكن اعتماد مسير رواتب فارغ لا يحتوي على قسائم رواتب.")
+        locked.status = PayrollRun.Status.APPROVED
+        locked.approved_by = approved_by
+        locked.save(update_fields=["status", "approved_by", "updated_at"])
+        payroll_run.status = locked.status
+        payroll_run.approved_by = locked.approved_by
+        return locked
 
 
 def post_payroll_to_accounting(

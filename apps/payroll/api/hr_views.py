@@ -1,6 +1,7 @@
 """API endpoints for HR contracts, employee advances, and repayments."""
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
@@ -195,7 +196,11 @@ class EmployeeLoanApproveAPIView(APIView):
         )
         serializer = ApproveEmployeeLoanSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        approved = approve_employee_loan(loan=loan, approved_by=request.user)
+        try:
+            approved = approve_employee_loan(loan=loan, approved_by=request.user)
+        except DjangoValidationError as exc:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError(exc.messages) from exc
         return Response(EmployeeLoanAdvanceSerializer(approved).data)
 
 
@@ -216,13 +221,17 @@ class EmployeeLoanDisburseAPIView(APIView):
         account = get_object_or_404(
             Account, pk=data["payment_account_id"], school=school, is_archived=False,
         )
-        voucher = disburse_employee_loan(
-            loan=loan,
-            payment_account=account,
-            payment_method=data["payment_method"],
-            reference_number=data["reference_number"],
-            disbursed_by=request.user,
-        )
+        try:
+            voucher = disburse_employee_loan(
+                loan=loan,
+                payment_account=account,
+                payment_method=data["payment_method"],
+                reference_number=data["reference_number"],
+                disbursed_by=request.user,
+            )
+        except DjangoValidationError as exc:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError(exc.messages) from exc
         return Response({
             "loan": EmployeeLoanAdvanceSerializer(
                 EmployeeLoanAdvance.objects.select_related(
@@ -277,16 +286,20 @@ class EmployeeLoanRepaymentsAPIView(APIView):
         account = get_object_or_404(
             Account, pk=data["payment_account_id"], school=school, is_archived=False,
         )
-        repayment = record_employee_loan_repayment(
-            loan=loan,
-            amount=data["amount"],
-            payment_account=account,
-            idempotency_key=data["idempotency_key"],
-            payment_method=data["payment_method"],
-            reference_number=data["reference_number"],
-            notes=data["notes"],
-            recorded_by=request.user,
-        )
+        try:
+            repayment = record_employee_loan_repayment(
+                loan=loan,
+                amount=data["amount"],
+                payment_account=account,
+                idempotency_key=data["idempotency_key"],
+                payment_method=data["payment_method"],
+                reference_number=data["reference_number"],
+                notes=data["notes"],
+                recorded_by=request.user,
+            )
+        except DjangoValidationError as exc:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError(exc.messages) from exc
         return Response(
             LoanRepaymentReadSerializer(repayment).data,
             status=status.HTTP_201_CREATED,

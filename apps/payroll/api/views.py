@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -27,7 +29,10 @@ from apps.payroll.services import (
     generate_monthly_payroll,
     post_payroll_to_accounting,
     reverse_payroll_run,
+    approve_payroll_run,
 )
+from apps.payroll.models import Payslip
+from apps.staff.models import StaffMember, Teacher
 
 
 def _resolve_school(request):
@@ -69,8 +74,8 @@ class PayrollRunDetailAPIView(generics.RetrieveAPIView):
         return PayrollRun.objects.filter(
             school=school, is_archived=False,
         ).select_related("journal_entry").prefetch_related(
-            "payslips__employee_contract__teacher__user",
-            "payslips__employee_contract__staff_member__user",
+            "payslips__teacher__user",
+            "payslips__staff_member__user",
         )
 
 
@@ -81,7 +86,7 @@ class PayrollRunGenerateAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
-        require_school_role_or_permission(request, school, FINANCIAL_ROLES | HR_ROLES, "payroll.add_payrollrun")
+        require_school_role_or_permission(request, school, HR_ROLES, "payroll.add_payrollrun")
         serializer = GeneratePayrollSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         year = serializer.validated_data["year"]
@@ -104,14 +109,16 @@ class PayrollRunApproveAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
-        require_school_role_or_permission(request, school, {"school-director", "school_director"}, "payroll.change_payrollrun")
+        require_school_role_or_permission(
+            request, school,
+            {"school-director", "school_director", "principal", "hr-manager", "hr_manager"},
+            "payroll.change_payrollrun",
+        )
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
-        if run.status != PayrollRun.Status.DRAFT:
-            raise ValidationError(f"لا يمكن اعتماد مسير بحالة {run.get_status_display()}.")
-
-        run.status = PayrollRun.Status.APPROVED
-        run.approved_by = request.user
-        run.save(update_fields=["status", "approved_by", "updated_at"])
+        try:
+            run = approve_payroll_run(run, approved_by=request.user)
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
 
         return Response({
             "message": f"تم اعتماد مسير الرواتب {run.name} بنجاح.",
@@ -129,7 +136,10 @@ class PayrollRunPostAPIView(APIView):
         require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.change_payrollrun")
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
 
-        journal_entry = post_payroll_to_accounting(payroll_run=run, user=request.user)
+        try:
+            journal_entry = post_payroll_to_accounting(payroll_run=run, user=request.user)
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
         return Response({
             "message": f"تم ترحيل مسير الرواتب محاسبياً بنجاح برقم قيد {journal_entry.entry_number}.",
             "journal_entry": journal_entry.entry_number,
@@ -151,13 +161,16 @@ class PayrollRunDisburseAPIView(APIView):
         data = serializer.validated_data
 
         account = get_object_or_404(Account, pk=data["payment_account_id"], school=school)
-        disb_entry = disburse_payroll_run(
-            payroll_run=run,
-            payment_account=account,
-            payment_method=data.get("payment_method", "bank_transfer"),
-            reference_number=data.get("reference_number", ""),
-            user=request.user,
-        )
+        try:
+            disb_entry = disburse_payroll_run(
+                payroll_run=run,
+                payment_account=account,
+                payment_method=data.get("payment_method", "bank_transfer"),
+                reference_number=data.get("reference_number", ""),
+                user=request.user,
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
         from apps.accounting.models import PaymentVoucher
         voucher = PaymentVoucher.objects.filter(
             school=school, journal_entry=disb_entry
@@ -187,9 +200,64 @@ class PayrollRunReverseAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         reason = serializer.validated_data["reason"]
 
-        reverse_payroll_run(payroll_run=run, reason=reason, reversed_by=request.user)
+        try:
+            reverse_payroll_run(payroll_run=run, reason=reason, reversed_by=request.user)
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
 
         return Response({
             "message": "تم عكس مسير الرواتب وإعادة السلف والقيود السابقة بنجاح.",
             "status": run.status,
         }, status=status.HTTP_200_OK)
+
+
+
+class MyPayslipListAPIView(generics.ListAPIView):
+    """Employee self-service: list only payslips attached to the current user's own profile."""
+    permission_classes = [IsAuthenticated]
+    serializer_class = PayslipSerializer
+
+    def get_queryset(self):
+        school = _resolve_school(self.request)
+        if not school:
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        teacher_ids = Teacher.objects.filter(
+            school=school, user=self.request.user, is_archived=False,
+        ).values_list("pk", flat=True)
+        staff_ids = StaffMember.objects.filter(
+            school=school, user=self.request.user, is_archived=False,
+        ).values_list("pk", flat=True)
+        if not teacher_ids and not staff_ids:
+            raise PermissionDenied("لا يوجد ملف وظيفي مرتبط بحسابك في المدرسة النشطة.")
+        return Payslip.objects.filter(
+            school=school, is_archived=False,
+        ).filter(
+            Q(teacher_id__in=teacher_ids) | Q(staff_member_id__in=staff_ids)
+        ).select_related(
+            "teacher__user", "staff_member__user", "payroll_run",
+        ).prefetch_related("loan_repayments").order_by("-payroll_run__year", "-payroll_run__month")
+
+
+class MyPayslipDetailAPIView(generics.RetrieveAPIView):
+    """Employee self-service: retrieve one payslip only when it belongs to the caller."""
+    permission_classes = [IsAuthenticated]
+    serializer_class = PayslipSerializer
+    lookup_url_kwarg = "pk"
+
+    def get_queryset(self):
+        school = _resolve_school(self.request)
+        if not school:
+            raise PermissionDenied("لم يتم تحديد المدرسة.")
+        teacher_ids = Teacher.objects.filter(
+            school=school, user=self.request.user, is_archived=False,
+        ).values_list("pk", flat=True)
+        staff_ids = StaffMember.objects.filter(
+            school=school, user=self.request.user, is_archived=False,
+        ).values_list("pk", flat=True)
+        return Payslip.objects.filter(
+            school=school, is_archived=False,
+        ).filter(
+            Q(teacher_id__in=teacher_ids) | Q(staff_member_id__in=staff_ids)
+        ).select_related(
+            "teacher__user", "staff_member__user", "payroll_run",
+        ).prefetch_related("loan_repayments")
