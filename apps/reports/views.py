@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -13,6 +14,7 @@ from rest_framework.views import APIView
 from apps.academics.models import AcademicTerm, Section, Subject
 from apps.accounting.services.financial_reports import (
     get_balance_sheet,
+    get_general_ledger,
     get_income_statement,
     get_trial_balance,
 )
@@ -264,6 +266,34 @@ class BillingLedgerReconciliationAPIView(BaseSchoolReportView):
 
 
 # -----------------------------------------------------------------------------
+class GeneralLedgerAPIView(BaseSchoolReportView):
+    """كشف حركة حساب تفصيلي للمحاسب والإدارة المخولة."""
+    def get(self, request, account_id=None, *args, **kwargs):
+        school = self.get_school(request)
+        if not school:
+            return Response({"error": "المدرسة غير محددة."}, status=status.HTTP_400_BAD_REQUEST)
+        if not self.check_general_ledger_access(request, school):
+            return Response({"error": "غير مصرح لك بالاطلاع على دفتر الأستاذ العام."}, status=status.HTTP_403_FORBIDDEN)
+
+        from apps.accounting.models import Account
+
+        account = get_object_or_404(
+            Account,
+            pk=account_id,
+            school=school,
+            is_archived=False,
+        )
+        start_value = request.query_params.get("start_date")
+        end_value = request.query_params.get("end_date")
+        try:
+            start_date = datetime.date.fromisoformat(start_value) if start_value else None
+            end_date = datetime.date.fromisoformat(end_value) if end_value else None
+            data = get_general_ledger(account, start_date=start_date, end_date=end_date)
+        except (ValueError, ValidationError) as exc:
+            return Response({"error": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(data)
+
+
 # Academic Reports Views
 # -----------------------------------------------------------------------------
 
