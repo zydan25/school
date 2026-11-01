@@ -835,15 +835,17 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
     action_role_map = {
         "list": ADMIN_ROLES | {"teacher", "student", "guardian"},
         "retrieve": ADMIN_ROLES | {"teacher", "student", "guardian"},
-        "submit": {"student"} | ADMIN_ROLES,
+        "submit": {"student"},
         "grade": TEACHER_ROLES,
+        "request_resubmission": TEACHER_ROLES,
+        "attempt_attachment": ADMIN_ROLES | {"teacher", "student", "guardian"},
     }
 
     def get_queryset(self):
         school = self.get_school()
         qs = HomeworkSubmission.objects.filter(
             school=school, is_archived=False,
-        ).select_related("homework", "student", "graded_by")
+        ).select_related("homework", "student", "graded_by").prefetch_related("attempts")
         if not is_admin(self.request.user, school):
             allowed = Q(pk__in=[])
             if has_school_roles(self.request.user, school, {"student"}):
@@ -857,7 +859,9 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
                         school=school, is_archived=False,
                     ))
             if has_school_roles(self.request.user, school, {"teacher"}):
-                teacher = user_teacher_profiles(self.request.user, school).filter(is_active_teaching=True).first()
+                teacher = user_teacher_profiles(self.request.user, school).filter(
+                    is_active_teaching=True,
+                ).first()
                 if teacher:
                     allowed |= Q(homework__teacher=teacher)
             qs = qs.filter(allowed)
@@ -890,6 +894,8 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
         )
         if homework.section_id != student.section_id:
             raise PermissionDenied("الواجب لا يخص الشعبة الحالية للطالب.")
+        if homework.branch_id and student.branch_id and homework.branch_id != student.branch_id:
+            raise PermissionDenied("الواجب لا يخص فرع الطالب.")
         attachment = request.FILES.get("attachment")
         if attachment:
             extension = os.path.splitext(attachment.name)[1].lower()
@@ -897,7 +903,13 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
                 raise ValidationError({"attachment": "نوع الملف غير مدعوم."})
             if attachment.size > 15 * 1024 * 1024:
                 raise ValidationError({"attachment": "الحد الأقصى لحجم المرفق 15 ميجابايت."})
-        late = timezone.now() > homework.due_date
+
+        now = timezone.now()
+        late = now > homework.due_date
+        attempt_status = (
+            HomeworkSubmissionAttempt.Status.LATE
+            if late else HomeworkSubmissionAttempt.Status.SUBMITTED
+        )
         with transaction.atomic():
             existing = HomeworkSubmission.objects.select_for_update().filter(
                 school=school, homework=homework, student=student,
@@ -905,51 +917,167 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
             ).first()
             created = existing is None
             if existing and existing.status == HomeworkSubmission.Status.GRADED:
-                raise ValidationError("تم تصحيح هذا الواجب ولا يمكن استبدال التسليم.")
+                raise ValidationError("تم تصحيح هذا الواجب. لا يمكن إعادة التسليم بعد التصحيح.")
+            if existing and existing.status != HomeworkSubmission.Status.RESUBMIT:
+                raise ValidationError("لا توجد موافقة من المعلم على إعادة التسليم لهذا الواجب.")
             if created:
                 existing = HomeworkSubmission(
-                    school=school, homework=homework, student=student,
+                    school=school, branch=homework.branch or student.branch,
+                    homework=homework, student=student,
                 )
-            existing.submission_text = request.data.get("submission_text", "")
+                existing.save()
+
+            next_number = (
+                existing.attempts.filter(is_archived=False).aggregate(value=Max("attempt_number"))["value"] or 0
+            ) + 1
+            attempt = HomeworkSubmissionAttempt(
+                school=school,
+                branch=existing.branch,
+                submission=existing,
+                attempt_number=next_number,
+                submission_text=request.data.get("submission_text", ""),
+                status=attempt_status,
+                submitted_at=now,
+            )
             if attachment:
-                existing.attachment = attachment
+                attempt.attachment = attachment
+            attempt.save()
+
+            existing.submission_text = attempt.submission_text
             existing.status = (
                 HomeworkSubmission.Status.LATE
                 if late else HomeworkSubmission.Status.SUBMITTED
             )
-            existing.submitted_at = timezone.now()
-            existing.save()
+            existing.submitted_at = now
+            existing.score = None
+            existing.graded_by = None
+            existing.graded_at = None
+            existing.teacher_feedback = ""
+            if attempt.attachment:
+                existing.attachment.name = attempt.attachment.name
+            existing.save(update_fields=[
+                "submission_text", "status", "submitted_at", "score",
+                "graded_by", "graded_at", "teacher_feedback", "attachment",
+                "updated_at",
+            ])
+            record_event(
+                action="homework.submission_attempt_created",
+                description="تم حفظ محاولة تسليم واجب دون استبدال المحاولات السابقة.",
+                actor=request.user, school=school, obj=attempt,
+                metadata={
+                    "homework_id": str(homework.pk),
+                    "student_id": str(student.pk),
+                    "attempt_number": next_number,
+                    "late": late,
+                },
+                request=request,
+            )
+        existing.refresh_from_db()
         return Response(
             self.get_serializer(existing).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
 
+    @action(detail=True, methods=["post"], url_path="request-resubmission")
+    def request_resubmission(self, request, pk=None):
+        school = self.get_school()
+        submission = self.get_object()
+        teacher = user_teacher_profiles(request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
+        if not is_admin(request.user, school):
+            if not teacher or submission.homework.teacher_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك طلب إعادة تسليم واجب لا تشرف عليه.")
+        if submission.status not in {
+            HomeworkSubmission.Status.SUBMITTED,
+            HomeworkSubmission.Status.LATE,
+        }:
+            raise ValidationError("لا يمكن طلب إعادة التسليم إلا بعد وصول محاولة قابلة للمراجعة.")
+        reason = str(request.data.get("reason", "")).strip()
+        if not reason:
+            raise ValidationError({"reason": "اذكر سبب طلب إعادة التسليم ليظهر للطالب."})
+        submission.status = HomeworkSubmission.Status.RESUBMIT
+        submission.teacher_feedback = reason[:5000]
+        submission.score = None
+        submission.graded_by = None
+        submission.graded_at = None
+        submission.save(update_fields=[
+            "status", "teacher_feedback", "score", "graded_by",
+            "graded_at", "updated_at",
+        ])
+        record_event(
+            action="homework.resubmission_requested",
+            description="طلب المعلم إعادة تسليم الواجب مع حفظ المحاولة السابقة.",
+            actor=request.user, school=school, obj=submission,
+            metadata={"reason": reason[:500], "homework_id": str(submission.homework_id)},
+            request=request,
+        )
+        return Response(self.get_serializer(submission).data)
+
+    @action(
+        detail=True, methods=["get"],
+        url_path=r"attempts/(?P<attempt_id>[^/.]+)/attachment",
+    )
+    def attempt_attachment(self, request, pk=None, attempt_id=None):
+        submission = self.get_object()
+        attempt = get_object_or_404(
+            HomeworkSubmissionAttempt.objects.filter(
+                school=self.get_school(), submission=submission,
+                is_archived=False,
+            ),
+            pk=attempt_id,
+        )
+        if not attempt.attachment:
+            raise Http404("لا يوجد مرفق لهذه المحاولة.")
+        return FileResponse(
+            attempt.attachment.open("rb"),
+            as_attachment=True,
+            filename=os.path.basename(attempt.attachment.name),
+        )
+
     @action(detail=True, methods=["post"], url_path="grade")
     def grade(self, request, pk=None):
         school = self.get_school()
-        submission = self.get_object()
-        require_school_role_or_permission(request, school, TEACHER_ROLES)
-        teacher = user_teacher_profiles(request.user, school).filter(is_active_teaching=True).first()
-        if not is_admin(request.user, school):
-            if not teacher or submission.homework.teacher_id != teacher.pk:
-                raise PermissionDenied("لا يمكنك تصحيح تسليم واجب لمعلم آخر.")
-        try:
-            score = Decimal(str(request.data.get("score")))
-        except Exception:
-            raise ValidationError({"score": "الدرجة المدخلة غير صحيحة."})
-        if score < 0 or score > submission.homework.max_score:
-            raise ValidationError({
-                "score": f"الدرجة يجب أن تكون بين صفر و {submission.homework.max_score}.",
-            })
-        submission.score = score
-        submission.teacher_feedback = request.data.get("teacher_feedback", "")
-        submission.graded_by = teacher
-        submission.graded_at = timezone.now()
-        submission.status = HomeworkSubmission.Status.GRADED
-        submission.save(update_fields=[
-            "score", "teacher_feedback", "graded_by", "graded_at",
-            "status", "updated_at",
-        ])
+        with transaction.atomic():
+            submission = get_object_or_404(
+                HomeworkSubmission.objects.select_for_update().select_related("homework"),
+                pk=pk, school=school, is_archived=False,
+            )
+            teacher = user_teacher_profiles(request.user, school).filter(
+                is_active_teaching=True,
+            ).first()
+            if not is_admin(request.user, school):
+                if not teacher or submission.homework.teacher_id != teacher.pk:
+                    raise PermissionDenied("لا يمكنك تصحيح تسليم واجب لمعلم آخر.")
+            if submission.status not in {
+                HomeworkSubmission.Status.SUBMITTED,
+                HomeworkSubmission.Status.LATE,
+            }:
+                raise ValidationError("يجب أن تكون المحاولة مستلمة وغير معلقة لإعادة التسليم قبل التصحيح.")
+            try:
+                score = Decimal(str(request.data.get("score")))
+            except Exception:
+                raise ValidationError({"score": "الدرجة المدخلة غير صحيحة."})
+            if score < 0 or score > submission.homework.max_score:
+                raise ValidationError({
+                    "score": f"الدرجة يجب أن تكون بين صفر و {submission.homework.max_score}.",
+                })
+            submission.score = score
+            submission.teacher_feedback = request.data.get("teacher_feedback", "")
+            submission.graded_by = teacher
+            submission.graded_at = timezone.now()
+            submission.status = HomeworkSubmission.Status.GRADED
+            submission.save(update_fields=[
+                "score", "teacher_feedback", "graded_by", "graded_at",
+                "status", "updated_at",
+            ])
+            record_event(
+                action="homework.submission_graded",
+                description="تم تصحيح محاولة تسليم الواجب.",
+                actor=request.user, school=school, obj=submission,
+                metadata={"score": str(score), "max_score": str(submission.homework.max_score)},
+                request=request,
+            )
         return Response(self.get_serializer(submission).data)
 
 
