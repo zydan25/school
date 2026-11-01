@@ -1,4 +1,5 @@
 # Generated for phase 6: preserve existing submissions as their first attempt.
+import apps.assignments.models
 import django.db.models.deletion
 import django.utils.timezone
 import uuid
@@ -45,7 +46,7 @@ class Migration(migrations.Migration):
                 ("archive_reason", models.CharField(blank=True, max_length=500, verbose_name="سبب الأرشفة")),
                 ("attempt_number", models.PositiveSmallIntegerField(verbose_name="رقم المحاولة")),
                 ("submission_text", models.TextField(blank=True, verbose_name="نص الإجابة في هذه المحاولة")),
-                ("attachment", models.FileField(blank=True, upload_to="schools/homework_attempts/", verbose_name="مرفق هذه المحاولة")),
+                ("attachment", models.FileField(blank=True, upload_to=apps.assignments.models.homework_attempt_upload_path, verbose_name="مرفق هذه المحاولة")),
                 ("submitted_at", models.DateTimeField(default=django.utils.timezone.now, verbose_name="وقت هذه المحاولة")),
                 ("status", models.CharField(choices=[("submitted", "تم التسليم"), ("late", "تسليم متأخر")], default="submitted", max_length=20, verbose_name="حالة المحاولة")),
                 ("archived_by", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name="%(app_label)s_%(class)s_archived", to=settings.AUTH_USER_MODEL, verbose_name="أرشفه")),
