@@ -393,7 +393,7 @@ class JournalEntry(TenantOwnedModel):
     def post(self, user=None):
         """ترحيل ذري ومقفل للقيد بعد التحقق من الفترة والمصدر والمدين والدائن."""
         with transaction.atomic():
-            locked = JournalEntry.objects.select_for_update().select_related(
+            locked = JournalEntry.objects.select_for_update(of=("self",)).select_related(
                 "fiscal_period__fiscal_year",
             ).get(pk=self.pk)
             if locked.status == self.Status.POSTED:
@@ -432,7 +432,7 @@ class JournalEntry(TenantOwnedModel):
                     raise ValidationError("يوجد قيد آخر مسجل للمستند المصدر نفسه؛ يمنع تكرار الترحيل.")
 
             lines = list(
-                JournalEntryLine.objects.select_for_update().filter(
+                JournalEntryLine.objects.select_for_update(of=("self",)).filter(
                     journal_entry=locked, is_archived=False,
                 ).select_related("account", "cost_center")
             )
