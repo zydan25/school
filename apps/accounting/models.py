@@ -1020,18 +1020,46 @@ class TreasuryTransfer(TenantOwnedModel):
                     raise ValidationError("لا يمكن استخدام حساب خزينة غير نشط أو مؤرشف.")
             if self.source_account.currency != self.destination_account.currency:
                 raise ValidationError("لا يمكن تحويل مبالغ بين حسابين بعملتين مختلفتين دون عملية صرف مستقلة.")
+            expected_branch_id = (
+                self.source_account.branch_id
+                if self.source_account.branch_id == self.destination_account.branch_id
+                else None
+            )
+            if self.branch_id != expected_branch_id:
+                raise ValidationError("فرع التحويل يجب أن يطابق الفرع المشترك للحسابين أو يكون عاماً عند اختلاف الفرعين.")
+        if self.status == self.Status.POSTED:
+            if not self.journal_entry_id or self.journal_entry.status != JournalEntry.Status.POSTED:
+                raise ValidationError({"journal_entry": "التحويل المرحّل يجب أن يرتبط بقيد أستاذ مرحّل."})
+        if self.status == self.Status.REVERSED:
+            if (
+                not self.reversed_by_entry_id
+                or self.reversed_by_entry.status != JournalEntry.Status.POSTED
+            ):
+                raise ValidationError({"reversed_by_entry": "التحويل المعكوس يجب أن يرتبط بقيد عكسي مرحّل."})
 
+    @transaction.atomic
     def save(self, *args, **kwargs):
+        if not self.pk and self.status != self.Status.DRAFT:
+            raise ValidationError("إنشاء تحويل بغير حالة مسودة مباشرة غير مسموح؛ استخدم خدمة التحويل.")
         if self.pk:
-            original = TreasuryTransfer.objects.filter(pk=self.pk).first()
+            original = TreasuryTransfer.objects.select_for_update(of=("self",)).filter(
+                pk=self.pk,
+            ).first()
+            if original and original.status == self.Status.DRAFT and self.status != self.Status.DRAFT:
+                raise ValidationError("ترحيل التحويل أو عكسه يجب أن يتم عبر خدمات الخزينة.")
             if original and original.status in (self.Status.POSTED, self.Status.REVERSED):
                 protected = (
-                    "school_id", "transfer_number", "transfer_date",
+                    "school_id", "branch_id", "transfer_number", "transfer_date",
                     "source_account_id", "destination_account_id", "amount",
                     "description", "idempotency_key", "journal_entry_id",
                 )
                 if any(getattr(original, field) != getattr(self, field) for field in protected):
                     raise ValidationError("بيانات التحويل المرحّل غير قابلة للتعديل؛ صححها بقيد عكسي.")
+                if original.status == self.Status.POSTED and self.status == self.Status.REVERSED:
+                    if not self.reversed_by_entry_id:
+                        raise ValidationError("لا يمكن عكس التحويل دون قيد عكسي مرتبط.")
+                elif original.status == self.Status.POSTED and self.status != self.Status.POSTED:
+                    raise ValidationError("حالة التحويل المرحّل لا تتغير إلا عبر خدمة العكس.")
                 if original.status == self.Status.REVERSED and self.status != self.Status.REVERSED:
                     raise ValidationError("لا يمكن إعادة تحويل معكوس إلى حالة مرحّل.")
         return super().save(*args, **kwargs)
