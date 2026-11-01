@@ -127,3 +127,62 @@ class HomeworkSubmission(TenantOwnedModel):
             raise ValidationError({"student": "الطالب لا ينتمي إلى شعبة هذا الواجب المحدد."})
         if self.score is not None and self.homework_id and self.score > self.homework.max_score:
             raise ValidationError({"score": f"الدرجة المحرزة ({self.score}) لا يمكن أن تتجاوز الدرجة العظمى للواجب ({self.homework.max_score})."})
+
+def homework_attempt_upload_path(instance: HomeworkSubmissionAttempt, filename: str) -> str:
+    ext = os.path.splitext(filename)[1].lower()
+    return (
+        f"schools/{instance.school_id}/homework_attempts/"
+        f"{instance.submission_id}/{instance.attempt_number}{ext}"
+    )
+
+
+class HomeworkSubmissionAttempt(TenantOwnedModel):
+    """Immutable snapshot of one student submission; later attempts never overwrite it."""
+
+    class Status(models.TextChoices):
+        SUBMITTED = "submitted", "تم التسليم"
+        LATE = "late", "تسليم متأخر"
+
+    submission = models.ForeignKey(
+        HomeworkSubmission,
+        verbose_name="سجل تسليم الواجب",
+        on_delete=models.CASCADE,
+        related_name="attempts",
+    )
+    attempt_number = models.PositiveSmallIntegerField("رقم المحاولة")
+    submission_text = models.TextField("نص الإجابة في هذه المحاولة", blank=True)
+    attachment = models.FileField(
+        "مرفق هذه المحاولة",
+        upload_to=homework_attempt_upload_path,
+        blank=True,
+    )
+    submitted_at = models.DateTimeField("وقت هذه المحاولة", default=timezone.now)
+    status = models.CharField(
+        "حالة المحاولة", max_length=20, choices=Status.choices,
+        default=Status.SUBMITTED,
+    )
+
+    class Meta:
+        verbose_name = "محاولة تسليم واجب"
+        verbose_name_plural = "سجل محاولات تسليم الواجبات"
+        ordering = ["attempt_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "submission", "attempt_number"],
+                condition=models.Q(is_archived=False),
+                name="assignments_attempt_number_uniq",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["school", "submission", "submitted_at"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.submission_id:
+            if self.submission.school_id != self.school_id:
+                raise ValidationError({"submission": "سجل التسليم لا يتبع المدرسة نفسها."})
+            if self.submission.branch_id != self.branch_id:
+                raise ValidationError({"branch": "محاولة التسليم يجب أن تتبع فرع سجل التسليم."})
+        if self.attempt_number < 1:
+            raise ValidationError({"attempt_number": "رقم المحاولة يجب أن يبدأ من 1."})
