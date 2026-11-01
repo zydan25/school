@@ -938,6 +938,11 @@ class HomeworkSubmissionViewSet(TenantModelViewSet):
             if late else HomeworkSubmissionAttempt.Status.SUBMITTED
         )
         with transaction.atomic():
+            # Lock the homework row as well: the first-ever submission has no
+            # existing HomeworkSubmission row to lock yet.
+            homework = Homework.objects.select_for_update().get(
+                pk=homework.pk, school=school, is_archived=False, is_active=True,
+            )
             existing = HomeworkSubmission.objects.select_for_update().filter(
                 school=school, homework=homework, student=student,
                 is_archived=False,
