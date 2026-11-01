@@ -10,7 +10,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import F, Q, Sum
+from django.db.models import F, Max, Q, Sum
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -33,7 +33,7 @@ from apps.accounts.services import (
     accept_school_invitation, active_membership, issue_school_invitation,
 )
 from apps.accounts.session_services import send_phone_message
-from apps.academics.models import AcademicYear
+from apps.academics.models import AcademicYear, Section
 from apps.accounting.models import (
     Account, CostCenter, FiscalPeriod, JournalEntry, JournalEntryLine,
     PaymentVoucher, ReceiptVoucher,
@@ -59,7 +59,7 @@ from apps.students.models import (
 )
 from apps.students.services import ensure_guardian_membership
 from apps.timetable.models import (
-    ClassSchedule,
+    ClassSchedule, TimetablePlan,
 )
 from apps.tenants.models import Branch
 
@@ -82,6 +82,7 @@ from apps.api.v1.serializers import (
     PeriodDefinitionSerializer, PushDeviceSerializer, PurchaseOrderItemSerializer,
     PurchaseOrderSerializer, QuestionBankTeacherSerializer, ReceiptVoucherSerializer,
     SchoolBellScheduleSerializer, SchoolConversationSerializer, SchoolRoleSerializer,
+    TimetablePlanSerializer, TimetablePlanCopyInputSerializer,
     SchoolWorkingDaySerializer, SchedulePeriodTemplateSerializer, SectionSerializer,
     StockMovementSerializer, StudentGuardianRelationSerializer, SubjectSerializer,
     SupplierSerializer, TeacherAssignmentSerializer, TeacherSerializer,
