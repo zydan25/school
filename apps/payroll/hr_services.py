@@ -206,6 +206,7 @@ def record_employee_loan_repayment(
         ):
             raise ValidationError("يوجد سند تحصيل سابق بمفتاح منع التكرار نفسه وبيانات مختلفة.")
         post_receipt_voucher_to_journal(voucher)
+        voucher.refresh_from_db()
         balance_before = locked_loan.remaining_amount
         locked_loan.repaid_amount += amount
         if locked_loan.repaid_amount >= locked_loan.amount:

@@ -10,7 +10,7 @@ class PayslipSerializer(serializers.ModelSerializer):
         source="total_earnings", max_digits=14, decimal_places=2, read_only=True,
     )
     total_deductions = serializers.DecimalField(
-        source="total_deductions", max_digits=14, decimal_places=2, read_only=True,
+        max_digits=14, decimal_places=2, read_only=True,
     )
     loan_repayments = serializers.SerializerMethodField()
 

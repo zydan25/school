@@ -284,8 +284,6 @@ class LeaveRequest(TenantOwnedModel):
             raise ValidationError({"leave_type": "نوع الإجازة لا يتبع المدرسة نفسها."})
         if self.start_date and self.end_date and self.start_date > self.end_date:
             raise ValidationError("تاريخ بدء الإجازة لا يمكن أن يكون بعد تاريخ نهايتها.")
-        if self.status == self.Status.APPROVED and not (self.reviewed_by_id or self.approved_by_id):
-            raise ValidationError({"status": "اعتماد الإجازة يتطلب تسجيل المسؤول عن المراجعة."})
 
 
 class StaffAttendance(TenantOwnedModel):

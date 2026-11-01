@@ -188,6 +188,7 @@ class ExtendedModulesTests(TestCase):
             amount=Decimal("3000.00"),
             monthly_installment=Decimal("500.00"),
             start_date=date(2026, 10, 1),
+            status=EmployeeLoanAdvance.Status.ACTIVE,
         )
         self.assertEqual(loan.remaining_amount, Decimal("3000.00"))
 
