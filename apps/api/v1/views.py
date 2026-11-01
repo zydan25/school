@@ -42,9 +42,13 @@ from apps.accounting.models import (
 from apps.accounting.services.auto_posting import reverse_journal_entry
 from apps.assets.models import AssetDepreciationEntry, FixedAsset
 from apps.assessments.models import (
-    GradeBook, OnlineExam, QuestionBank, StudentOnlineExamSubmission,
+    ExamCommitteeProctor, GradeBook, OnlineExam, QuestionBank,
+    StudentOnlineExamSubmission,
 )
-from apps.assignments.models import Homework, HomeworkSubmission
+from apps.assignments.models import (
+    Homework, HomeworkSubmission, HomeworkSubmissionAttempt,
+)
+from apps.auditlog.services import record_event
 from apps.inventory.models import (
     InventoryItem, PurchaseOrder, Supplier, VendorInvoice, Warehouse,
 )
@@ -71,8 +75,8 @@ from apps.api.v1.serializers import (
     ClassroomSerializer, ClassScheduleSerializer, ConversationCreateSerializer,
     ConversationMessageSerializer,
     CostCenterSerializer, DailyLessonLogSerializer, DepartmentSerializer,
-    EducationalStageSerializer, ExamCommitteeSerializer, ExamPaperQuestionSerializer,
-    ExamSeatingSerializer, ExamSubmissionReviewSerializer,
+    EducationalStageSerializer, ExamCommitteeProctorSerializer, ExamCommitteeSerializer,
+    ExamPaperQuestionSerializer, ExamSeatingSerializer, ExamSubmissionReviewSerializer,
     ExpenseCategorySerializer, FiscalPeriodSerializer, FiscalYearSerializer,
     FixedAssetSerializer, GradeBookSerializer, GradeLevelSerializer,
     GuardianSerializer, HomeworkSerializer, HomeworkSubmissionSerializer,
