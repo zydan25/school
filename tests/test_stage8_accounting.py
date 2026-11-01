@@ -255,6 +255,44 @@ class Stage8AccountingIntegrityTests(TestCase):
         self.assertEqual(transfer.status, TreasuryTransfer.Status.REVERSED)
         self.assertIsNotNone(transfer.reversed_by_entry_id)
 
+    def test_treasury_account_identity_is_immutable_after_posted_transfer(self):
+        cash = TreasuryAccount.objects.create(
+            school=self.school, code="CASH-LOCKED", name="صندوق ثابت",
+            kind=TreasuryAccount.Kind.CASH,
+            account=Account.objects.get(school=self.school, code="1101"),
+        )
+        bank = TreasuryAccount.objects.create(
+            school=self.school, code="BANK-LOCKED", name="بنك ثابت",
+            kind=TreasuryAccount.Kind.BANK, bank_name="بنك الاختبار",
+            account=Account.objects.get(school=self.school, code="1102"),
+        )
+        create_treasury_transfer(
+            source_account=cash, destination_account=bank,
+            amount=Decimal("10.00"), transfer_number="TR-LOCKED-001",
+            idempotency_key="transfer-locked-001",
+            description="اختبار تثبيت هوية الخزينة", user=self.owner,
+        )
+        cash.refresh_from_db()
+        cash.code = "CASH-RENAMED"
+        with self.assertRaises(ValidationError):
+            cash.save()
+        cash.refresh_from_db()
+        self.assertEqual(cash.code, "CASH-LOCKED")
+
+    def test_only_one_default_treasury_account_per_kind(self):
+        TreasuryAccount.objects.create(
+            school=self.school, code="CASH-DEFAULT-1", name="الصندوق الافتراضي",
+            kind=TreasuryAccount.Kind.CASH, is_default=True,
+            account=Account.objects.get(school=self.school, code="1101"),
+        )
+        duplicate = TreasuryAccount(
+            school=self.school, code="CASH-DEFAULT-2", name="صندوق افتراضي ثان",
+            kind=TreasuryAccount.Kind.CASH, is_default=True,
+            account=Account.objects.get(school=self.school, code="1102"),
+        )
+        with self.assertRaises(ValidationError):
+            duplicate.save()
+
     def test_transfer_idempotency_key_rejects_different_amount(self):
         cash = TreasuryAccount.objects.create(
             school=self.school, code="CASH-2", name="صندوق 2",
