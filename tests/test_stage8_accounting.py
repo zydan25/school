@@ -293,6 +293,64 @@ class Stage8AccountingIntegrityTests(TestCase):
         with self.assertRaises(ValidationError):
             duplicate.save()
 
+    def test_treasury_transfer_cannot_be_posted_or_reversed_directly(self):
+        cash = TreasuryAccount.objects.create(
+            school=self.school, code="CASH-DIRECT-STATE", name="صندوق حالات مباشرة",
+            kind=TreasuryAccount.Kind.CASH,
+            account=Account.objects.get(school=self.school, code="1101"),
+        )
+        bank = TreasuryAccount.objects.create(
+            school=self.school, code="BANK-DIRECT-STATE", name="بنك حالات مباشرة",
+            kind=TreasuryAccount.Kind.BANK, bank_name="بنك الاختبار",
+            account=Account.objects.get(school=self.school, code="1102"),
+        )
+        transfer = TreasuryTransfer.objects.create(
+            school=self.school,
+            transfer_number="TR-DIRECT-STATE",
+            source_account=cash,
+            destination_account=bank,
+            amount=Decimal("20.00"),
+            description="اختبار منع تغيير الحالة المباشر",
+            idempotency_key="direct-state-transfer-001",
+        )
+        transfer.status = TreasuryTransfer.Status.POSTED
+        with self.assertRaises(ValidationError):
+            transfer.save()
+        transfer.status = TreasuryTransfer.Status.REVERSED
+        with self.assertRaises(ValidationError):
+            transfer.save()
+        with self.assertRaises(ValidationError):
+            TreasuryTransfer.objects.filter(pk=transfer.pk).update(
+                status=TreasuryTransfer.Status.POSTED,
+            )
+
+    def test_treasury_transfer_reversal_is_idempotent(self):
+        cash = TreasuryAccount.objects.create(
+            school=self.school, code="CASH-REVERSE", name="صندوق العكس",
+            kind=TreasuryAccount.Kind.CASH,
+            account=Account.objects.get(school=self.school, code="1101"),
+        )
+        bank = TreasuryAccount.objects.create(
+            school=self.school, code="BANK-REVERSE", name="بنك العكس",
+            kind=TreasuryAccount.Kind.BANK, bank_name="بنك الاختبار",
+            account=Account.objects.get(school=self.school, code="1102"),
+        )
+        transfer = create_treasury_transfer(
+            source_account=cash, destination_account=bank,
+            amount=Decimal("30.00"), transfer_number="TR-REVERSE-001",
+            idempotency_key="transfer-reverse-001",
+            description="تحويل لاختبار العكس", user=self.owner,
+        )
+        reversed_transfer = reverse_treasury_transfer(
+            transfer, reason="اختبار عكس التحويل", reversed_by=self.owner,
+        )
+        repeated = reverse_treasury_transfer(
+            transfer, reason="إعادة طلب العكس", reversed_by=self.owner,
+        )
+        self.assertEqual(reversed_transfer.status, TreasuryTransfer.Status.REVERSED)
+        self.assertEqual(repeated.pk, reversed_transfer.pk)
+        self.assertEqual(repeated.reversed_by_entry_id, reversed_transfer.reversed_by_entry_id)
+
     def test_transfer_idempotency_key_rejects_different_amount(self):
         cash = TreasuryAccount.objects.create(
             school=self.school, code="CASH-2", name="صندوق 2",
