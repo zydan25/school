@@ -1665,13 +1665,21 @@ class OnlineExamViewSet(TenantModelViewSet):
             if has_school_roles(self.request.user, school, {"student"}):
                 student = user_student_profiles(self.request.user, school).first()
                 if student:
-                    allowed |= (
-                        Q(is_published=True)
-                        & (
-                            Q(section=student.section)
-                            | Q(section__isnull=True, grade_level=student.grade_level)
-                        )
+                    student_exam_scope = Q(is_published=True) & (
+                        Q(section=student.section)
+                        | Q(section__isnull=True, grade_level=student.grade_level)
                     )
+                    if student.academic_year_id:
+                        student_exam_scope &= Q(
+                            academic_term__academic_year_id=student.academic_year_id,
+                        )
+                    if student.branch_id:
+                        student_exam_scope &= Q(
+                            Q(branch__isnull=True) | Q(branch=student.branch),
+                        )
+                    else:
+                        student_exam_scope &= Q(branch__isnull=True)
+                    allowed |= student_exam_scope
             if has_school_roles(self.request.user, school, {"teacher"}):
                 teacher = user_teacher_profiles(self.request.user, school).filter(
                     is_active_teaching=True,
@@ -1808,6 +1816,10 @@ class OnlineExamViewSet(TenantModelViewSet):
     def _student_can_take_exam(self, student, exam):
         if not student or not exam.is_published:
             return False
+        if student.academic_year_id and exam.academic_term.academic_year_id != student.academic_year_id:
+            return False
+        if exam.branch_id and exam.branch_id != student.branch_id:
+            return False
         if exam.section_id:
             return exam.section_id == student.section_id
         return exam.grade_level_id == student.grade_level_id
@@ -1934,12 +1946,8 @@ class OnlineExamViewSet(TenantModelViewSet):
         student = user_student_profiles(request.user, self.get_school()).first()
         if not has_school_roles(request.user, self.get_school(), {"student"}):
             raise PermissionDenied("تسليم الاختبار متاح للطالب فقط.")
-        if not student or (
-            exam.section_id and exam.section_id != student.section_id
-        ) or (
-            not exam.section_id and exam.grade_level_id != student.grade_level_id
-        ):
-            raise PermissionDenied("تسليم الاختبار متاح للطالب المستهدف فقط.")
+        if not self._student_can_take_exam(student, exam):
+            raise PermissionDenied("تسليم الاختبار متاح للطالب المستهدف في سنته وفرعه فقط.")
         answers = request.data.get("answers")
         if not isinstance(answers, dict):
             raise ValidationError({"answers": "أرسل الإجابات ككائن JSON: question_id -> answer."})
