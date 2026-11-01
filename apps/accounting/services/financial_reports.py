@@ -200,7 +200,7 @@ def get_general_ledger(
     if end_date is None:
         end_date = timezone.localdate()
     if start_date is None:
-        start_date = datetime.date.min
+        start_date = datetime.date(end_date.year, 1, 1)
     if start_date > end_date:
         raise ValueError("تاريخ بداية التقرير يجب ألا يتجاوز تاريخ نهايته.")
 
