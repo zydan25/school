@@ -367,7 +367,7 @@ class BusFinancialSettlement(TenantOwnedModel):
                             "debit_account": expense_acc,
                             "credit_account": cash_acc,
                             "description": f"مستحقات نقل مدرسي شهر {self.month}/{self.year} - {self.student_count} طالب",
-                            "status": PaymentVoucher.Status.POSTED,
+                            "status": PaymentVoucher.Status.DRAFT,
                         },
                     )
                     self.payment_voucher = pv
@@ -376,6 +376,11 @@ class BusFinancialSettlement(TenantOwnedModel):
                     )
                     if not pv.journal_entry_id:
                         post_payment_voucher_to_journal(pv)
+                    pv.refresh_from_db()
+                    if pv.status != PaymentVoucher.Status.POSTED or not pv.journal_entry_id:
+                        raise ValidationError(
+                            "تعذر ترحيل سند صرف تسوية الحافلة محاسبياً؛ لم يتم اعتماد التسوية."
+                        )
 
             self.save()
             return self.payment_voucher
