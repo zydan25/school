@@ -24,7 +24,7 @@ from apps.accounting.models import (
     PaymentVoucher,
     ReceiptVoucher,
 )
-from apps.assets.models import AssetDepreciationEntry
+from apps.assets.models import AssetDepreciationEntry, FixedAsset
 from apps.student_fees.models import PaymentReceipt
 
 
@@ -589,69 +589,89 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
         return entry
 
 def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> JournalEntry:
-    """
-    الترحيل الآلي لإهلاك الأصل الثابت إلى قيد يومية محاسبي.
-    الجانب المدين: مصروف إهلاك الأصول السنوي (5209).
-    الجانب الدائن: مجمع الإهلاك المتراكم للأصل (1209).
-    """
-    if entry.depreciation_amount <= Decimal("0.00"):
-        raise ValueError("مبلغ إهلاك الأصل يجب أن يكون أكبر من الصفر.")
-
-    school = entry.school
-    period = _get_active_fiscal_period(school, entry.date)
-
+    """ترحيل إهلاك الأصل مرة واحدة مع قفل سجل الإهلاك والأصل لتفادي التكرار."""
     with transaction.atomic():
+        locked_entry = AssetDepreciationEntry.objects.select_for_update(of=("self",)).get(
+            pk=entry.pk,
+        )
+        if locked_entry.depreciation_amount <= Decimal("0.00"):
+            raise ValidationError("مبلغ إهلاك الأصل يجب أن يكون أكبر من الصفر.")
+
+        locked_asset = FixedAsset.objects.select_for_update(of=("self",)).get(
+            pk=locked_entry.asset_id,
+        )
+        locked_entry.asset = locked_asset
+        locked_entry.full_clean()
+        if locked_entry.date < locked_entry.fiscal_year.start_date or (
+            locked_entry.date > locked_entry.fiscal_year.end_date
+        ):
+            raise ValidationError("تاريخ الإهلاك يقع خارج حدود السنة المالية المحددة.")
+        if locked_entry.depreciation_amount > locked_asset.current_book_value - locked_asset.salvage_value:
+            raise ValidationError("مبلغ الإهلاك يتجاوز القيمة القابلة للإهلاك المتبقية للأصل.")
+
+        school = locked_entry.school
+        source_reference = f"{locked_asset.code}-{locked_entry.fiscal_year_id}"
         existing = JournalEntry.objects.filter(
             school=school,
             source_module="assets_depreciation",
-            source_reference=f"{entry.asset.code}-{entry.fiscal_year.id}",
+            source_reference=source_reference,
             is_archived=False,
         ).first()
         if existing:
+            if existing.status != JournalEntry.Status.POSTED:
+                raise ValidationError("يوجد قيد إهلاك سابق غير مرحّل؛ يجب مراجعته قبل المتابعة.")
             return existing
 
-        depreciation_expense = _get_account_or_seed(school, "5209", "مصروف إهلاك الأصول")
-        accumulated_depreciation = _get_account_or_seed(school, "1209", "مجمع إهلاك الأصول المتراكم")
+        period = _get_active_fiscal_period(school, locked_entry.date)
+        if period.fiscal_year_id != locked_entry.fiscal_year_id:
+            raise ValidationError("الفترة المحاسبية لا تتبع السنة المالية لسجل الإهلاك.")
 
-        asset_branch_id = entry.branch_id or entry.asset.branch_id
+        depreciation_expense = _get_account_or_seed(
+            school, "5209", "مصروف إهلاك الأصول",
+        )
+        accumulated_depreciation = _get_account_or_seed(
+            school, "1209", "مجمع إهلاك الأصول المتراكم",
+        )
+        asset_branch_id = locked_entry.branch_id or locked_asset.branch_id
         journal_entry = JournalEntry.objects.create(
             school=school,
             branch_id=asset_branch_id,
             fiscal_period=period,
-            entry_number=f"JV-DEP-{entry.asset.code}-{entry.fiscal_year.name}",
-            date=entry.date,
+            entry_number=(
+                f"JV-DEP-{locked_asset.code}-{locked_entry.fiscal_year.name}"
+            ),
+            date=locked_entry.date,
             status=JournalEntry.Status.DRAFT,
             source_module="assets_depreciation",
-            source_reference=f"{entry.asset.code}-{entry.fiscal_year.id}",
-            description=f"قيد إهلاك أصل ثابت: {entry.asset.name} عن السنة المالية {entry.fiscal_year.name}",
+            source_reference=source_reference,
+            description=(
+                f"قيد إهلاك أصل ثابت: {locked_asset.name} "
+                f"عن السنة المالية {locked_entry.fiscal_year.name}"
+            ),
         )
-
         JournalEntryLine.objects.create(
             school=school,
             branch_id=asset_branch_id,
             journal_entry=journal_entry,
             account=depreciation_expense,
-            description=f"مصروف إهلاك أصل [{entry.asset.code}] {entry.asset.name}",
-            debit=entry.depreciation_amount,
+            description=f"مصروف إهلاك أصل [{locked_asset.code}] {locked_asset.name}",
+            debit=locked_entry.depreciation_amount,
             credit=Decimal("0.00"),
         )
-
         JournalEntryLine.objects.create(
             school=school,
             branch_id=asset_branch_id,
             journal_entry=journal_entry,
             account=accumulated_depreciation,
-            description=f"مجمع إهلاك الأصل [{entry.asset.code}]",
+            description=f"مجمع إهلاك الأصل [{locked_asset.code}]",
             debit=Decimal("0.00"),
-            credit=entry.depreciation_amount,
+            credit=locked_entry.depreciation_amount,
         )
 
         journal_entry.post()
-        entry.asset.accumulated_depreciation += entry.depreciation_amount
-        entry.asset.save(update_fields=["accumulated_depreciation"])
-
+        locked_asset.accumulated_depreciation += locked_entry.depreciation_amount
+        locked_asset.save(update_fields=["accumulated_depreciation", "updated_at"])
         return journal_entry
-
 
 def post_student_invoice_to_journal(invoice) -> JournalEntry:
     """
@@ -805,65 +825,96 @@ def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by
 
 
 def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
-    """
-    الترحيل الآلي لفاتورة المشتريات والموردين لإثبات استحقاق الذمم الدائنة والمخزون.
-    الطرف المدين: مخزون الكتب والقرطاسية والزي (1106).
-    الطرف الدائن: ذمم الموردين والشركات الدائنة (2101).
-    """
-    school = vendor_invoice.school
-    post_date = getattr(vendor_invoice, "invoice_date", None) or timezone.localdate()
-    period = _get_active_fiscal_period(school, post_date)
+    """ترحيل فاتورة المورد مرة واحدة مع قفل المستند المصدر والتحقق من قيده السابق."""
+    from apps.inventory.models import VendorInvoice
 
     with transaction.atomic():
-        if vendor_invoice.journal_entry:
-            return vendor_invoice.journal_entry
+        locked_invoice = VendorInvoice.objects.select_for_update(of=("self",)).get(
+            pk=vendor_invoice.pk,
+        )
+        if locked_invoice.status == VendorInvoice.Status.CANCELLED:
+            raise ValidationError("لا يمكن ترحيل فاتورة مورد ملغاة.")
+        if locked_invoice.total_amount <= Decimal("0.00"):
+            raise ValidationError(
+                f"إجمالي فاتورة المورد ({locked_invoice.total_amount}) يجب أن يكون أكبر من الصفر."
+            )
 
-        if vendor_invoice.total_amount <= Decimal("0.00"):
-            raise ValidationError(f"إجمالي فاتورة المورد ({vendor_invoice.total_amount}) يجب أن يكون أكبر من الصفر.")
+        school = locked_invoice.school
+        source_reference = str(locked_invoice.invoice_number)
+        existing = JournalEntry.objects.filter(
+            school=school,
+            source_module="vendor_invoice",
+            source_reference=source_reference,
+            is_archived=False,
+        ).first()
+        if existing:
+            if existing.status != JournalEntry.Status.POSTED:
+                raise ValidationError("يوجد قيد فاتورة مورد سابق غير مرحّل؛ يجب مراجعته قبل المتابعة.")
+            if locked_invoice.journal_entry_id and locked_invoice.journal_entry_id != existing.pk:
+                raise ValidationError("فاتورة المورد مرتبطة بقيد مختلف عن قيد مصدرها.")
+            if not locked_invoice.journal_entry_id:
+                locked_invoice.journal_entry = existing
+                if locked_invoice.status == VendorInvoice.Status.DRAFT:
+                    locked_invoice.status = VendorInvoice.Status.APPROVED
+                locked_invoice.save(update_fields=["journal_entry", "status", "updated_at"])
+            return existing
 
-        debit_acc = _get_account_or_seed(school, "1106", "مخزون الكتب والقرطاسية والزي")
-        credit_acc = _get_account_or_seed(school, "2101", "ذمم الموردين والشركات الدائنة")
+        if locked_invoice.journal_entry_id:
+            linked = locked_invoice.journal_entry
+            if linked.status != JournalEntry.Status.POSTED:
+                raise ValidationError("فاتورة المورد مرتبطة بقيد غير مرحّل؛ يجب مراجعته.")
+            raise ValidationError("القيد المرتبط بفاتورة المورد لا يطابق مرجع مصدر الفاتورة.")
 
-        entry_number = f"JV-VINV-{vendor_invoice.invoice_number}"
+        post_date = locked_invoice.invoice_date or timezone.localdate()
+        period = _get_active_fiscal_period(school, post_date)
+        debit_acc = _get_account_or_seed(
+            school, "1106", "مخزون الكتب والقرطاسية والزي",
+        )
+        credit_acc = _get_account_or_seed(
+            school, "2101", "ذمم الموردين والشركات الدائنة",
+        )
+        entry_number = f"JV-VINV-{locked_invoice.invoice_number}"
         entry = JournalEntry.objects.create(
             school=school,
-            branch=vendor_invoice.branch,
+            branch=locked_invoice.branch,
             fiscal_period=period,
             entry_number=entry_number,
             date=post_date,
             status=JournalEntry.Status.DRAFT,
             source_module="vendor_invoice",
-            source_reference=str(vendor_invoice.invoice_number),
-            description=f"إثبات فاتورة مورد #{vendor_invoice.invoice_number} - {vendor_invoice.supplier.name}",
+            source_reference=source_reference,
+            description=(
+                f"إثبات فاتورة مورد #{locked_invoice.invoice_number} "
+                f"- {locked_invoice.supplier.name}"
+            ),
         )
-
         JournalEntryLine.objects.create(
             school=school,
-            branch=vendor_invoice.branch,
+            branch=locked_invoice.branch,
             journal_entry=entry,
             account=debit_acc,
-            description=f"إثبات بضاعة / مخزون مورد: {vendor_invoice.supplier.name}",
-            debit=vendor_invoice.total_amount,
+            description=f"إثبات بضاعة / مخزون مورد: {locked_invoice.supplier.name}",
+            debit=locked_invoice.total_amount,
             credit=Decimal("0.00"),
         )
-
         JournalEntryLine.objects.create(
             school=school,
-            branch=vendor_invoice.branch,
+            branch=locked_invoice.branch,
             journal_entry=entry,
             account=credit_acc,
-            description=f"استحقاق ذمة المورد: {vendor_invoice.supplier.name} - فاتورة #{vendor_invoice.invoice_number}",
+            description=(
+                f"استحقاق ذمة المورد: {locked_invoice.supplier.name} "
+                f"- فاتورة #{locked_invoice.invoice_number}"
+            ),
             debit=Decimal("0.00"),
-            credit=vendor_invoice.total_amount,
+            credit=locked_invoice.total_amount,
         )
-
         entry.post(user=user)
-        vendor_invoice.journal_entry = entry
-        if vendor_invoice.status == vendor_invoice.Status.DRAFT:
-            vendor_invoice.status = vendor_invoice.Status.APPROVED
-        vendor_invoice.save(update_fields=["journal_entry", "status", "updated_at"])
+        locked_invoice.journal_entry = entry
+        if locked_invoice.status == VendorInvoice.Status.DRAFT:
+            locked_invoice.status = VendorInvoice.Status.APPROVED
+        locked_invoice.save(update_fields=["journal_entry", "status", "updated_at"])
         return entry
-
 
 def disburse_vendor_payment(
     vendor_invoice,
