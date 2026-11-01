@@ -392,11 +392,32 @@ class AttendanceSystemTests(TestCase):
         rec = register.student_records.get(student=self.student_1)
         self.assertEqual(rec.status_category, AttendanceStatusType.Category.ABSENT_EXCUSED)
         self.assertEqual(rec.excuse_request, excuse)
+        self.assertEqual(
+            register.student_records.get(student=self.student_2).status_category,
+            AttendanceStatusType.Category.PRESENT,
+        )
 
         # Legacy model check
         leg = DailyAttendance.objects.get(school=self.school_a, student=self.student_1, date=target_date)
         self.assertEqual(leg.status, DailyAttendance.Status.ABSENT_EXCUSED)
 
+    def test_accepted_excuse_does_not_turn_present_student_into_absent(self):
+        target_date = datetime.date.today() - datetime.timedelta(days=1)
+        register, _ = get_or_create_register(
+            school=self.school_a, academic_year=self.year_a, section=self.section_a,
+            date=target_date, bypass_calendar_check=True, user=self.teacher_user,
+        )
+        bulk_record_attendance(register, [
+            {"student_id": self.student_1.id, "status_category": AttendanceStatusType.Category.PRESENT},
+        ], recorded_by=self.teacher_user)
+        excuse = create_excuse_request(
+            school=self.school_a, student=self.student_1, guardian=self.guardian,
+            request_type=AttendanceExcuseRequest.RequestType.POST_ABSENCE_EXCUSE,
+            start_date=target_date, end_date=target_date, reason="توضيح حالة الحضور",
+        )
+        review_excuse_request(excuse, reviewed_by=self.owner_a, is_approved=True, review_notes="تمت المراجعة")
+        record = register.student_records.get(student=self.student_1)
+        self.assertEqual(record.status_category, AttendanceStatusType.Category.PRESENT)
     def test_early_departure_and_gate_exit_flow(self):
         """دورة طلب الانصراف المبكر واعتماد الإدارة وتأكيد الخروج من البوابة الأمنية."""
         target_date = datetime.date(2026, 9, 17)
@@ -476,6 +497,32 @@ class AttendanceSystemTests(TestCase):
             {"student_id": self.student_2.id, "status_category": AttendanceStatusType.Category.ABSENT_UNEXCUSED},
         ])
 
+        from apps.staff.models import Teacher, TeacherAssignment
+        from apps.timetable.models import ClassSchedule
+
+        teacher = Teacher.objects.create(
+            school=self.school_a, user=self.teacher_user, specialization="رياضيات",
+        )
+        TeacherAssignment.objects.create(
+            school=self.school_a, academic_year=self.year_a, teacher=teacher,
+            subject=self.subject_a, section=self.section_a, weekly_periods=4,
+        )
+        period_schedule = ClassSchedule.objects.create(
+            school=self.school_a, academic_year=self.year_a, academic_term=self.term_a,
+            section=self.section_a, subject=self.subject_a, teacher=teacher,
+            day_of_week=ClassSchedule.WeekDay.WEDNESDAY, period_number=1,
+            start_time=datetime.time(8, 0), end_time=datetime.time(8, 45),
+        )
+        period_register, _ = get_or_create_register(
+            self.school_a, self.year_a, self.section_a, test_date,
+            schedule=period_schedule, bypass_calendar_check=True, user=self.teacher_user,
+        )
+        # Deliberately opposite period statuses verify that a daily register is the source of truth for that date.
+        bulk_record_attendance(period_register, [
+            {"student_id": self.student_1.id, "status_category": AttendanceStatusType.Category.ABSENT_UNEXCUSED},
+            {"student_id": self.student_2.id, "status_category": AttendanceStatusType.Category.PRESENT},
+        ])
+
         summary = get_daily_section_summary(self.school_a, test_date, self.section_a.id)
         self.assertEqual(len(summary), 1)
         self.assertEqual(summary[0]["present_count"], 1)
@@ -485,6 +532,18 @@ class AttendanceSystemTests(TestCase):
         # Monthly matrix
         matrix = get_monthly_attendance_matrix(self.school_a, self.section_a.id, 2026, 9)
         self.assertEqual(len(matrix["students"]), 2)
+        matrix_by_student = {row["student_id"]: row for row in matrix["students"]}
+        self.assertEqual(matrix_by_student[str(self.student_1.pk)]["day_statuses"][23], AttendanceStatusType.Category.PRESENT)
+        self.assertEqual(matrix_by_student[str(self.student_2.pk)]["day_statuses"][23], AttendanceStatusType.Category.ABSENT_UNEXCUSED)
+
+        term_results = get_term_attendance_summary(
+            self.school_a, self.term_a.pk, section_id=self.section_a.pk,
+        )
+        term_by_student = {row["student_id"]: row for row in term_results}
+        self.assertEqual(term_by_student[str(self.student_1.pk)]["total_days"], 1)
+        self.assertEqual(term_by_student[str(self.student_1.pk)]["present_count"], 1)
+        self.assertEqual(term_by_student[str(self.student_1.pk)]["absent_unexcused"], 0)
+        self.assertEqual(term_by_student[str(self.student_2.pk)]["absent_unexcused"], 1)
 
         # Chronic absenteeism
         chronic = get_chronic_absenteeism_report(self.school_a, self.year_a.id, threshold_percentage=10.0)
