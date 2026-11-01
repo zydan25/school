@@ -68,7 +68,10 @@ class CanonicalApiRouteTests(SimpleTestCase):
             "/api/v1/app/my/timetable/": "app-my-timetable",
             "/api/v1/app/homework/": "app-homework-list",
             "/api/v1/app/homework-submissions/": "app-homework-submission-list",
+            "/api/v1/app/gradebook/": "app-gradebook-list",
+            "/api/v1/app/gradebook/weighted-summary/": "app-gradebook-weighted-summary",
             "/api/v1/app/online-exams/": "app-online-exam-list",
+            "/api/v1/app/exam-committee-proctors/": "app-exam-committee-proctor-list",
             "/api/v1/app/conversations/": "app-conversation-list",
             "/api/v1/app/devices/": "app-push-device-list",
         }
