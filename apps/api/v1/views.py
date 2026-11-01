@@ -5,7 +5,7 @@ import hashlib
 import os
 from uuid import UUID
 from decimal import Decimal
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -1529,17 +1529,37 @@ class ClassScheduleViewSet(TenantModelViewSet):
     write_roles = ACADEMIC_ADMIN_ROLES
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("section", "subject", "teacher__user", "classroom", "academic_year")
+        qs = super().get_queryset().select_related("section", "subject", "teacher__user", "classroom", "academic_year", "timetable_plan")
+        plan_id = self.request.query_params.get("timetable_plan_id")
         year = self.request.query_params.get("academic_year_id")
         section = self.request.query_params.get("section_id")
-        teacher = self.request.query_params.get("teacher_id")
+        teacher_id = self.request.query_params.get("teacher_id")
         day = self.request.query_params.get("day_of_week")
+        if plan_id:
+            qs = qs.filter(timetable_plan_id=plan_id)
+            if not is_admin(self.request.user, self.get_school()):
+                qs = qs.filter(timetable_plan__status__in=[TimetablePlan.Status.PUBLISHED, TimetablePlan.Status.RETIRED])
+        else:
+            today = timezone.localdate()
+            qs = qs.filter(
+                Q(timetable_plan__isnull=True)
+                | (
+                    Q(timetable_plan__status__in=[TimetablePlan.Status.PUBLISHED, TimetablePlan.Status.RETIRED])
+                    & Q(timetable_plan__effective_from__lte=today)
+                    & (Q(timetable_plan__effective_to__isnull=True) | Q(timetable_plan__effective_to__gte=today))
+                )
+            )
+            requested_status = self.request.query_params.get("plan_status")
+            if requested_status:
+                if not is_admin(self.request.user, self.get_school()):
+                    raise PermissionDenied("عرض نسخ الجدول غير المنشورة متاح للإدارة الأكاديمية فقط.")
+                qs = qs.filter(timetable_plan__status=requested_status)
         if year:
             qs = qs.filter(academic_year_id=year)
         if section:
             qs = qs.filter(section_id=section)
-        if teacher:
-            qs = qs.filter(teacher_id=teacher)
+        if teacher_id:
+            qs = qs.filter(teacher_id=teacher_id)
         if day:
             qs = qs.filter(day_of_week=day)
         if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not is_admin(self.request.user, self.get_school()):
@@ -1547,6 +1567,23 @@ class ClassScheduleViewSet(TenantModelViewSet):
             qs = qs.filter(teacher=profile) if profile else qs.none()
         return qs.order_by("day_of_week", "period_number")
 
+    def perform_create(self, serializer):
+        school = self.get_school()
+        section = serializer.validated_data["section"]
+        plan = serializer.validated_data.get("timetable_plan")
+        if plan:
+            if plan.school_id != school.pk or plan.status != TimetablePlan.Status.DRAFT:
+                raise ValidationError({"timetable_plan": "يمكن إضافة الحصص إلى نسخة مسودة تابعة للمدرسة النشطة فقط."})
+            branch = plan.branch
+        else:
+            branch = section.branch
+        serializer.save(school=school, branch=branch)
+
+    def perform_update(self, serializer):
+        plan = serializer.instance.timetable_plan
+        if plan and plan.status != TimetablePlan.Status.DRAFT:
+            raise ValidationError("لا يمكن تعديل حصة في نسخة جدول مرسلة أو معتمدة أو منشورة.")
+        serializer.save()
 
 class DailyLessonLogViewSet(TenantModelViewSet):
     serializer_class = DailyLessonLogSerializer
@@ -1554,7 +1591,7 @@ class DailyLessonLogViewSet(TenantModelViewSet):
     write_roles = TEACHER_ROLES
 
     def get_queryset(self):
-        qs = super().get_queryset().select_related("schedule", "schedule__section", "schedule__subject")
+        qs = super().get_queryset().select_related("schedule", "schedule__section", "schedule__subject", "schedule__timetable_plan")
         date_filter = self.request.query_params.get("date")
         section_id = self.request.query_params.get("section_id")
         if date_filter:
@@ -1575,8 +1612,10 @@ class DailyLessonLogViewSet(TenantModelViewSet):
                 raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
             if schedule.teacher_id != teacher.pk:
                 raise PermissionDenied("لا يمكنك توثيق تنفيذ حصة لمعلم آخر.")
-        serializer.save(school=school)
-
+        try:
+            serializer.save(school=school, branch=schedule.branch)
+        except DjangoValidationError as exc:
+            raise ValidationError(detail=str(exc))
 
 class MyWeeklyTimetableAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1588,6 +1627,10 @@ class MyWeeklyTimetableAPIView(APIView):
         guardian = user_guardian_profiles(request.user, school).first()
         profile_type = (request.query_params.get("profile_type") or "").strip().lower()
         section_id = request.query_params.get("section_id")
+        try:
+            on_date = date.fromisoformat(request.query_params["date"]) if request.query_params.get("date") else timezone.localdate()
+        except (TypeError, ValueError):
+            raise ValidationError({"date": "صيغة التاريخ غير صحيحة؛ استخدم YYYY-MM-DD."})
 
         available_profiles = []
         if teacher and has_school_roles(request.user, school, {"teacher"}):
@@ -1610,39 +1653,48 @@ class MyWeeklyTimetableAPIView(APIView):
             else:
                 raise PermissionDenied("لا يوجد ملف طالب أو معلم أو ولي أمر مرتبط بدور فعال.")
 
-        qs = ClassSchedule.objects.filter(
-            school=school, is_archived=False,
-        ).select_related(
-            "section", "subject", "teacher__user", "classroom", "bell_schedule",
-        )
-
+        from apps.timetable.services import get_effective_class_schedules
         if profile_type == "teacher":
             if not teacher or not has_school_roles(request.user, school, {"teacher"}):
                 raise PermissionDenied("لا يوجد ملف معلم فعال مرتبط بحسابك.")
-            qs = qs.filter(teacher=teacher)
+            section_ids = teacher.assignments.filter(school=school, is_archived=False).values_list("section_id", flat=True).distinct()
+            schedule_ids = set()
+            for assigned_section_id in section_ids:
+                schedule_ids.update(get_effective_class_schedules(
+                    school=school, on_date=on_date, section_id=assigned_section_id,
+                ).filter(teacher=teacher).values_list("pk", flat=True))
+            qs = ClassSchedule.objects.filter(pk__in=schedule_ids).select_related("section", "subject", "teacher__user", "classroom")
         elif profile_type == "student":
             if not student or not has_school_roles(request.user, school, {"student"}):
                 raise PermissionDenied("لا يوجد ملف طالب فعال مرتبط بحسابك.")
-            qs = qs.filter(section_id=student.section_id)
+            qs = get_effective_class_schedules(
+                school=school, on_date=on_date, branch=student.branch, section_id=student.section_id,
+            )
         elif profile_type == "guardian":
             if not guardian or not has_school_roles(request.user, school, {"guardian"}):
                 raise PermissionDenied("لا يوجد ملف ولي أمر فعال مرتبط بحسابك.")
-            children = guardian.children.filter(
-                school=school, is_archived=False,
-            )
+            children = guardian.children.filter(school=school, is_archived=False).select_related("branch").order_by("section_id")
             if section_id and not children.filter(section_id=section_id).exists():
                 raise PermissionDenied("الشعبة المحددة لا تخص أحد الأبناء المرتبطين بحسابك.")
-            qs = qs.filter(section_id__in=children.values_list("section_id", flat=True))
+            schedule_ids = set()
+            for child in children:
+                if section_id and str(child.section_id) != str(section_id):
+                    continue
+                schedule_ids.update(get_effective_class_schedules(
+                    school=school, on_date=on_date, branch=child.branch, section_id=child.section_id,
+                ).values_list("pk", flat=True))
+            qs = ClassSchedule.objects.filter(pk__in=schedule_ids).select_related("section", "subject", "teacher__user", "classroom")
         elif profile_type == "school":
             if not is_admin(request.user, school):
                 raise PermissionDenied("عرض جدول الشعبة متاح لإدارة المدرسة فقط.")
             if not section_id:
                 raise ValidationError({"section_id": "حدد الشعبة عند طلب الجدول المدرسي."})
-            qs = qs.filter(section_id=section_id)
+            section = get_object_or_404(Section.objects.select_related("branch"), pk=section_id, school=school, is_archived=False)
+            qs = get_effective_class_schedules(
+                school=school, on_date=on_date, branch=section.branch, section_id=section.pk,
+            )
         else:
-            raise ValidationError({
-                "profile_type": "القيمة المدعومة teacher أو student أو guardian أو school.",
-            })
+            raise ValidationError({"profile_type": "القيمة المدعومة teacher أو student أو guardian أو school."})
 
         return Response([{
             "id": str(item.pk),
@@ -1656,7 +1708,6 @@ class MyWeeklyTimetableAPIView(APIView):
             "teacher": item.teacher.user.get_full_name(),
             "classroom": item.classroom.name if item.classroom_id else None,
         } for item in qs.order_by("day_of_week", "period_number")])
-
 
 # ---------------------------------------------------------------------------
 # Accounting: chart, fiscal periods, journals and double-entry vouchers
