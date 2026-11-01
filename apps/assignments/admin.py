@@ -32,6 +32,9 @@ class HomeworkAdmin(AuditedAdminMixin, ModelAdmin):
     readonly_fields = ("id", "created_at", "updated_at")
     inlines = (HomeworkSubmissionInline,)
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(HomeworkSubmission)
 class HomeworkSubmissionAdmin(AuditedAdminMixin, ModelAdmin):
@@ -45,6 +48,9 @@ class HomeworkSubmissionAdmin(AuditedAdminMixin, ModelAdmin):
         "student", "submission_text", "attachment", "submitted_at", "status",
         "score", "teacher_feedback", "graded_by", "graded_at",
     )
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(HomeworkSubmissionAttempt)
