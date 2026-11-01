@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import datetime
+from uuid import UUID
+
+from django.db.models import Q
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
@@ -14,6 +17,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.academics.models import AcademicTerm, AcademicYear, Section, Subject
+from apps.tenants.models import Branch
 from apps.accounts.api_permissions import has_school_roles, require_school_role_or_permission
 from apps.attendance.api.serializers import (
     AttendanceAuditLogSerializer,
@@ -532,15 +536,34 @@ class SchoolCalendarViewSet(BaseAttendanceViewSet):
     }
 
     def get_queryset(self):
-        return SchoolCalendar.objects.filter(
+        queryset = SchoolCalendar.objects.filter(
             school=self.get_school(),
             is_archived=False,
-        ).order_by("-created_at")
+        )
+        branch_id = self.request.query_params.get("branch_id")
+        if branch_id:
+            try:
+                branch_uuid = UUID(str(branch_id))
+            except (TypeError, ValueError, AttributeError):
+                raise ValidationError({"branch_id": "أرسل معرف فرع صحيحاً بصيغة UUID."})
+            branch = Branch.objects.filter(
+                pk=branch_uuid, school=self.get_school(), is_archived=False,
+            ).first()
+            if branch is None:
+                raise ValidationError({"branch_id": "الفرع غير موجود أو لا يتبع المدرسة النشطة."})
+            queryset = queryset.filter(Q(branch_id=branch.pk) | Q(branch__isnull=True))
+        return queryset.order_by("-created_at")
+
+    def perform_create(self, serializer):
+        serializer.save(school=self.get_school())
 
     @action(detail=True, methods=["post"], url_path="seed-days")
     def seed_days(self, request, pk=None):
         cal = self.get_object()
-        seed_default_calendar(school=cal.school, academic_year=cal.academic_year, name=cal.name)
+        seed_default_calendar(
+            school=cal.school, academic_year=cal.academic_year,
+            name=cal.name, branch=cal.branch,
+        )
         return Response({"message": "تم إنشاء وتصنيف أيام التقويم الدراسي بنجاح."})
 
 
@@ -558,6 +581,18 @@ class SchoolCalendarDayViewSet(BaseAttendanceViewSet):
             calendar__school=self.get_school(),
             is_archived=False,
         ).select_related("calendar").order_by("date")
+        branch_id = self.request.query_params.get("branch_id")
+        if branch_id:
+            try:
+                branch_uuid = UUID(str(branch_id))
+            except (TypeError, ValueError, AttributeError):
+                raise ValidationError({"branch_id": "أرسل معرف فرع صحيحاً بصيغة UUID."})
+            branch = Branch.objects.filter(
+                pk=branch_uuid, school=self.get_school(), is_archived=False,
+            ).first()
+            if branch is None:
+                raise ValidationError({"branch_id": "الفرع غير موجود أو لا يتبع المدرسة النشطة."})
+            qs = qs.filter(Q(calendar__branch_id=branch.pk) | Q(calendar__branch__isnull=True))
         calendar_id = self.request.query_params.get("calendar_id")
         date_from = self.request.query_params.get("from")
         date_to = self.request.query_params.get("to")
@@ -577,7 +612,12 @@ class SchoolCalendarDayViewSet(BaseAttendanceViewSet):
         return qs
 
     def perform_create(self, serializer):
-        serializer.save(school=self.get_school())
+        calendar = serializer.validated_data["calendar"]
+        serializer.save(school=self.get_school(), branch=calendar.branch)
+
+    def perform_update(self, serializer):
+        calendar = serializer.validated_data.get("calendar", serializer.instance.calendar)
+        serializer.save(school=self.get_school(), branch=calendar.branch)
 
 
 class CalendarEventViewSet(BaseAttendanceViewSet):

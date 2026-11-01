@@ -5,6 +5,7 @@ import datetime
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
+from apps.academics.models import SchoolWorkingDay
 from apps.attendance.models import (
     CalendarEvent,
     CalendarOccurrence,
@@ -18,14 +19,41 @@ def seed_default_calendar(
     academic_year,
     name: str = "التقويم الدراسي المعتمد",
     weekend_days: list[int] | None = None,
+    branch=None,
 ) -> SchoolCalendar:
-    """ينشئ أو يحدث التقويم الدراسي للمدرسة مع تصنيف كافة الأيام وعطل نهاية الأسبوع."""
+    """ينشئ تقويماً مدرسياً للمدرسة أو لفرعها مع احترام أيام الدوام المعرفة."""
+    if academic_year.school_id != school.pk:
+        raise ValidationError("السنة الدراسية لا تتبع المدرسة المحددة.")
+    if branch is None and academic_year.branch_id:
+        branch = academic_year.branch
+    if branch and branch.school_id != school.pk:
+        raise ValidationError("الفرع لا يتبع المدرسة المحددة.")
+    if academic_year.branch_id and academic_year.branch_id != getattr(branch, "pk", None):
+        raise ValidationError("الفرع المحدد لا يطابق فرع السنة الدراسية.")
+
+    working_by_weekday = {}
     if weekend_days is None:
-        # Default weekend in Arab region: Friday (4) and Saturday (5)
-        weekend_days = [4, 5]
+        shared_days = {
+            item.weekday: item.is_working
+            for item in SchoolWorkingDay.objects.filter(
+                school=school, branch__isnull=True, is_archived=False,
+            )
+        }
+        branch_days = {}
+        if branch:
+            branch_days = {
+                item.weekday: item.is_working
+                for item in SchoolWorkingDay.objects.filter(
+                    school=school, branch=branch, is_archived=False,
+                )
+            }
+        working_by_weekday = {**shared_days, **branch_days}
+    else:
+        weekend_days = set(weekend_days)
 
     calendar, _ = SchoolCalendar.objects.get_or_create(
         school=school,
+        branch=branch,
         academic_year=academic_year,
         name=name,
         defaults={"is_active": True},
@@ -36,15 +64,23 @@ def seed_default_calendar(
 
     days_to_create = []
     existing_dates = set(
-        SchoolCalendarDay.objects.filter(calendar=calendar).values_list("date", flat=True)
+        SchoolCalendarDay.objects.filter(
+            calendar=calendar, is_archived=False,
+        ).values_list("date", flat=True)
     )
 
     while current_date <= end_date:
         if current_date not in existing_dates:
-            is_weekend = current_date.weekday() in weekend_days
+            weekday = current_date.weekday()
+            if weekend_days is None:
+                is_working = working_by_weekday.get(weekday, weekday not in {4, 5})
+                is_weekend = not is_working
+            else:
+                is_weekend = weekday in weekend_days
             days_to_create.append(
                 SchoolCalendarDay(
                     school=school,
+                    branch=branch,
                     calendar=calendar,
                     date=current_date,
                     day_type=SchoolCalendarDay.DayType.WEEKEND if is_weekend else SchoolCalendarDay.DayType.REGULAR,
@@ -60,8 +96,8 @@ def seed_default_calendar(
     return calendar
 
 
-def is_school_day(school, date: datetime.date, academic_year=None) -> bool:
-    """التحقق مما إذا كان التاريخ المحدد يوماً دراسياً رسمياً يسمح بالرصد."""
+def is_school_day(school, date: datetime.date, academic_year=None, branch=None) -> bool:
+    """التحقق مما إذا كان التاريخ المحدد يوماً دراسياً رسمياً للمدرسة أو الفرع."""
     query = SchoolCalendarDay.objects.filter(
         school=school,
         date=date,
@@ -69,8 +105,12 @@ def is_school_day(school, date: datetime.date, academic_year=None) -> bool:
     )
     if academic_year:
         query = query.filter(calendar__academic_year=academic_year)
+    if branch:
+        query = query.filter(Q(calendar__branch=branch) | Q(calendar__branch__isnull=True))
+    else:
+        query = query.filter(calendar__branch__isnull=True)
 
-    day_record = query.first()
+    day_record = query.order_by("calendar__branch_id").first()
     if day_record is not None:
         return day_record.is_school_day
 
@@ -83,15 +123,27 @@ def apply_central_template(
     central_calendar: SchoolCalendar,
     target_academic_year,
     target_name: str | None = None,
+    branch=None,
 ) -> SchoolCalendar:
-    """نسخ قالب تقويم وزاري أو مركزي وتطبيقه على مدرسة معينة."""
+    """نسخ قالب تقويم مركزي إلى سنة المدرسة أو فرعها المحدد."""
     if not central_calendar.is_central_template:
         raise ValidationError("التقويم المصدر ليس قالباً مركزياً.")
+    if target_academic_year.school_id != school.pk:
+        raise ValidationError("السنة الدراسية المستهدفة لا تتبع المدرسة المحددة.")
+    if branch is None and target_academic_year.branch_id:
+        branch = target_academic_year.branch
+    if branch and branch.school_id != school.pk:
+        raise ValidationError("الفرع المستهدف لا يتبع المدرسة المحددة.")
+    if target_academic_year.branch_id and target_academic_year.branch_id != getattr(branch, "pk", None):
+        raise ValidationError("الفرع المستهدف لا يطابق فرع السنة الدراسية.")
+    if central_calendar.branch_id and central_calendar.branch_id != getattr(branch, "pk", None):
+        raise ValidationError("القالب المركزي لا يتبع الفرع المستهدف.")
 
     name = target_name or f"تقويم {target_academic_year.name} - مشتق"
     with transaction.atomic():
         new_calendar = SchoolCalendar.objects.create(
             school=school,
+            branch=branch,
             academic_year=target_academic_year,
             name=name,
             is_central_template=False,
@@ -104,6 +156,7 @@ def apply_central_template(
         cloned_days = [
             SchoolCalendarDay(
                 school=school,
+                branch=branch,
                 calendar=new_calendar,
                 date=day.date,
                 day_type=day.day_type,

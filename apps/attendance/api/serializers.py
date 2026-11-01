@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from apps.tenants.models import Branch
+
 from apps.attendance.models import (
     AttendanceAuditLog,
     AttendanceExcuseRequest,
@@ -225,10 +227,23 @@ class ReopenReviewInputSerializer(serializers.Serializer):
 
 
 class SchoolCalendarSerializer(serializers.ModelSerializer):
+    branch = serializers.PrimaryKeyRelatedField(
+        queryset=Branch.objects.none(), required=False, allow_null=True,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        school = self.context.get("school")
+        self.fields["branch"].queryset = (
+            Branch.objects.filter(school=school, is_archived=False)
+            if school else Branch.objects.none()
+        )
+
     class Meta:
         model = SchoolCalendar
         fields = [
             "id",
+            "branch",
             "academic_year",
             "name",
             "is_central_template",
@@ -242,6 +257,14 @@ class SchoolCalendarSerializer(serializers.ModelSerializer):
         academic_year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
         if school and academic_year and academic_year.school_id != school.pk:
             raise serializers.ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة الحالية."})
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        if branch is None and academic_year and academic_year.branch_id:
+            branch = academic_year.branch
+            attrs["branch"] = branch
+        if branch and school and branch.school_id != school.pk:
+            raise serializers.ValidationError({"branch": "الفرع لا يتبع المدرسة الحالية."})
+        if academic_year and academic_year.branch_id and academic_year.branch_id != getattr(branch, "pk", None):
+            raise serializers.ValidationError({"academic_year": "التقويم يجب أن يتبع فرع السنة الدراسية."})
         return attrs
 
 
@@ -263,6 +286,11 @@ class SchoolCalendarDaySerializer(serializers.ModelSerializer):
         calendar = attrs.get("calendar") or getattr(self.instance, "calendar", None)
         if school and calendar and calendar.school_id != school.pk:
             raise serializers.ValidationError({"calendar": "التقويم لا يتبع المدرسة الحالية."})
+        date_value = attrs.get("date", getattr(self.instance, "date", None))
+        if calendar and date_value and not (
+            calendar.academic_year.starts_on <= date_value <= calendar.academic_year.ends_on
+        ):
+            raise serializers.ValidationError({"date": "تاريخ اليوم خارج حدود السنة الدراسية للتقويم."})
         return attrs
 
 

@@ -160,9 +160,14 @@ class SchoolCalendar(TenantOwnedModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "academic_year", "name"],
-                condition=Q(is_archived=False),
-                name="attendance_calendar_school_year_name_uniq",
-            )
+                condition=Q(is_archived=False, branch__isnull=True),
+                name="att_cal_name_global_uq",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "branch", "academic_year", "name"],
+                condition=Q(is_archived=False, branch__isnull=False),
+                name="att_cal_name_branch_uq",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -172,6 +177,13 @@ class SchoolCalendar(TenantOwnedModel):
         super().clean()
         if self.academic_year_id and self.academic_year.school_id != self.school_id:
             raise ValidationError({"academic_year": "السنة الدراسية لا تتبع نفس المدرسة."})
+        if self.academic_year_id and self.academic_year.branch_id and self.academic_year.branch_id != self.branch_id:
+            raise ValidationError({"academic_year": "التقويم يجب أن يتبع فرع السنة الدراسية."})
+        if self.source_template_id:
+            if not self.source_template.is_central_template:
+                raise ValidationError({"source_template": "مصدر التقويم يجب أن يكون قالباً مركزياً."})
+            if self.source_template.branch_id and self.source_template.branch_id != self.branch_id:
+                raise ValidationError({"source_template": "القالب المركزي يتبع فرعاً مختلفاً."})
 
 
 class SchoolCalendarDay(TenantOwnedModel):
@@ -221,6 +233,10 @@ class SchoolCalendarDay(TenantOwnedModel):
         super().clean()
         if self.calendar_id and self.calendar.school_id != self.school_id:
             raise ValidationError({"calendar": "التقويم لا يتبع نفس المدرسة."})
+        if self.calendar_id and self.calendar.branch_id != self.branch_id:
+            raise ValidationError({"calendar": "يجب أن يتبع يوم التقويم فرع التقويم نفسه."})
+        if self.calendar_id and not (self.calendar.academic_year.starts_on <= self.date <= self.calendar.academic_year.ends_on):
+            raise ValidationError({"date": "تاريخ اليوم يجب أن يقع داخل حدود السنة الدراسية للتقويم."})
 
 
 class CalendarEvent(TenantOwnedModel):
