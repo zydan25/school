@@ -332,9 +332,9 @@ class AuditFixesVerificationTests(TestCase):
         self.assertEqual(rev_credit.account, cash_acc)
         self.assertEqual(rev_credit.credit, Decimal("1500.00"))
 
-        # Re-reversal should be strictly rejected
-        with self.assertRaises(ValueError):
-            reverse_journal_entry(orig_entry, reason="محاولة عكس ثانية")
+        # Repeated reversal requests are idempotent and return the same entry.
+        repeated = reverse_journal_entry(orig_entry, reason="إعادة إرسال طلب العكس")
+        self.assertEqual(repeated.pk, rev_entry.pk)
 
     def test_staff_payroll_and_multi_loan_deduction(self):
         """4. التحقق من مسير الرواتب الموحد للكادر الإداري وتجميع استقطاعات السلف المتعددة."""
