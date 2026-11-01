@@ -679,3 +679,275 @@ class ReceiptVoucher(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"سند قبض عام #{self.voucher_number} - {self.received_from}: {self.amount}"
+
+
+class TreasuryAccount(TenantOwnedModel):
+    """صندوق نقدي أو حساب بنكي مرتبط بحساب تفصيلي في دفتر الأستاذ."""
+    class Kind(models.TextChoices):
+        CASH = "cash", "صندوق نقدي"
+        BANK = "bank", "حساب بنكي"
+
+    name = models.CharField("اسم الصندوق أو الحساب البنكي", max_length=150)
+    code = models.CharField("الرمز", max_length=50)
+    kind = models.CharField("النوع", max_length=10, choices=Kind.choices)
+    account = models.OneToOneField(
+        Account,
+        verbose_name="حساب الأستاذ المرتبط",
+        on_delete=models.PROTECT,
+        related_name="treasury_account",
+    )
+    bank_name = models.CharField("اسم البنك", max_length=150, blank=True)
+    bank_account_number = models.CharField("رقم الحساب البنكي", max_length=100, blank=True)
+    currency = models.CharField("رمز العملة", max_length=3, default="YER")
+    is_default = models.BooleanField("الحساب الافتراضي لنوعه", default=False)
+    is_active = models.BooleanField("نشط", default=True)
+
+    class Meta:
+        verbose_name = "صندوق / حساب بنكي"
+        verbose_name_plural = "الصناديق والحسابات البنكية"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "code"],
+                condition=models.Q(is_archived=False),
+                name="acct_treasury_code_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["school", "kind", "is_active"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.account_id:
+            if self.account.school_id != self.school_id:
+                raise ValidationError({"account": "حساب الأستاذ لا يتبع المدرسة نفسها."})
+            if self.account.account_type != Account.AccountType.ASSET or not self.account.is_leaf:
+                raise ValidationError({"account": "يجب ربط الصندوق أو البنك بحساب أصول تفصيلي."})
+            if self.account.is_archived:
+                raise ValidationError({"account": "لا يمكن ربط حساب أستاذ مؤرشف بالخزينة."})
+            if self.account.branch_id and self.account.branch_id != self.branch_id:
+                raise ValidationError({"account": "فرع حساب الأستاذ لا يطابق فرع الخزينة."})
+        if self.kind == self.Kind.BANK and not self.bank_name.strip():
+            raise ValidationError({"bank_name": "اسم البنك مطلوب للحساب البنكي."})
+        if self.currency and len(self.currency) != 3:
+            raise ValidationError({"currency": "رمز العملة يجب أن يتكون من ثلاثة أحرف."})
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class TreasuryTransfer(TenantOwnedModel):
+    """تحويل موثق بين صندوقين أو حسابين نقديين/بنكيين."""
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة"
+        POSTED = "posted", "مرحل"
+        REVERSED = "reversed", "معكوس"
+
+    transfer_number = models.CharField("رقم التحويل", max_length=60)
+    transfer_date = models.DateField("تاريخ التحويل", default=timezone.localdate)
+    source_account = models.ForeignKey(
+        TreasuryAccount,
+        verbose_name="من حساب",
+        on_delete=models.PROTECT,
+        related_name="outgoing_transfers",
+    )
+    destination_account = models.ForeignKey(
+        TreasuryAccount,
+        verbose_name="إلى حساب",
+        on_delete=models.PROTECT,
+        related_name="incoming_transfers",
+    )
+    amount = models.DecimalField("مبلغ التحويل", max_digits=14, decimal_places=2)
+    description = models.CharField("البيان", max_length=255)
+    idempotency_key = models.CharField("مفتاح منع تكرار التحويل", max_length=100)
+    status = models.CharField("الحالة", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    journal_entry = models.ForeignKey(
+        JournalEntry,
+        verbose_name="القيد المحاسبي",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="treasury_transfers",
+    )
+    reversed_by_entry = models.ForeignKey(
+        JournalEntry,
+        verbose_name="القيد العكسي",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="reversed_treasury_transfers",
+    )
+
+    class Meta:
+        verbose_name = "تحويل خزينة"
+        verbose_name_plural = "تحويلات الخزينة"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "transfer_number"],
+                condition=models.Q(is_archived=False),
+                name="acct_treasury_transfer_num_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "idempotency_key"],
+                condition=models.Q(is_archived=False),
+                name="acct_treasury_transfer_idem_uniq",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.amount <= Decimal("0.00"):
+            raise ValidationError({"amount": "مبلغ التحويل يجب أن يكون أكبر من الصفر."})
+        if len(self.idempotency_key.strip()) < 8:
+            raise ValidationError({"idempotency_key": "مفتاح منع التكرار يجب ألا يقل عن 8 أحرف."})
+        if self.source_account_id and self.destination_account_id:
+            if self.source_account_id == self.destination_account_id:
+                raise ValidationError("لا يمكن التحويل من الحساب إلى نفسه.")
+            for treasury in (self.source_account, self.destination_account):
+                if treasury.school_id != self.school_id:
+                    raise ValidationError("حساب التحويل لا يتبع المدرسة نفسها.")
+                if not treasury.is_active or treasury.is_archived:
+                    raise ValidationError("لا يمكن استخدام حساب خزينة غير نشط أو مؤرشف.")
+            if self.source_account.currency != self.destination_account.currency:
+                raise ValidationError("لا يمكن تحويل مبالغ بين حسابين بعملتين مختلفتين دون عملية صرف مستقلة.")
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = TreasuryTransfer.objects.filter(pk=self.pk).first()
+            if original and original.status in (self.Status.POSTED, self.Status.REVERSED):
+                protected = (
+                    "school_id", "transfer_number", "transfer_date",
+                    "source_account_id", "destination_account_id", "amount",
+                    "description", "idempotency_key", "journal_entry_id",
+                )
+                if any(getattr(original, field) != getattr(self, field) for field in protected):
+                    raise ValidationError("بيانات التحويل المرحّل غير قابلة للتعديل؛ صححها بقيد عكسي.")
+                if original.status == self.Status.REVERSED and self.status != self.Status.REVERSED:
+                    raise ValidationError("لا يمكن إعادة تحويل معكوس إلى حالة مرحّل.")
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.transfer_number} - {self.amount}"
+
+
+class BankReconciliation(TenantOwnedModel):
+    """محضر مطابقة كشف البنك مع دفتر الأستاذ لفترة محددة."""
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة"
+        RECONCILED = "reconciled", "مطابق"
+
+    treasury_account = models.ForeignKey(
+        TreasuryAccount,
+        verbose_name="الحساب البنكي",
+        on_delete=models.PROTECT,
+        related_name="reconciliations",
+    )
+    start_date = models.DateField("بداية كشف البنك")
+    end_date = models.DateField("نهاية كشف البنك")
+    statement_opening_balance = models.DecimalField("رصيد كشف البنك الافتتاحي", max_digits=14, decimal_places=2)
+    statement_closing_balance = models.DecimalField("رصيد كشف البنك الختامي", max_digits=14, decimal_places=2)
+    book_opening_balance = models.DecimalField("رصيد الأستاذ الافتتاحي", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    book_closing_balance = models.DecimalField("رصيد الأستاذ الختامي", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    outstanding_ledger_amount = models.DecimalField("حركات الأستاذ غير الظاهرة في الكشف", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    difference = models.DecimalField("فرق المطابقة", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    status = models.CharField("الحالة", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    reconciled_at = models.DateTimeField("تاريخ المطابقة", null=True, blank=True)
+    reconciled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="المسؤول عن المطابقة",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="bank_reconciliations",
+    )
+
+    class Meta:
+        verbose_name = "مطابقة كشف بنكي"
+        verbose_name_plural = "مطابقات كشوف البنوك"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "treasury_account", "start_date", "end_date"],
+                condition=models.Q(is_archived=False),
+                name="acct_bank_recon_range_uniq",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise ValidationError("بداية كشف البنك يجب ألا تتجاوز نهايته.")
+        if self.treasury_account_id:
+            if self.treasury_account.school_id != self.school_id:
+                raise ValidationError({"treasury_account": "الحساب البنكي لا يتبع المدرسة نفسها."})
+            if self.treasury_account.kind != TreasuryAccount.Kind.BANK:
+                raise ValidationError({"treasury_account": "المطابقة البنكية تتطلب حساباً من نوع بنك."})
+        if self.status == self.Status.RECONCILED and not self.reconciled_at:
+            raise ValidationError({"reconciled_at": "وقت المطابقة مطلوب."})
+
+    def __str__(self):
+        return f"{self.treasury_account} - {self.start_date} إلى {self.end_date}"
+
+
+class BankStatementLine(TenantOwnedModel):
+    """حركة كشف بنك قابلة للربط بسطر محدد في دفتر الأستاذ."""
+    reconciliation = models.ForeignKey(
+        BankReconciliation,
+        verbose_name="محضر المطابقة",
+        on_delete=models.CASCADE,
+        related_name="statement_lines",
+    )
+    transaction_date = models.DateField("تاريخ الحركة البنكية")
+    external_reference = models.CharField("المرجع البنكي", max_length=120)
+    description = models.CharField("البيان", max_length=255, blank=True)
+    amount = models.DecimalField(
+        "المبلغ (الإيداع موجب والسحب سالب)",
+        max_digits=14,
+        decimal_places=2,
+    )
+    journal_line = models.OneToOneField(
+        JournalEntryLine,
+        verbose_name="سطر دفتر الأستاذ المطابق",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="bank_statement_match",
+    )
+
+    class Meta:
+        verbose_name = "حركة كشف بنك"
+        verbose_name_plural = "حركات كشوف البنوك"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["reconciliation", "external_reference"],
+                condition=models.Q(is_archived=False),
+                name="acct_bank_stmt_ref_uniq",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.amount == Decimal("0.00"):
+            raise ValidationError({"amount": "قيمة حركة كشف البنك لا يمكن أن تكون صفراً."})
+        if self.reconciliation_id:
+            recon = self.reconciliation
+            if recon.school_id != self.school_id:
+                raise ValidationError({"reconciliation": "محضر المطابقة لا يتبع المدرسة نفسها."})
+            if not (recon.start_date <= self.transaction_date <= recon.end_date):
+                raise ValidationError({"transaction_date": "تاريخ الحركة خارج فترة كشف البنك."})
+            if recon.status == BankReconciliation.Status.RECONCILED:
+                raise ValidationError("لا يمكن إضافة أو تعديل حركة بعد اعتماد المطابقة.")
+        if self.journal_line_id:
+            line = self.journal_line
+            if line.school_id != self.school_id:
+                raise ValidationError({"journal_line": "سطر الأستاذ لا يتبع المدرسة نفسها."})
+            if line.account_id != self.reconciliation.treasury_account.account_id:
+                raise ValidationError({"journal_line": "سطر الأستاذ لا يخص الحساب البنكي المحدد."})
+            if line.journal_entry.status != JournalEntry.Status.POSTED:
+                raise ValidationError({"journal_line": "لا يمكن مطابقة حركة مع قيد غير مرحّل."})
+            if line.journal_entry.date != self.transaction_date:
+                raise ValidationError({"journal_line": "تاريخ سطر الأستاذ لا يطابق تاريخ الحركة البنكية."})
+            if line.debit - line.credit != self.amount:
+                raise ValidationError({"journal_line": "قيمة سطر الأستاذ لا تطابق قيمة حركة كشف البنك."})
+
+    def __str__(self):
+        return f"{self.external_reference} - {self.amount}"
