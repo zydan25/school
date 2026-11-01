@@ -46,7 +46,18 @@ jobs:
             apps/student_fees/api/workflow_views.py \
             apps/students/models.py \
             apps/students/admin.py \
+            apps/accounting/models.py \
+            apps/accounting/admin.py \
             apps/accounting/services/auto_posting.py \
+            apps/accounting/services/financial_reports.py \
+            apps/accounting/services/period_closing.py \
+            apps/accounting/services/treasury.py \
+            apps/accounting/migrations/0002_stage8_fiscal_controls.py \
+            apps/accounting/migrations/0003_stage8_treasury.py \
+            apps/reports/views.py \
+            apps/reports/urls.py \
+            apps/payroll/services.py \
+            tests/test_stage8_accounting.py \
             tests/test_stage7_student_fees.py \
             apps/school_services/models.py \
             apps/tenants/admin.py \
