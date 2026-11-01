@@ -174,7 +174,7 @@ class ReceiptVoucherAdmin(AuditedAdminMixin, ModelAdmin):
 class BankStatementLineInline(TabularInline):
     model = BankStatementLine
     extra = 0
-    autocomplete_fields = ("journal_line",)
+    raw_id_fields = ("journal_line",)
     readonly_fields = ("created_at", "updated_at")
 
 
@@ -281,5 +281,6 @@ class BankStatementLineAdmin(AuditedAdminMixin, ModelAdmin):
     list_display = ("external_reference", "transaction_date", "reconciliation", "amount", "journal_line", "school")
     list_filter = ("transaction_date", "school")
     search_fields = ("external_reference", "description", "reconciliation__treasury_account__name")
-    autocomplete_fields = ("school", "branch", "reconciliation", "journal_line")
+    autocomplete_fields = ("school", "branch", "reconciliation")
+    raw_id_fields = ("journal_line",)
     readonly_fields = ("id", "created_at", "updated_at")
