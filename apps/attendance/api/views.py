@@ -87,6 +87,7 @@ from apps.attendance.services import (
 )
 from apps.students.api.views import _resolve_school
 from apps.students.models import Guardian, Student
+from apps.staff.models import TeacherAssignment
 from apps.timetable.models import ClassSchedule
 
 
@@ -147,13 +148,27 @@ class AttendancePolicyViewSet(BaseAttendanceViewSet):
     }
 
     def get_queryset(self):
-        return AttendancePolicy.objects.filter(
-            school=self.get_school(),
-            is_archived=False,
-        ).order_by("-created_at")
+        qs = AttendancePolicy.objects.filter(
+            school=self.get_school(), is_archived=False,
+        )
+        branch_id = self.request.query_params.get("branch_id")
+        if branch_id:
+            try:
+                branch_uuid = UUID(str(branch_id))
+            except (TypeError, ValueError, AttributeError):
+                raise ValidationError({"branch_id": "أرسل معرف فرع صحيحاً بصيغة UUID."})
+            branch = Branch.objects.filter(pk=branch_uuid, school=self.get_school(), is_archived=False).first()
+            if branch is None:
+                raise ValidationError({"branch_id": "الفرع غير موجود أو لا يتبع المدرسة النشطة."})
+            qs = qs.filter(Q(branch=branch) | Q(branch__isnull=True))
+        return qs.order_by("-created_at")
 
     def perform_create(self, serializer):
-        serializer.save(school=self.get_school())
+        academic_year = serializer.validated_data["academic_year"]
+        branch = serializer.validated_data.get("branch")
+        if branch is None and academic_year.branch_id:
+            branch = academic_year.branch
+        serializer.save(school=self.get_school(), branch=branch)
 
 
 class AttendanceStatusTypeViewSet(BaseAttendanceViewSet):
@@ -191,7 +206,7 @@ class AttendanceRegisterViewSet(BaseAttendanceViewSet):
         qs = AttendanceRegister.objects.filter(
             school=self.get_school(),
             is_archived=False,
-        ).select_related("section", "section__grade", "academic_year", "academic_term")
+        ).select_related("section", "section__grade", "academic_year", "academic_term", "branch", "schedule")
 
         date_param = self.request.query_params.get("date")
         if date_param:
@@ -204,9 +219,11 @@ class AttendanceRegisterViewSet(BaseAttendanceViewSet):
         if has_school_roles(self.request.user, self.get_school(), {"teacher"}) and not has_school_roles(
             self.request.user, self.get_school(), ATTENDANCE_ADMIN_ROLES
         ):
-            teacher = self.request.user.teacher_profiles.filter(school=self.get_school()).first()
-            assigned_sections = teacher.assignments.filter(is_archived=False).values_list("section_id", flat=True) if teacher else []
-            qs = qs.filter(section_id__in=assigned_sections)
+            teacher = self.request.user.teacher_profiles.filter(school=self.get_school(), is_active_teaching=True).first()
+            assigned_sections = TeacherAssignment.objects.filter(
+                school=self.get_school(), teacher=teacher, is_archived=False,
+            ).values_list("section_id", flat=True) if teacher else []
+            qs = qs.filter(section_id__in=assigned_sections) if teacher else qs.none()
         return qs.order_by("-date", "-created_at")
 
     def create(self, request, *args, **kwargs):
@@ -228,22 +245,32 @@ class AttendanceRegisterViewSet(BaseAttendanceViewSet):
         data = serializer.validated_data
 
         school = self.get_school()
-        year = get_object_or_404(AcademicYear, pk=data["academic_year_id"], school=school)
-        section = get_object_or_404(Section, pk=data["section_id"], school=school)
+        year = get_object_or_404(AcademicYear, pk=data["academic_year_id"], school=school, is_archived=False)
+        section = get_object_or_404(Section, pk=data["section_id"], school=school, academic_year=year, is_archived=False)
 
         schedule = None
         if data.get("schedule_id"):
-            schedule = get_object_or_404(ClassSchedule, pk=data["schedule_id"], school=school)
+            schedule = get_object_or_404(ClassSchedule, pk=data["schedule_id"], school=school, section=section, academic_year=year, is_archived=False)
 
         if has_school_roles(request.user, school, {"teacher"}) and not has_school_roles(
             request.user, school, ATTENDANCE_ADMIN_ROLES
         ):
-            teacher = request.user.teacher_profiles.filter(school=school).first()
-            assigned = teacher.assignments.filter(
-                section_id=section.pk, is_archived=False
-            ).exists() if teacher else False
-            if not assigned:
-                raise PermissionDenied("لا يمكنك فتح سجل حضور لشعبة غير مسندة إليك.")
+            teacher = request.user.teacher_profiles.filter(school=school, is_active_teaching=True).first()
+            if teacher is None:
+                raise PermissionDenied("لا يوجد ملف معلم نشط مرتبط بحسابك في المدرسة المحددة.")
+            if schedule and schedule.teacher_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك فتح سجل حضور لحصة مسندة إلى معلم آخر.")
+            assignments = TeacherAssignment.objects.filter(
+                school=school, academic_year=year, section=section, teacher=teacher, is_archived=False,
+            )
+            if schedule:
+                assignments = assignments.filter(subject=schedule.subject)
+            if section.branch_id:
+                assignments = assignments.filter(Q(branch=section.branch) | Q(branch__isnull=True))
+            else:
+                assignments = assignments.filter(branch__isnull=True)
+            if not assignments.exists():
+                raise PermissionDenied("لا يمكنك فتح سجل حضور دون إسناد نشط لهذه الشعبة والسنة.")
 
         if data.get("bypass_calendar_check"):
             require_school_role_or_permission(request, school, ATTENDANCE_ADMIN_ROLES)

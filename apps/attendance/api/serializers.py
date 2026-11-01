@@ -24,10 +24,17 @@ from apps.attendance.models import (
 
 
 class AttendancePolicySerializer(serializers.ModelSerializer):
+    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.none(), required=False, allow_null=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        school = self.context.get("school")
+        self.fields["branch"].queryset = Branch.objects.filter(school=school, is_archived=False) if school else Branch.objects.none()
+
     class Meta:
         model = AttendancePolicy
         fields = [
-            "id",
+            "id", "branch",
             "academic_year",
             "attendance_mode",
             "morning_assembly_time",
@@ -50,6 +57,14 @@ class AttendancePolicySerializer(serializers.ModelSerializer):
         academic_year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
         if school and academic_year and academic_year.school_id != school.pk:
             raise serializers.ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة الحالية."})
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        if branch is None and academic_year and academic_year.branch_id:
+            branch = academic_year.branch
+            attrs["branch"] = branch
+        if branch and school and (branch.school_id != school.pk or branch.is_archived):
+            raise serializers.ValidationError({"branch": "الفرع غير نشط أو لا يتبع المدرسة الحالية."})
+        if academic_year and academic_year.branch_id and academic_year.branch_id != getattr(branch, "pk", None):
+            raise serializers.ValidationError({"branch": "الفرع لا يطابق فرع السنة الدراسية."})
         return attrs
 
 
@@ -95,6 +110,7 @@ class StudentAttendanceRecordSerializer(serializers.ModelSerializer):
 
 
 class AttendanceRegisterSerializer(serializers.ModelSerializer):
+    branch = serializers.PrimaryKeyRelatedField(read_only=True)
     section_name = serializers.CharField(source="section.name", read_only=True)
     grade_name = serializers.CharField(source="section.grade.name", read_only=True)
     student_records = StudentAttendanceRecordSerializer(many=True, read_only=True)
@@ -102,7 +118,7 @@ class AttendanceRegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = AttendanceRegister
         fields = [
-            "id",
+            "id", "branch",
             "academic_year",
             "academic_term",
             "section",
@@ -121,14 +137,14 @@ class AttendanceRegisterSerializer(serializers.ModelSerializer):
 
 
 class OpenRegisterInputSerializer(serializers.Serializer):
-    academic_year_id = serializers.IntegerField()
-    section_id = serializers.IntegerField()
+    academic_year_id = serializers.UUIDField()
+    section_id = serializers.UUIDField()
     date = serializers.DateField()
     session_type = serializers.ChoiceField(
         choices=AttendanceRegister.SessionType.choices,
         default=AttendanceRegister.SessionType.DAILY_MORNING,
     )
-    schedule_id = serializers.IntegerField(required=False, allow_null=True)
+    schedule_id = serializers.UUIDField(required=False, allow_null=True)
     bypass_calendar_check = serializers.BooleanField(default=False)
 
 
