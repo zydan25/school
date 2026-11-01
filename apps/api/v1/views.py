@@ -42,8 +42,8 @@ from apps.accounting.models import (
 from apps.accounting.services.auto_posting import reverse_journal_entry
 from apps.assets.models import AssetDepreciationEntry, FixedAsset
 from apps.assessments.models import (
-    ExamCommittee, ExamCommitteeProctor, ExamSeating, GradeBook,
-    OnlineExam, QuestionBank, StudentOnlineExamSubmission,
+    ExamCommittee, GradeBook, OnlineExam, QuestionBank,
+    StudentOnlineExamSubmission,
 )
 from apps.assignments.models import (
     Homework, HomeworkSubmission, HomeworkSubmissionAttempt,
