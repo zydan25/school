@@ -227,8 +227,8 @@ class AuditFixesVerificationTests(TestCase):
 
         lines = list(entry.lines.all())
         self.assertEqual(len(lines), 2)
-        debit_line = next(l for l in lines if l.debit > 0)
-        credit_line = next(l for l in lines if l.credit > 0)
+        debit_line = next(journal_line for journal_line in lines if journal_line.debit > 0)
+        credit_line = next(journal_line for journal_line in lines if journal_line.credit > 0)
 
         # 5000 - 500 = 4500 net
         self.assertEqual(debit_line.debit, Decimal("4500.00"))
@@ -325,8 +325,8 @@ class AuditFixesVerificationTests(TestCase):
 
         # Lines swapped
         rev_lines = list(rev_entry.lines.all())
-        rev_debit = next(l for l in rev_lines if l.debit > 0)
-        rev_credit = next(l for l in rev_lines if l.credit > 0)
+        rev_debit = next(journal_line for journal_line in rev_lines if journal_line.debit > 0)
+        rev_credit = next(journal_line for journal_line in rev_lines if journal_line.credit > 0)
         self.assertEqual(rev_debit.account, revenue_acc)
         self.assertEqual(rev_debit.debit, Decimal("1500.00"))
         self.assertEqual(rev_credit.account, cash_acc)
@@ -338,7 +338,7 @@ class AuditFixesVerificationTests(TestCase):
 
     def test_staff_payroll_and_multi_loan_deduction(self):
         """4. التحقق من مسير الرواتب الموحد للكادر الإداري وتجميع استقطاعات السلف المتعددة."""
-        contract = EmployeeContract.objects.create(
+        EmployeeContract.objects.create(
             school=self.school,
             staff_member=self.staff_member,
             contract_number="CNT-STAFF-001",
