@@ -11,7 +11,23 @@ from django.utils import timezone
 from apps.core.models import TenantOwnedModel
 
 
+class FiscalYearQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        protected = {"is_closed", "closed_at", "closed_by", "closing_entry", "closing_entry_id", "opening_entry", "opening_entry_id", "start_date", "end_date", "school"}
+        if protected.intersection(kwargs) and self.filter(is_closed=True).exists():
+            raise ValidationError("لا يمكن تعديل بيانات سنة مالية مقفلة عبر QuerySet.update().")
+        if protected.intersection(kwargs):
+            raise ValidationError("تغيير حالة الإقفال أو تواريخ السنة المالية يجب أن يتم عبر خدمة الإقفال.")
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(is_closed=True).exists():
+            raise ValidationError("لا يمكن حذف سنة مالية مقفلة.")
+        return super().delete()
+
+
 class FiscalYear(TenantOwnedModel):
+    objects = FiscalYearQuerySet.as_manager()
     """السنة المالية المستقلة للمدرسة."""
     name = models.CharField("اسم السنة المالية", max_length=100)
     start_date = models.DateField("تاريخ بداية السنة المالية")
@@ -62,7 +78,23 @@ class FiscalYear(TenantOwnedModel):
         return f"{self.name} ({'مقفلة' if self.is_closed else 'مفتوحة'})"
 
 
+class FiscalPeriodQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        protected = {"is_closed", "closed_at", "closed_by", "start_date", "end_date", "fiscal_year", "fiscal_year_id", "period_number", "school"}
+        if protected.intersection(kwargs) and self.filter(is_closed=True).exists():
+            raise ValidationError("لا يمكن تعديل بيانات فترة مالية مقفلة عبر QuerySet.update().")
+        if protected.intersection(kwargs):
+            raise ValidationError("تغيير حالة الإقفال أو تواريخ الفترة يجب أن يتم عبر خدمة الإقفال.")
+        return super().update(**kwargs)
+
+    def delete(self):
+        if self.filter(is_closed=True).exists():
+            raise ValidationError("لا يمكن حذف فترة مالية مقفلة.")
+        return super().delete()
+
+
 class FiscalPeriod(TenantOwnedModel):
+    objects = FiscalPeriodQuerySet.as_manager()
     """الفترات المحاسبية الشهرية أو الربع سنوية التابعة للسنة المالية."""
     fiscal_year = models.ForeignKey(
         FiscalYear,
@@ -216,7 +248,7 @@ class JournalEntryQuerySet(models.QuerySet):
     """حماية دفتر الأستاذ العام من التعديل أو الحذف الجماعي للقيود المرحّلة."""
     def update(self, **kwargs):
         if self.filter(status="posted").exists():
-            allowed = {"is_reversed", "reversed_by_entry", "reversed_by_entry_id", "reversal_reason", "updated_at", "is_archived"}
+            allowed = {"is_reversed", "reversed_by_entry", "reversed_by_entry_id", "reversal_reason", "updated_at"}
             disallowed = set(kwargs.keys()) - allowed
             if disallowed or ("status" in kwargs and kwargs["status"] != "posted"):
                 raise ValidationError(f"لا يمكن تعديل القيود المحاسبية المرحّلة في دفتر الأستاذ عبر التحديث الجماعي QuerySet.update ({disallowed}).")
@@ -314,7 +346,7 @@ class JournalEntry(TenantOwnedModel):
             if orig and orig.status == self.Status.POSTED:
                 if self.status != self.Status.POSTED:
                     raise ValidationError("لا يمكن تحويل قيد محاسبي مرحّل إلى مسودة أو إلغاء ترحيله مباشرة؛ التصحيح يتم عبر قيد عكسي فقط.")
-                allowed_fields = {"is_reversed", "reversed_by_entry", "reversed_by_entry_id", "reversal_reason", "updated_at", "is_archived"}
+                allowed_fields = {"is_reversed", "reversed_by_entry", "reversed_by_entry_id", "reversal_reason", "updated_at"}
                 update_fields = kwargs.get("update_fields")
                 if update_fields:
                     disallowed = set(update_fields) - allowed_fields
@@ -346,6 +378,8 @@ class JournalEntry(TenantOwnedModel):
             ).get(pk=self.pk)
             if locked.status == self.Status.POSTED:
                 raise ValidationError("القيد مرحّل مسبقاً.")
+            from apps.tenants.models import School
+            School.objects.select_for_update().get(pk=locked.school_id)
             if not locked.fiscal_period_id:
                 raise ValidationError("لا يمكن ترحيل قيد دون فترة مالية مفتوحة.")
             period = FiscalPeriod.objects.select_for_update().select_related(
@@ -500,7 +534,10 @@ class JournalEntryLine(TenantOwnedModel):
                         orig.debit != self.debit or
                         orig.credit != self.credit or
                         orig.cost_center_id != self.cost_center_id or
-                        orig.journal_entry_id != self.journal_entry_id
+                        orig.journal_entry_id != self.journal_entry_id or
+                        orig.description != self.description or
+                        orig.branch_id != self.branch_id or
+                        orig.school_id != self.school_id
                     ):
                         raise ValidationError("لا يمكن تعديل المبالغ أو الحسابات في سطر تابع لقيد محاسبي مرحّل.")
             if entry.school_id != self.school_id:
