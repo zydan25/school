@@ -8,6 +8,7 @@ from decimal import Decimal
 from datetime import timedelta
 
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import F, Max, Q, Sum
@@ -33,7 +34,7 @@ from apps.accounts.services import (
     accept_school_invitation, active_membership, issue_school_invitation,
 )
 from apps.accounts.session_services import send_phone_message
-from apps.academics.models import AcademicYear, Section
+from apps.academics.models import AcademicTerm, AcademicYear, Section
 from apps.accounting.models import (
     Account, CostCenter, FiscalPeriod, JournalEntry, JournalEntryLine,
     PaymentVoucher, ReceiptVoucher,
@@ -59,7 +60,7 @@ from apps.students.models import (
 )
 from apps.students.services import ensure_guardian_membership
 from apps.timetable.models import (
-    ClassSchedule, TimetablePlan,
+    ClassSchedule, SchoolBellSchedule, TimetablePlan,
 )
 from apps.tenants.models import Branch
 
@@ -1400,6 +1401,111 @@ class ExamSeatingViewSet(TenantModelViewSet):
 # ---------------------------------------------------------------------------
 # Weekly timetable, personal timetable and lesson logs
 # ---------------------------------------------------------------------------
+class TimetablePlanViewSet(TenantModelViewSet):
+    serializer_class = TimetablePlanSerializer
+    read_roles = READ_ROLES
+    write_roles = ACADEMIC_ADMIN_ROLES
+    action_role_map = {
+        "list": READ_ROLES, "retrieve": READ_ROLES,
+        "create": ACADEMIC_ADMIN_ROLES, "update": ACADEMIC_ADMIN_ROLES,
+        "partial_update": ACADEMIC_ADMIN_ROLES, "destroy": ACADEMIC_ADMIN_ROLES,
+        "copy": ACADEMIC_ADMIN_ROLES, "submit": ACADEMIC_ADMIN_ROLES,
+        "approve": ACADEMIC_ADMIN_ROLES, "publish": ACADEMIC_ADMIN_ROLES,
+    }
+
+    def get_queryset(self):
+        qs = super().get_queryset().select_related("academic_year", "academic_term", "branch", "bell_schedule")
+        branch_id = self.request.query_params.get("branch_id")
+        if branch_id:
+            try:
+                branch_uuid = UUID(str(branch_id))
+            except (TypeError, ValueError, AttributeError):
+                raise ValidationError({"branch_id": "أرسل معرف فرع صحيحاً بصيغة UUID."})
+            branch = Branch.objects.filter(pk=branch_uuid, school=self.get_school(), is_archived=False).first()
+            if branch is None:
+                raise ValidationError({"branch_id": "الفرع غير موجود أو لا يتبع المدرسة النشطة."})
+            qs = qs.filter(branch=branch)
+        year_id = self.request.query_params.get("academic_year_id")
+        status_filter = self.request.query_params.get("status")
+        if year_id:
+            qs = qs.filter(academic_year_id=year_id)
+        if status_filter:
+            qs = qs.filter(status=status_filter)
+        return qs.order_by("-academic_year__starts_on", "-version")
+
+    def perform_create(self, serializer):
+        school = self.get_school()
+        year = serializer.validated_data["academic_year"]
+        branch = serializer.validated_data.get("branch")
+        if branch is None and year.branch_id:
+            branch = year.branch
+        if branch and branch.school_id != school.pk:
+            raise ValidationError({"branch": "الفرع لا يتبع المدرسة النشطة."})
+        version = (TimetablePlan.objects.filter(
+            school=school, academic_year=year, branch=branch, is_archived=False,
+        ).aggregate(value=Max("version"))["value"] or 0) + 1
+        serializer.save(school=school, branch=branch, version=version, status=TimetablePlan.Status.DRAFT, is_current=False)
+
+    def perform_update(self, serializer):
+        if serializer.instance.status != TimetablePlan.Status.DRAFT:
+            raise ValidationError("لا يمكن تعديل نسخة جدول بعد إرسالها للمراجعة.")
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if instance.status != TimetablePlan.Status.DRAFT:
+            raise ValidationError("لا يمكن أرشفة نسخة جدول أرسلت للمراجعة أو اعتمدت أو نشرت.")
+        super().perform_destroy(instance)
+
+    @action(detail=True, methods=["post"], url_path="copy")
+    def copy(self, request, pk=None):
+        source = self.get_object()
+        data = TimetablePlanCopyInputSerializer(data=request.data)
+        data.is_valid(raise_exception=True)
+        values = data.validated_data
+        term = source.academic_term
+        if values.get("academic_term_id"):
+            term = get_object_or_404(AcademicTerm, pk=values["academic_term_id"], school=self.get_school())
+        bell = source.bell_schedule
+        if values.get("bell_schedule_id"):
+            bell = get_object_or_404(SchoolBellSchedule, pk=values["bell_schedule_id"], school=self.get_school())
+        from apps.timetable.services import copy_timetable_plan
+        try:
+            plan = copy_timetable_plan(
+                school=source.school, academic_year=source.academic_year, branch=source.branch,
+                source_plan=source, name=values.get("name"), effective_from=values.get("effective_from"),
+                academic_term=term, bell_schedule=bell, created_by=request.user,
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError(detail=str(exc))
+        return Response(self.get_serializer(plan).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="submit")
+    def submit(self, request, pk=None):
+        from apps.timetable.services import submit_timetable_plan
+        try:
+            plan = submit_timetable_plan(self.get_object(), submitted_by=request.user)
+        except DjangoValidationError as exc:
+            raise ValidationError(detail=str(exc))
+        return Response(self.get_serializer(plan).data)
+
+    @action(detail=True, methods=["post"], url_path="approve")
+    def approve(self, request, pk=None):
+        from apps.timetable.services import approve_timetable_plan
+        try:
+            plan = approve_timetable_plan(self.get_object(), approved_by=request.user)
+        except DjangoValidationError as exc:
+            raise ValidationError(detail=str(exc))
+        return Response(self.get_serializer(plan).data)
+
+    @action(detail=True, methods=["post"], url_path="publish")
+    def publish(self, request, pk=None):
+        from apps.timetable.services import publish_timetable_plan
+        try:
+            plan = publish_timetable_plan(self.get_object(), published_by=request.user)
+        except DjangoValidationError as exc:
+            raise ValidationError(detail=str(exc))
+        return Response(self.get_serializer(plan).data)
+
 class SchoolBellScheduleViewSet(TenantModelViewSet):
     serializer_class = SchoolBellScheduleSerializer
     read_roles = READ_ROLES
