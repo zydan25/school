@@ -345,95 +345,188 @@ class ClassSchedule(TenantOwnedModel):
 
     def clean(self):
         super().clean()
-        if self.school_id and self.academic_year_id and self.academic_year.school_id != self.school_id:
+
+        if self.academic_year_id and self.academic_year.school_id != self.school_id:
             raise ValidationError({"academic_year": "السنة الدراسية لا تتبع نفس المدرسة."})
-        if self.start_time and self.end_time and self.start_time >= self.end_time:
-            raise ValidationError({"end_time": "وقت نهاية الحصة يجب أن يكون بعد وقت البداية."})
-        if self.section_id and self.section.school_id != self.school_id:
-            raise ValidationError({"section": "الشعبة المحددة لا تتبع نفس المدرسة."})
+        if self.section_id:
+            if self.section.school_id != self.school_id:
+                raise ValidationError({"section": "الشعبة المحددة لا تتبع نفس المدرسة."})
+            if self.section.academic_year_id != self.academic_year_id:
+                raise ValidationError({"section": "الشعبة لا تتبع السنة الدراسية المحددة."})
         if self.subject_id and self.subject.school_id != self.school_id:
             raise ValidationError({"subject": "المادة المحددة لا تتبع نفس المدرسة."})
-        if self.teacher_id and self.teacher.school_id != self.school_id:
-            raise ValidationError({"teacher": "المعلم المحدد لا يتبع نفس المدرسة."})
+        if self.teacher_id:
+            if self.teacher.school_id != self.school_id:
+                raise ValidationError({"teacher": "المعلم المحدد لا يتبع نفس المدرسة."})
+            if not self.teacher.is_active_teaching:
+                raise ValidationError({"teacher": "لا يمكن جدولة حصص لمعلم غير نشط تدريسياً."})
         if self.classroom_id and self.classroom.school_id != self.school_id:
             raise ValidationError({"classroom": "القاعة المحددة لا تتبع نفس المدرسة."})
+        if self.academic_term_id:
+            if self.academic_term.school_id != self.school_id or self.academic_term.academic_year_id != self.academic_year_id:
+                raise ValidationError({"academic_term": "الفصل الدراسي لا يتبع المدرسة والسنة المحددتين."})
+            if self.academic_term.is_closed:
+                raise ValidationError({"academic_term": "لا يمكن تعديل جدول مرتبط بفصل دراسي مغلق."})
+        if self.start_time and self.end_time and self.start_time >= self.end_time:
+            raise ValidationError({"end_time": "وقت نهاية الحصة يجب أن يكون بعد وقت البداية."})
+        if self.period_number < 1:
+            raise ValidationError({"period_number": "رقم الحصة يجب أن يبدأ من 1."})
 
-        # 1. منع تعارض القاعة في نفس الوقت
-        if self.classroom_id and self.start_time and self.end_time:
-            classroom_conflict = ClassSchedule.objects.filter(
-                school=self.school,
-                academic_year=self.academic_year,
-                classroom=self.classroom,
-                day_of_week=self.day_of_week,
-                is_archived=False,
-            ).exclude(pk=self.pk).filter(
-                start_time__lt=self.end_time,
-                end_time__gt=self.start_time,
-            ).first()
-            if classroom_conflict:
-                raise ValidationError({"classroom": f"القاعة المحددة محجوزة لحصة أخرى ({classroom_conflict.subject.name} - شعبة {classroom_conflict.section.name}) في نفس الوقت ({classroom_conflict.start_time.strftime('%H:%M')} - {classroom_conflict.end_time.strftime('%H:%M')})."})
+        if self.timetable_plan_id:
+            if self.timetable_plan.school_id != self.school_id or self.timetable_plan.academic_year_id != self.academic_year_id:
+                raise ValidationError({"timetable_plan": "نسخة الجدول لا تتبع المدرسة والسنة المحددتين."})
+            if self.timetable_plan.status != TimetablePlan.Status.DRAFT:
+                raise ValidationError({"timetable_plan": "لا يمكن تعديل حصص نسخة بعد إرسالها للمراجعة أو اعتمادها أو نشرها."})
+            if self.timetable_plan.academic_term_id and self.academic_term_id != self.timetable_plan.academic_term_id:
+                raise ValidationError({"academic_term": "الفصل لا يطابق نطاق نسخة الجدول."})
+            if self.branch_id != self.timetable_plan.branch_id:
+                raise ValidationError({"branch": "فرع الحصة يجب أن يطابق فرع نسخة الجدول."})
 
-        # 2. منع تعارض المعلم الزمني الدقيق (تداخل الأوقات)
-        if self.teacher_id and self.start_time and self.end_time:
-            teacher_conflict = ClassSchedule.objects.filter(
-                school=self.school,
-                academic_year=self.academic_year,
-                teacher=self.teacher,
-                day_of_week=self.day_of_week,
-                is_archived=False,
-            ).exclude(pk=self.pk).filter(
-                start_time__lt=self.end_time,
-                end_time__gt=self.start_time,
-            ).first()
-            if teacher_conflict:
-                raise ValidationError({"teacher": f"تعارض زمني: المعلم مسند له حصة أخرى ({teacher_conflict.subject.name} - شعبة {teacher_conflict.section.name}) في نفس الوقت ({teacher_conflict.start_time.strftime('%H:%M')} - {teacher_conflict.end_time.strftime('%H:%M')})."})
+        branch_ids = {
+            value for value in (
+                self.section.branch_id if self.section_id else None,
+                self.teacher.branch_id if self.teacher_id else None,
+                self.classroom.branch_id if self.classroom_id else None,
+                self.bell_schedule.branch_id if self.bell_schedule_id else None,
+                self.timetable_plan.branch_id if self.timetable_plan_id else None,
+            ) if value
+        }
+        if len(branch_ids) > 1:
+            raise ValidationError("الحصة تربط موارد من فروع مختلفة.")
+        if branch_ids:
+            required_branch_id = next(iter(branch_ids))
+            if self.branch_id and self.branch_id != required_branch_id:
+                raise ValidationError({"branch": "فرع الحصة لا يطابق فرع الموارد المرتبطة."})
+            if not self.branch_id:
+                self.branch_id = required_branch_id
 
-        # 3. منع تعارض الشعبة الزمني الدقيق (تداخل الأوقات)
-        if self.section_id and self.start_time and self.end_time:
-            section_conflict = ClassSchedule.objects.filter(
-                school=self.school,
-                academic_year=self.academic_year,
-                section=self.section,
-                day_of_week=self.day_of_week,
-                is_archived=False,
-            ).exclude(pk=self.pk).filter(
-                start_time__lt=self.end_time,
-                end_time__gt=self.start_time,
-            ).first()
-            if section_conflict:
-                raise ValidationError({"section": f"تعارض زمني: الشعبة مجدول لها حصة أخرى ({section_conflict.subject.name}) في نفس الوقت ({section_conflict.start_time.strftime('%H:%M')} - {section_conflict.end_time.strftime('%H:%M')})."})
+        if self.bell_schedule_id:
+            if self.bell_schedule.school_id != self.school_id or self.bell_schedule.academic_year_id != self.academic_year_id:
+                raise ValidationError({"bell_schedule": "قالب الجرس لا يتبع المدرسة والسنة المحددتين."})
+            if self.bell_schedule.branch_id and self.bell_schedule.branch_id != self.branch_id:
+                raise ValidationError({"bell_schedule": "قالب الجرس يتبع فرعاً مختلفاً."})
 
-        # 4. منع جدولة حصة في وقت الطابور الصباحي أو أوقات الفسحة والاستراحة المعتمدة
-        active_bell = self.bell_schedule or SchoolBellSchedule.objects.filter(
-            school=self.school,
-            academic_year=self.academic_year,
-            is_active=True,
-            is_default=True,
-            is_archived=False,
-        ).first()
+        # Convert Python weekday (Monday=0) to timetable weekday (Sunday=1).
+        from apps.academics.models import SchoolWorkingDay
+        python_weekday = (self.day_of_week - 2) % 7
+        configured_days = SchoolWorkingDay.objects.filter(
+            school=self.school, weekday=python_weekday, is_archived=False,
+        )
+        if self.branch_id:
+            working_day = (
+                configured_days.filter(branch_id=self.branch_id).first()
+                or configured_days.filter(branch__isnull=True).first()
+            )
+        else:
+            working_day = configured_days.filter(branch__isnull=True).first()
+        if working_day and not working_day.is_working:
+            raise ValidationError({"day_of_week": "اليوم المحدد غير معتمد كيوم دوام في إعدادات المدرسة أو الفرع."})
 
-        if active_bell and self.start_time and self.end_time:
+        active_bell = self.bell_schedule
+        if active_bell is None:
+            bells = SchoolBellSchedule.objects.filter(
+                school=self.school, academic_year=self.academic_year,
+                is_active=True, is_default=True, is_archived=False,
+            )
+            if self.branch_id:
+                active_bell = bells.filter(branch_id=self.branch_id).first() or bells.filter(branch__isnull=True).first()
+            else:
+                active_bell = bells.filter(branch__isnull=True).first()
+
+        if active_bell:
+            if self.period_number > active_bell.periods_per_day:
+                raise ValidationError({"period_number": "رقم الحصة يتجاوز عدد الحصص في قالب الجرس."})
+            if self.start_time < active_bell.day_start_time or self.end_time > active_bell.day_end_time:
+                raise ValidationError({"start_time": "الحصة تقع خارج حدود اليوم الدراسي."})
+            period_templates = SchedulePeriodTemplate.objects.filter(
+                school=self.school, schedule=active_bell,
+                period_type=SchedulePeriodTemplate.PeriodType.PERIOD,
+                period_number=self.period_number, is_active=True, is_archived=False,
+            )
+            period_template = (
+                period_templates.filter(day_of_week=self.day_of_week).first()
+                or period_templates.filter(day_of_week__isnull=True).first()
+            )
+            if period_template and (
+                self.start_time != period_template.start_time
+                or self.end_time != period_template.end_time
+            ):
+                raise ValidationError({"start_time": "توقيت الحصة لا يطابق فترة الحصة المعتمدة في قالب الجرس."})
+
             non_period_templates = SchedulePeriodTemplate.objects.filter(
-                school=self.school,
-                schedule=active_bell,
+                school=self.school, schedule=active_bell,
                 period_type__in=[
                     SchedulePeriodTemplate.PeriodType.ASSEMBLY,
                     SchedulePeriodTemplate.PeriodType.BREAK,
                     SchedulePeriodTemplate.PeriodType.PRAYER_BREAK,
                 ],
-                is_active=True,
-                is_archived=False,
-            ).filter(
-                models.Q(day_of_week__isnull=True) | models.Q(day_of_week=self.day_of_week)
-            )
+                is_active=True, is_archived=False,
+            ).filter(models.Q(day_of_week__isnull=True) | models.Q(day_of_week=self.day_of_week))
+            for template in non_period_templates:
+                if max(self.start_time, template.start_time) < min(self.end_time, template.end_time):
+                    raise ValidationError({"start_time": f"توقيت الحصة يتداخل مع الفترة غير التدريسية '{template.name}'."})
 
-            for b_tpl in non_period_templates:
-                if max(self.start_time, b_tpl.start_time) < min(self.end_time, b_tpl.end_time):
-                    raise ValidationError(
-                        f"لا يمكن جدولة الحصة في هذا التوقيت: تتعارض الحصة مع وقت '{b_tpl.name}' "
-                        f"({b_tpl.start_time.strftime('%H:%M')} - {b_tpl.end_time.strftime('%H:%M')}). "
-                        f"يرجى الالتزام بمواعيد الفسح والاستراحات والطابور المعتمدة."
-                    )
+        from apps.staff.models import TeacherAssignment
+        assignments = TeacherAssignment.objects.filter(
+            school=self.school, academic_year=self.academic_year,
+            teacher=self.teacher, subject=self.subject, section=self.section,
+            is_archived=False,
+        )
+        if self.branch_id:
+            assignments = assignments.filter(models.Q(branch__isnull=True) | models.Q(branch_id=self.branch_id))
+        else:
+            assignments = assignments.filter(branch__isnull=True)
+        assignment = assignments.first()
+        if assignment is None:
+            raise ValidationError({"teacher": "لا يوجد إسناد نشط لهذا المعلم والمادة والشعبة في السنة المحددة."})
+
+        schedule_scope = ClassSchedule.objects.filter(
+            school=self.school, academic_year=self.academic_year,
+            day_of_week=self.day_of_week, is_archived=False,
+        ).exclude(pk=self.pk)
+        if self.timetable_plan_id:
+            schedule_scope = schedule_scope.filter(timetable_plan_id=self.timetable_plan_id)
+        else:
+            schedule_scope = schedule_scope.filter(timetable_plan__isnull=True)
+
+        conflicts = (
+            ("teacher", {"teacher_id": self.teacher_id}),
+            ("section", {"section_id": self.section_id}),
+        )
+        for field_name, lookup in conflicts:
+            if schedule_scope.filter(
+                **lookup, start_time__lt=self.end_time, end_time__gt=self.start_time,
+            ).exists():
+                raise ValidationError({field_name: "يوجد تعارض زمني مع حصة أخرى للموارد نفسها."})
+        if self.classroom_id and schedule_scope.filter(
+            classroom_id=self.classroom_id,
+            start_time__lt=self.end_time, end_time__gt=self.start_time,
+        ).exists():
+            raise ValidationError({"classroom": "القاعة محجوزة لحصة أخرى في الوقت نفسه."})
+        if schedule_scope.filter(teacher_id=self.teacher_id, period_number=self.period_number).exists():
+            raise ValidationError({"teacher": "المعلم مرتبط بحصة أخرى في رقم الفترة نفسه."})
+        if schedule_scope.filter(section_id=self.section_id, period_number=self.period_number).exists():
+            raise ValidationError({"section": "الشعبة لديها حصة أخرى في رقم الفترة نفسه."})
+
+        assignment_scope = ClassSchedule.objects.filter(
+            school=self.school, academic_year=self.academic_year,
+            teacher=self.teacher, subject=self.subject, section=self.section,
+            is_archived=False,
+        ).exclude(pk=self.pk)
+        teacher_scope = ClassSchedule.objects.filter(
+            school=self.school, academic_year=self.academic_year,
+            teacher=self.teacher, is_archived=False,
+        ).exclude(pk=self.pk)
+        if self.timetable_plan_id:
+            assignment_scope = assignment_scope.filter(timetable_plan_id=self.timetable_plan_id)
+            teacher_scope = teacher_scope.filter(timetable_plan_id=self.timetable_plan_id)
+        else:
+            assignment_scope = assignment_scope.filter(timetable_plan__isnull=True)
+            teacher_scope = teacher_scope.filter(timetable_plan__isnull=True)
+        if assignment_scope.count() + 1 > assignment.weekly_periods:
+            raise ValidationError({"period_number": "تم تجاوز النصاب الأسبوعي المسند لهذه المادة والشعبة."})
+        if teacher_scope.count() + 1 > self.teacher.max_weekly_periods:
+            raise ValidationError({"teacher": "تم تجاوز النصاب الأسبوعي الأقصى للمعلم."})
 
 
 class DailyLessonLog(TenantOwnedModel):
