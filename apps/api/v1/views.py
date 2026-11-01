@@ -1237,6 +1237,9 @@ class GradeBookViewSet(TenantModelViewSet):
         school = self.get_school()
         student = None
         student_id = request.query_params.get("student_id")
+        subject_id = request.query_params.get("subject_id")
+        if not subject_id:
+            raise ValidationError({"subject_id": "معرف المادة مطلوب."})
         if has_school_roles(request.user, school, {"student"}):
             student = user_student_profiles(request.user, school).first()
             if not student:
@@ -1252,11 +1255,25 @@ class GradeBookViewSet(TenantModelViewSet):
             student = get_object_or_404(
                 Student, pk=student_id, school=school, is_archived=False,
             ) if student_id else None
+            if not is_admin(request.user, school):
+                teacher = user_teacher_profiles(request.user, school).filter(
+                    is_active_teaching=True,
+                ).first()
+                if not teacher or not student:
+                    raise PermissionDenied("يجب أن يكون الطالب ضمن إسناداتك التدريسية.")
+                term_id = request.query_params.get("academic_term_id")
+                assignments = teacher.assignments.filter(
+                    school=school, section=student.section,
+                    subject_id=subject_id, is_archived=False,
+                )
+                if term_id:
+                    assignments = assignments.filter(academic_year_id__in=AcademicTerm.objects.filter(
+                        school=school, pk=term_id,
+                    ).values_list("academic_year_id", flat=True))
+                if not assignments.exists():
+                    raise PermissionDenied("لا يمكنك عرض ملخص درجات طالب خارج المادة أو الشعبة المسندة إليك.")
         if student is None:
             raise ValidationError({"student_id": "معرف الطالب مطلوب لهذا التقرير."})
-        subject_id = request.query_params.get("subject_id")
-        if not subject_id:
-            raise ValidationError({"subject_id": "معرف المادة مطلوب."})
         entries = GradeBook.objects.filter(
             school=school, student=student, subject_id=subject_id,
             is_archived=False, is_published=True,
