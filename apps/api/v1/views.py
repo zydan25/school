@@ -1720,10 +1720,16 @@ class OnlineExamViewSet(TenantModelViewSet):
                 assignments = assignments.filter(section__grade=data["grade_level"])
             if not assignments.exists():
                 raise PermissionDenied("لا يمكنك إنشاء اختبار لمادة أو صف غير مسند إليك.")
-        serializer.save(
-            school=school, created_by=self.request.user, is_published=False,
-            published_by=None, published_at=None,
-        )
+        with transaction.atomic():
+            exam = serializer.save(
+                school=school, created_by=self.request.user, is_published=False,
+                published_by=None, published_at=None,
+            )
+            try:
+                exam.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            exam.save()
 
     def perform_update(self, serializer):
         exam = serializer.instance
@@ -1807,7 +1813,7 @@ class OnlineExamViewSet(TenantModelViewSet):
                 raise ValidationError({"questions": "أضف سؤالاً واحداً على الأقل قبل نشر الاختبار."})
             if exam.end_time <= exam.start_time or exam.passing_marks > exam.total_marks:
                 raise ValidationError("بيانات التوقيت أو درجات النجاح للاختبار غير صالحة.")
-            if exam.questions.filter(subject__school_id=exam.school_id).count() != exam.questions.count():
+            if exam.questions.exclude(school_id=exam.school_id).exists():
                 raise ValidationError({"questions": "يوجد سؤال لا يتبع المدرسة نفسها."})
             if exam.questions.exclude(subject_id=exam.subject_id).exists():
                 raise ValidationError({"questions": "يوجد سؤال من مادة مختلفة عن مادة الاختبار."})
@@ -2333,6 +2339,31 @@ class ExamCommitteeProctorViewSet(TenantModelViewSet):
             request=self.request,
         )
 
+    def perform_update(self, serializer):
+        school = self.get_school()
+        teacher = serializer.validated_data.get("teacher", serializer.instance.teacher)
+        committee = serializer.validated_data.get("committee", serializer.instance.committee)
+        if teacher.school_id != school.pk or committee.school_id != school.pk:
+            raise ValidationError("المعلم واللجنة يجب أن يتبعا المدرسة النشطة.")
+        if not teacher.is_active_teaching or teacher.is_archived:
+            raise ValidationError({"teacher": "لا يمكن تكليف معلم غير نشط أو مؤرشف."})
+        if committee.branch_id and teacher.branch_id and committee.branch_id != teacher.branch_id:
+            raise ValidationError({"teacher": "المعلم يتبع فرعاً مختلفاً عن اللجنة."})
+        with transaction.atomic():
+            assignment = serializer.save(branch=committee.branch)
+            try:
+                assignment.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            assignment.save()
+        record_event(
+            action="assessment.exam_proctor_updated",
+            description="تم تحديث تكليف مراقب لجنة.",
+            actor=self.request.user, school=school, obj=assignment,
+            metadata={"committee_id": str(committee.pk), "teacher_id": str(teacher.pk)},
+            request=self.request,
+        )
+
     def perform_destroy(self, instance):
         record_event(
             action="assessment.exam_proctor_unassigned",
@@ -2373,6 +2404,34 @@ class ExamSeatingViewSet(TenantModelViewSet):
             else:
                 qs = qs.none()
         return qs
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        data = serializer.validated_data
+        committee = data.get("committee", serializer.instance.committee)
+        student = data.get("student", serializer.instance.student)
+        academic_year = data.get("academic_year", serializer.instance.academic_year)
+        if committee.school_id != school.pk or student.school_id != school.pk or academic_year.school_id != school.pk:
+            raise ValidationError("اللجنة والطالب والسنة يجب أن تتبع المدرسة النشطة.")
+        if student.academic_year_id and student.academic_year_id != academic_year.pk:
+            raise ValidationError({"academic_year": "سنة رقم الجلوس لا تطابق سنة تسجيل الطالب."})
+        if committee.branch_id and student.branch_id and committee.branch_id != student.branch_id:
+            raise ValidationError({"student": "الطالب يتبع فرعاً مختلفاً عن لجنة الاختبار."})
+        with transaction.atomic():
+            locked_committee = ExamCommittee.objects.select_for_update().get(pk=committee.pk)
+            seating = serializer.save(branch=locked_committee.branch)
+            try:
+                seating.full_clean()
+            except DjangoValidationError as exc:
+                raise ValidationError(detail=exc.message_dict if hasattr(exc, "message_dict") else exc.messages)
+            seating.save()
+        record_event(
+            action="assessment.exam_seating_updated",
+            description="تم تعديل توزيع رقم جلوس الطالب.",
+            actor=self.request.user, school=school, obj=seating,
+            metadata={"committee_id": str(committee.pk), "student_id": str(student.pk)},
+            request=self.request,
+        )
 
     def perform_create(self, serializer):
         school = self.get_school()
