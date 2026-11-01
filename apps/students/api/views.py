@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Q
@@ -39,6 +40,7 @@ from apps.students.api.serializers import (
     WithdrawStudentSerializer,
 )
 from apps.students.models import Student, StudentMovement
+from apps.tenants.models import Branch
 from apps.accounts.models import User, normalize_phone
 from apps.students.services import (
     graduate_student,
@@ -137,9 +139,24 @@ class StudentListAPIView(generics.ListCreateAPIView):
             return StudentListSerializer
         return StudentSafeListSerializer
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["school"] = self.get_school()
+        return context
+
     def get_queryset(self):
         school = self.get_school()
         qs = _student_read_queryset(self.request, school)
+        branch_id = self.request.query_params.get("branch_id")
+        if branch_id:
+            try:
+                branch_uuid = UUID(str(branch_id))
+            except (TypeError, ValueError, AttributeError):
+                raise ValidationError({"branch_id": "أرسل معرف فرع صحيحاً بصيغة UUID."})
+            branch = Branch.objects.filter(pk=branch_uuid, school=school, is_archived=False).first()
+            if branch is None:
+                raise ValidationError({"branch_id": "الفرع غير موجود أو لا يتبع المدرسة النشطة."})
+            qs = qs.filter(branch=branch)
         search = self.request.query_params.get("search")
         if search:
             qs = qs.filter(
@@ -207,6 +224,7 @@ class StudentListAPIView(generics.ListCreateAPIView):
 
             student = Student(
                 school=school,
+                branch=data.get("branch"),
                 academic_year=year,
                 grade_level=grade,
                 section=section,
@@ -273,7 +291,7 @@ class StudentDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
             "students.change_student",
         )
         lifecycle_fields = {
-            "academic_year", "grade_level", "section", "status",
+            "academic_year", "grade_level", "section", "branch", "status",
             "enrollment_date",
         }
         changed_lifecycle_fields = []
@@ -705,6 +723,7 @@ class StudentImportCommitAPIView(APIView):
                     academic_year=data["academic_year"],
                     grade_level=data["grade_level"],
                     section=section,
+                    branch=data.get("branch"),
                     enrollment_date=data.get("enrollment_date") or timezone.localdate(),
                     birth_date=data.get("birth_date"),
                     national_id=data.get("national_id", ""),

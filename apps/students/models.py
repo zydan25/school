@@ -13,6 +13,13 @@ from django.utils import timezone
 from apps.core.models import TenantOwnedModel
 
 
+def _validate_academic_branch(instance, field_name: str) -> None:
+    related = getattr(instance, field_name, None)
+    related_branch_id = getattr(related, "branch_id", None)
+    if related_branch_id and related_branch_id != instance.branch_id:
+        raise ValidationError({field_name: "السجل الأكاديمي المرتبط يتبع فرعاً آخر."})
+
+
 class Student(TenantOwnedModel):
     """ملف الطالب الأكاديمي والتشغيلي."""
     class Gender(models.TextChoices):
@@ -98,6 +105,8 @@ class Student(TenantOwnedModel):
             raise ValidationError({"grade_level": "الصف الدراسي لا يتبع نفس المدرسة."})
         if self.section_id and self.section.school_id != self.school_id:
             raise ValidationError({"section": "الشعبة الصفية لا تتبع نفس المدرسة."})
+        for field_name in ("academic_year", "grade_level", "section"):
+            _validate_academic_branch(self, field_name)
         if self.section_id and self.grade_level_id and self.section.grade_id != self.grade_level_id:
             raise ValidationError({"section": "الشعبة المحددة لا تنتمي إلى الصف الدراسي المحدد."})
         if self.section_id and self.academic_year_id and self.section.academic_year_id != self.academic_year_id:
@@ -108,17 +117,20 @@ class Student(TenantOwnedModel):
         with transaction.atomic():
             super().save(*args, **kwargs)
             if self.academic_year_id and self.grade_level_id and self.section_id:
-                StudentEnrollment.objects.get_or_create(
+                enrollment, created = StudentEnrollment.objects.get_or_create(
                     school=self.school,
                     student=self,
                     academic_year=self.academic_year,
                     defaults={
+                        "branch": self.branch,
                         "grade_level": self.grade_level,
                         "section": self.section,
                         "enrollment_date": self.enrollment_date,
                         "status": StudentEnrollment.Status.ENROLLED,
                     },
                 )
+                if not created and enrollment.branch_id != self.branch_id:
+                    raise ValidationError("فرع سجل القيد السنوي لا يطابق فرع ملف الطالب.")
 
 
 class StudentMovement(TenantOwnedModel):
@@ -191,6 +203,8 @@ class StudentMovement(TenantOwnedModel):
         super().clean()
         if self.student_id and self.student.school_id != self.school_id:
             raise ValidationError({"student": "الطالب لا يتبع المدرسة المحددة."})
+        if self.student_id and self.student.branch_id != self.branch_id:
+            raise ValidationError({"student": "حركة الطالب يجب أن تتبع فرع ملف الطالب."})
         for field_name in (
             "previous_academic_year", "previous_grade_level", "previous_section",
             "next_academic_year", "next_grade_level", "next_section",
@@ -198,6 +212,7 @@ class StudentMovement(TenantOwnedModel):
             related = getattr(self, field_name, None)
             if related is not None and related.school_id != self.school_id:
                 raise ValidationError({field_name: "العنصر المرتبط لا يتبع المدرسة المحددة."})
+            _validate_academic_branch(self, field_name)
 
     def save(self, *args, **kwargs):
         if not self._state.adding:
@@ -256,12 +271,16 @@ class StudentEnrollment(TenantOwnedModel):
         super().clean()
         if self.student_id and self.student.school_id != self.school_id:
             raise ValidationError({"student": "ملف الطالب لا يتبع المدرسة المحددة."})
+        if self.student_id and self.student.branch_id != self.branch_id:
+            raise ValidationError({"student": "سجل القيد يجب أن يتبع فرع ملف الطالب."})
         if self.academic_year_id and self.academic_year.school_id != self.school_id:
             raise ValidationError({"academic_year": "السنة الدراسية لا تتبع المدرسة المحددة."})
         if self.grade_level_id and self.grade_level.school_id != self.school_id:
             raise ValidationError({"grade_level": "الصف الدراسي لا يتبع المدرسة المحددة."})
         if self.section_id and self.section.school_id != self.school_id:
             raise ValidationError({"section": "الشعبة لا تتبع المدرسة المحددة."})
+        for field_name in ("academic_year", "grade_level", "section"):
+            _validate_academic_branch(self, field_name)
         if self.section_id and self.grade_level_id and self.section.grade_id != self.grade_level_id:
             raise ValidationError({"section": "الشعبة لا تنتمي إلى الصف المحدد في سجل القيد."})
         if self.section_id and self.academic_year_id and self.section.academic_year_id != self.academic_year_id:

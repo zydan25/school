@@ -11,6 +11,27 @@ from apps.academics.models import AcademicYear, GradeLevel, Section
 from apps.students.models import Student, StudentEnrollment, StudentMovement
 
 
+def _validate_student_branch(student, field_name: str, related) -> None:
+    related_branch_id = getattr(related, "branch_id", None)
+    if related_branch_id and related_branch_id != student.branch_id:
+        raise ValidationError({field_name: "السجل المستهدف يتبع فرعاً آخر من ملف الطالب."})
+
+
+def _default_student_section(*, student, academic_year, grade_level):
+    candidates = Section.objects.filter(
+        school=student.school,
+        academic_year=academic_year,
+        grade=grade_level,
+        is_archived=False,
+        is_active=True,
+    ).filter(Q(branch_id=student.branch_id) | Q(branch__isnull=True))
+    if student.branch_id:
+        branch_section = candidates.filter(branch_id=student.branch_id).order_by("name").first()
+        if branch_section:
+            return branch_section
+    return candidates.filter(branch__isnull=True).order_by("name").first()
+
+
 def record_student_movement(
     *,
     student: Student,
@@ -171,6 +192,7 @@ def unlink_student_account(*, student: Student, actor=None) -> Student:
 def _validate_next_year(student, next_academic_year):
     if next_academic_year.school_id != student.school_id:
         raise ValidationError("العام الدراسي الجديد لا يتبع مدرسة الطالب.")
+    _validate_student_branch(student, "next_academic_year", next_academic_year)
     if next_academic_year.is_archived or next_academic_year.status not in {
         AcademicYear.Status.PLANNING, AcademicYear.Status.ACTIVE,
     }:
@@ -191,9 +213,11 @@ def promote_student(
     _validate_next_year(student, next_academic_year)
     if next_grade_level.school_id != student.school_id or next_grade_level.is_archived or not next_grade_level.is_active:
         raise ValidationError("الصف الدراسي الجديد غير متاح في المدرسة.")
+    _validate_student_branch(student, "next_grade_level", next_grade_level)
     if next_section:
         if next_section.school_id != student.school_id:
             raise ValidationError("الشعبة الجديدة لا تتبع مدرسة الطالب.")
+        _validate_student_branch(student, "next_section", next_section)
         if next_section.is_archived or not next_section.is_active:
             raise ValidationError("الشعبة الجديدة غير نشطة.")
         if next_section.academic_year_id != next_academic_year.pk:
@@ -232,13 +256,11 @@ def promote_student(
                 prev_enrollment.notes = f"{prev_enrollment.notes}\n{notes}".strip()
             prev_enrollment.save(update_fields=["status", "final_result", "notes", "updated_at"])
 
-        target_section = next_section or Section.objects.filter(
-            school=locked_student.school,
+        target_section = next_section or _default_student_section(
+            student=locked_student,
             academic_year=next_academic_year,
-            grade=next_grade_level,
-            is_archived=False,
-            is_active=True,
-        ).order_by("name").first()
+            grade_level=next_grade_level,
+        )
         if not target_section:
             raise ValidationError(
                 f"لا توجد شعب دراسية متاحة في الصف {next_grade_level.name} للعام {next_academic_year.name}."
@@ -250,7 +272,7 @@ def promote_student(
             grade=next_grade_level,
             is_archived=False,
             is_active=True,
-        ).first()
+        ).filter(Q(branch_id=locked_student.branch_id) | Q(branch__isnull=True)).first()
         if target_section is None:
             raise ValidationError("الشعبة المستهدفة لم تعد متاحة؛ أعد المحاولة.")
         if target_section.is_full:
@@ -258,6 +280,7 @@ def promote_student(
 
         new_enrollment = StudentEnrollment.objects.create(
             school=locked_student.school,
+            branch=locked_student.branch,
             student=locked_student,
             academic_year=next_academic_year,
             grade_level=next_grade_level,
@@ -327,13 +350,11 @@ def retain_student(
                 prev_enrollment.notes = f"{prev_enrollment.notes}\n{notes}".strip()
             prev_enrollment.save(update_fields=["status", "final_result", "notes", "updated_at"])
 
-        target_section = section or Section.objects.filter(
-            school=locked_student.school,
+        target_section = section or _default_student_section(
+            student=locked_student,
             academic_year=next_academic_year,
-            grade=locked_student.grade_level,
-            is_archived=False,
-            is_active=True,
-        ).order_by("name").first()
+            grade_level=locked_student.grade_level,
+        )
         if not target_section:
             raise ValidationError(
                 f"لا توجد شعب دراسية متاحة في الصف {locked_student.grade_level.name} للعام الدراسي {next_academic_year.name}."
@@ -345,7 +366,7 @@ def retain_student(
             grade=locked_student.grade_level,
             is_archived=False,
             is_active=True,
-        ).first()
+        ).filter(Q(branch_id=locked_student.branch_id) | Q(branch__isnull=True)).first()
         if target_section is None:
             raise ValidationError("الشعبة المختارة لا تتبع الصف والسنة الجديدين.")
         if target_section.is_full:
@@ -353,6 +374,7 @@ def retain_student(
 
         new_enrollment = StudentEnrollment.objects.create(
             school=locked_student.school,
+            branch=locked_student.branch,
             student=locked_student,
             academic_year=next_academic_year,
             grade_level=locked_student.grade_level,
@@ -398,6 +420,7 @@ def transfer_student(student: Student, target_section: Section, user=None, reaso
         ).first()
         if section is None:
             raise ValidationError("الشعبة المستهدفة غير نشطة أو لا تتبع السنة الدراسية الحالية.")
+        _validate_student_branch(locked_student, "target_section", section)
         if section.grade_id != locked_student.grade_level_id:
             raise ValidationError("النقل الداخلي لا يغيّر الصف الدراسي؛ استخدم إجراء الترفيع أو إعادة القيد.")
         if section.pk == locked_student.section_id:

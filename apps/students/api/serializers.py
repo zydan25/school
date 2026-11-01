@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from apps.students.models import Guardian, Student, StudentEnrollment, StudentMovement
+from apps.tenants.models import Branch
 
 
 class StudentEnrollmentSerializer(serializers.ModelSerializer):
@@ -36,15 +37,52 @@ class GuardianBriefSerializer(serializers.ModelSerializer):
 
 
 class StudentListSerializer(serializers.ModelSerializer):
+    branch = serializers.PrimaryKeyRelatedField(queryset=Branch.objects.none(), required=False, allow_null=True)
     grade_level_name = serializers.CharField(source="grade_level.name", read_only=True)
     section_name = serializers.CharField(source="section.name", read_only=True)
     academic_year_name = serializers.CharField(source="academic_year.name", read_only=True)
     full_name = serializers.CharField(source="get_full_name", read_only=True)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        school = self.context.get("school")
+        self.fields["branch"].queryset = (
+            Branch.objects.filter(school=school, is_archived=False)
+            if school else Branch.objects.none()
+        )
+
+    def validate(self, attrs):
+        school = self.context.get("school")
+        year = attrs.get("academic_year") or getattr(self.instance, "academic_year", None)
+        grade = attrs.get("grade_level") or getattr(self.instance, "grade_level", None)
+        section = attrs.get("section") or getattr(self.instance, "section", None)
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        if school and any(obj and obj.school_id != school.pk for obj in (year, grade, section)):
+            raise serializers.ValidationError("يجب أن تتبع السنة والصف والشعبة المدرسة النشطة.")
+        related_branch_ids = {obj.branch_id for obj in (year, grade, section) if obj and obj.branch_id}
+        if len(related_branch_ids) > 1:
+            raise serializers.ValidationError("السنة والصف والشعبة المختارة موزعة على فروع مختلفة.")
+        if branch is None and related_branch_ids:
+            branch = Branch.objects.filter(
+                pk=next(iter(related_branch_ids)), school=school, is_archived=False,
+            ).first()
+            attrs["branch"] = branch
+        if branch and school and branch.school_id != school.pk:
+            raise serializers.ValidationError({"branch": "الفرع لا يتبع المدرسة النشطة."})
+        for field_name, obj in (("academic_year", year), ("grade_level", grade), ("section", section)):
+            if obj and obj.branch_id and (branch is None or obj.branch_id != branch.pk):
+                raise serializers.ValidationError({field_name: "السجل الأكاديمي لا يتبع فرع ملف الطالب."})
+        if section and grade and section.grade_id != grade.pk:
+            raise serializers.ValidationError({"section": "الشعبة لا تتبع الصف المحدد."})
+        if section and year and section.academic_year_id != year.pk:
+            raise serializers.ValidationError({"section": "الشعبة لا تتبع السنة الدراسية المحددة."})
+        return attrs
+
     class Meta:
         model = Student
         fields = [
             "id",
+            "branch",
             "student_id_number",
             "full_name",
             "first_name",
@@ -65,6 +103,7 @@ class StudentListSerializer(serializers.ModelSerializer):
 
 
 class StudentSafeListSerializer(serializers.ModelSerializer):
+    branch = serializers.PrimaryKeyRelatedField(read_only=True)
     grade_level_name = serializers.CharField(source="grade_level.name", read_only=True)
     section_name = serializers.CharField(source="section.name", read_only=True)
     academic_year_name = serializers.CharField(source="academic_year.name", read_only=True)
@@ -73,7 +112,7 @@ class StudentSafeListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = [
-            "id", "student_id_number", "full_name", "first_name",
+            "id", "branch", "student_id_number", "full_name", "first_name",
             "middle_name", "last_name", "gender", "grade_level",
             "grade_level_name", "section", "section_name", "academic_year",
             "academic_year_name", "status", "enrollment_date",
@@ -90,6 +129,7 @@ class StudentSafeDetailSerializer(StudentSafeListSerializer):
 
 
 class StudentAdminSafeDetailSerializer(serializers.ModelSerializer):
+    branch = serializers.PrimaryKeyRelatedField(read_only=True)
     grade_level_name = serializers.CharField(source="grade_level.name", read_only=True)
     section_name = serializers.CharField(source="section.name", read_only=True)
     academic_year_name = serializers.CharField(source="academic_year.name", read_only=True)
@@ -99,14 +139,14 @@ class StudentAdminSafeDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = [
-            "id", "student_id_number", "full_name", "first_name",
+            "id", "branch", "student_id_number", "full_name", "first_name",
             "middle_name", "last_name", "gender", "national_id",
             "birth_date", "grade_level", "grade_level_name", "section",
             "section_name", "academic_year", "academic_year_name",
             "status", "enrollment_date", "enrollment_history",
         ]
         read_only_fields = [
-            "id", "full_name", "grade_level_name", "section_name",
+            "id", "branch", "full_name", "grade_level_name", "section_name",
             "academic_year_name", "status", "enrollment_history",
         ]
 
@@ -173,6 +213,7 @@ class StudentImportRowSerializer(serializers.Serializer):
     academic_year_id = serializers.UUIDField()
     grade_level_id = serializers.UUIDField()
     section_id = serializers.UUIDField()
+    branch_id = serializers.UUIDField(required=False, allow_null=True)
     enrollment_date = serializers.DateField(required=False, allow_null=True)
     birth_date = serializers.DateField(required=False, allow_null=True)
     national_id = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
@@ -201,6 +242,24 @@ class StudentImportRowSerializer(serializers.Serializer):
             raise serializers.ValidationError({"section_id": "الشعبة غير متاحة في المدرسة."})
         if section.academic_year_id != year.pk or section.grade_id != grade.pk:
             raise serializers.ValidationError({"section_id": "الشعبة لا تتبع الصف والسنة المحددين."})
+        supplied_branch = None
+        if attrs.get("branch_id"):
+            supplied_branch = Branch.objects.filter(
+                pk=attrs["branch_id"], school=school, is_archived=False,
+            ).first()
+            if supplied_branch is None:
+                raise serializers.ValidationError({"branch_id": "الفرع غير موجود في المدرسة."})
+        related_branch_ids = {obj.branch_id for obj in (year, grade, section) if obj.branch_id}
+        if len(related_branch_ids) > 1:
+            raise serializers.ValidationError("السنة والصف والشعبة المختارة موزعة على فروع مختلفة.")
+        if supplied_branch and related_branch_ids and supplied_branch.pk not in related_branch_ids:
+            raise serializers.ValidationError({"branch_id": "الفرع لا يطابق فرع السجلات الأكاديمية المختارة."})
+        branch = supplied_branch
+        if branch is None and related_branch_ids:
+            branch = Branch.objects.filter(
+                pk=next(iter(related_branch_ids)), school=school, is_archived=False,
+            ).first()
+        attrs["branch"] = branch
         attrs["academic_year"] = year
         attrs["grade_level"] = grade
         attrs["section"] = section
