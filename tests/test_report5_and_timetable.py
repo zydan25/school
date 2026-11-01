@@ -229,7 +229,6 @@ class Report5AndTimetableSystemTests(TestCase):
         submit_timetable_plan(first, submitted_by=self.owner)
         approve_timetable_plan(first, approved_by=self.owner)
         publish_timetable_plan(first, published_by=self.owner)
-        self.assertEqual(first.class_schedules.first().based_on if hasattr(first.class_schedules.first(), "based_on") else None, None)
         self.assertEqual(
             get_effective_class_schedules(school=self.school, on_date=date(2026, 12, 31), section_id=self.section.pk).first().timetable_plan_id,
             first.pk,

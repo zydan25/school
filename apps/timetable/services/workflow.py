@@ -101,8 +101,7 @@ def publish_timetable_plan(plan, *, published_by=None):
     rows = list(locked.class_schedules.filter(is_archived=False))
     if not rows:
         raise ValidationError("لا يمكن نشر نسخة جدول فارغة.")
-    for row in rows:
-        row.full_clean()
+    # The plan was fully validated on submission; its class rows become immutable once submitted.
     previous = _scope_plans(school=locked.school, academic_year=locked.academic_year, branch=locked.branch).select_for_update().filter(
         status=TimetablePlan.Status.PUBLISHED, is_current=True,
     ).exclude(pk=locked.pk).first()

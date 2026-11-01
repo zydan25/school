@@ -53,7 +53,7 @@ from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance
 from apps.payroll.services import generate_monthly_payroll
 from apps.reports.selectors.financial_reports import get_daily_cash_register_report
 from apps.school_services.models import BusFinancialSettlement, BusRoute
-from apps.staff.models import StaffMember, Teacher
+from apps.staff.models import StaffMember, Teacher, TeacherAssignment
 from apps.student_fees.models import (
     FeeCategory,
     PaymentAllocation,
@@ -386,6 +386,11 @@ class AuditFixesVerificationTests(TestCase):
 
     def test_period_attendance_cross_section_enforcement(self):
         """5. التحقق الصارم من رفض تسجيل حضور الطالب في حصة دراسية لشعبة لا ينتمي إليها."""
+        TeacherAssignment.objects.create(
+            school=self.school, academic_year=self.academic_year,
+            teacher=self.teacher, subject=self.subject, section=self.section_b,
+            weekly_periods=4,
+        )
         schedule_section_b = ClassSchedule.objects.create(
             school=self.school,
             academic_year=self.academic_year,
