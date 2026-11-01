@@ -44,8 +44,8 @@ class FiscalYear(TenantOwnedModel):
             ).exclude(pk=self.pk)
             if overlaps.exists():
                 raise ValidationError("تتداخل تواريخ السنة المالية مع سنة أخرى للمدرسة نفسها.")
-        if self.is_closed and not self.closing_entry_id:
-            raise ValidationError({"is_closed": "لا يجوز إقفال السنة دون إنشاء قيد الإقفال المعتمد."})
+        if self.is_closed and (not self.closed_at or not self.closed_by_id):
+            raise ValidationError({"is_closed": "يجب تسجيل وقت الإقفال والمسؤول عنه قبل إقفال السنة المالية."})
 
     def save(self, *args, **kwargs):
         if self.pk:
@@ -109,8 +109,8 @@ class FiscalPeriod(TenantOwnedModel):
             ).exclude(pk=self.pk)
             if overlaps.exists():
                 raise ValidationError("تتداخل تواريخ الفترة مع فترة مالية أخرى للمدرسة نفسها.")
-        if self.is_closed and not self.closed_at:
-            raise ValidationError({"closed_at": "تاريخ الإقفال مطلوب عند إقفال الفترة."})
+        if self.is_closed and (not self.closed_at or not self.closed_by_id):
+            raise ValidationError({"closed_at": "تاريخ الإقفال والمسؤول عنه مطلوبان عند إقفال الفترة."})
 
     def save(self, *args, **kwargs):
         if self.pk:
