@@ -48,7 +48,8 @@ from apps.payroll.api.serializers import PayrollRunDetailSerializer
 from apps.payroll.models import Payslip
 from apps.reports.selectors.financial_reports import get_billing_ledger_reconciliation_report
 from apps.school_services.models import StudentBookDistribution
-from apps.staff.models import StaffAttendance, Teacher
+from apps.staff.models import LeaveRequest, LeaveType, StaffAttendance, Teacher
+from apps.staff.services.leave_service import review_leave_request
 from apps.student_fees.models import (
     FeeCategory,
     FeeInstallment,
@@ -724,6 +725,67 @@ class TaqrerrFixesVerificationTests(TestCase):
                 basic_salary=Decimal("3500.00"),
                 start_date=date(2026, 10, 1),
                 is_active=True,
+            )
+
+    def test_leave_approval_enforces_annual_allowance_and_records_reviewer(self):
+        """اعتماد الإجازة يطبق الرصيد السنوي ويسجل المسؤول وقرار المراجعة."""
+        leave_type = LeaveType.objects.create(
+            school=self.school,
+            code="ANNUAL-STAGE9",
+            name="إجازة سنوية",
+            days_allowed=3,
+            is_paid=True,
+        )
+        approved_request = LeaveRequest.objects.create(
+            school=self.school,
+            teacher=self.teacher_profile,
+            leave_type=leave_type,
+            start_date=date(2026, 11, 2),
+            end_date=date(2026, 11, 3),
+            reason="ظرف عائلي",
+        )
+        approved = review_leave_request(
+            leave_request=approved_request,
+            reviewer=self.owner,
+            approve=True,
+            notes="تمت الموافقة",
+        )
+        self.assertEqual(approved.status, LeaveRequest.Status.APPROVED)
+        self.assertEqual(approved.reviewed_by_id, self.owner.pk)
+        self.assertEqual(approved.approved_by_id, self.owner.pk)
+        self.assertEqual(approved.review_notes, "تمت الموافقة")
+
+        excess_request = LeaveRequest.objects.create(
+            school=self.school,
+            teacher=self.teacher_profile,
+            leave_type=leave_type,
+            start_date=date(2026, 11, 4),
+            end_date=date(2026, 11, 5),
+            reason="طلب آخر",
+        )
+        with self.assertRaises(ValidationError):
+            review_leave_request(
+                leave_request=excess_request,
+                reviewer=self.owner,
+                approve=True,
+            )
+        excess_request.refresh_from_db()
+        self.assertEqual(excess_request.status, LeaveRequest.Status.PENDING)
+        self.assertIsNone(excess_request.reviewed_by_id)
+
+        overlap_request = LeaveRequest.objects.create(
+            school=self.school,
+            teacher=self.teacher_profile,
+            leave_type=leave_type,
+            start_date=date(2026, 11, 3),
+            end_date=date(2026, 11, 3),
+            reason="موعد طبي",
+        )
+        with self.assertRaises(ValidationError):
+            review_leave_request(
+                leave_request=overlap_request,
+                reviewer=self.owner,
+                approve=True,
             )
 
     # -------------------------------------------------------------------------

@@ -253,6 +253,16 @@ class LeaveRequest(TenantOwnedModel):
         related_name="approved_leaves",
     )
     approved_at = models.DateTimeField("تاريخ الاعتماد", null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="من راجع الطلب",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reviewed_leave_requests",
+    )
+    reviewed_at = models.DateTimeField("تاريخ المراجعة", null=True, blank=True)
+    review_notes = models.CharField("ملاحظات قرار الإجازة", max_length=500, blank=True)
 
     class Meta:
         verbose_name = "طلب إجازة"
@@ -266,8 +276,16 @@ class LeaveRequest(TenantOwnedModel):
         super().clean()
         if bool(self.teacher_id) == bool(self.staff_member_id):
             raise ValidationError("يجب تحديد مقدم الطلب إما معلماً أو موظفاً إدارياً.")
+        if self.teacher_id and self.teacher.school_id != self.school_id:
+            raise ValidationError({"teacher": "ملف المعلم لا يتبع المدرسة نفسها."})
+        if self.staff_member_id and self.staff_member.school_id != self.school_id:
+            raise ValidationError({"staff_member": "ملف الموظف لا يتبع المدرسة نفسها."})
+        if self.leave_type_id and self.leave_type.school_id != self.school_id:
+            raise ValidationError({"leave_type": "نوع الإجازة لا يتبع المدرسة نفسها."})
         if self.start_date and self.end_date and self.start_date > self.end_date:
             raise ValidationError("تاريخ بدء الإجازة لا يمكن أن يكون بعد تاريخ نهايتها.")
+        if self.status == self.Status.APPROVED and not (self.reviewed_by_id or self.approved_by_id):
+            raise ValidationError({"status": "اعتماد الإجازة يتطلب تسجيل المسؤول عن المراجعة."})
 
 
 class StaffAttendance(TenantOwnedModel):
@@ -308,6 +326,17 @@ class StaffAttendance(TenantOwnedModel):
     status = models.CharField("حالة الدوام", max_length=20, choices=Status.choices, default=Status.PRESENT)
     delay_minutes = models.PositiveSmallIntegerField("دقائق التأخر إن وجدت", default=0)
     notes = models.TextField("ملاحظات الدوام", blank=True)
+
+    def clean(self):
+        super().clean()
+        if bool(self.teacher_id) == bool(self.staff_member_id):
+            raise ValidationError("يجب ربط سجل الدوام بمعلم أو موظف إداري واحد فقط.")
+        if self.teacher_id and self.teacher.school_id != self.school_id:
+            raise ValidationError({"teacher": "المعلم لا يتبع المدرسة نفسها."})
+        if self.staff_member_id and self.staff_member.school_id != self.school_id:
+            raise ValidationError({"staff_member": "الموظف لا يتبع المدرسة نفسها."})
+        if self.shift_id and self.shift.school_id != self.school_id:
+            raise ValidationError({"shift": "الوردية لا تتبع المدرسة نفسها."})
 
     class Meta:
         verbose_name = "سجل دوام موظف"

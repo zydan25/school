@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -27,6 +28,7 @@ from apps.staff.api.serializers import (
     StaffAttendanceSerializer,
     StaffMemberListSerializer,
 )
+from apps.staff.services.leave_service import review_leave_request
 from apps.staff.models import (
     LeaveRequest,
     LeaveType,
@@ -233,17 +235,19 @@ class LeaveRequestApproveRejectAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         action = serializer.validated_data["action"]
 
-        if action == "approve":
-            leave_req.status = LeaveRequest.Status.APPROVED
-            leave_req.approved_by = request.user
-            leave_req.approved_at = timezone.now()
-        else:
-            leave_req.status = LeaveRequest.Status.REJECTED
-
-        leave_req.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+        try:
+            leave_req = review_leave_request(
+                leave_request=leave_req,
+                reviewer=request.user,
+                approve=action == "approve",
+                notes=serializer.validated_data.get("notes", ""),
+            )
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
         return Response({
             "message": f"تم تحديث حالة طلب الإجازة إلى {leave_req.get_status_display()}.",
             "status": leave_req.status,
+            "reviewed_at": leave_req.reviewed_at,
         }, status=status.HTTP_200_OK)
 
 

@@ -74,7 +74,14 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
             "status_display",
             "approved_by",
             "approved_at",
+            "reviewed_by",
+            "reviewed_at",
+            "review_notes",
             "created_at",
+        ]
+        read_only_fields = [
+            "id", "status", "status_display", "approved_by", "approved_at",
+            "reviewed_by", "reviewed_at", "review_notes", "created_at",
         ]
 
     def get_applicant_name(self, obj):

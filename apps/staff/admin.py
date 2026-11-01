@@ -47,7 +47,10 @@ class LeaveRequestAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("status", "leave_type", "school")
     search_fields = ("teacher__user__first_name", "teacher__user__last_name", "staff_member__user__first_name", "reason")
     raw_id_fields = ("school", "branch", "teacher", "staff_member", "leave_type", "approved_by")
-    readonly_fields = ("id", "created_at", "updated_at", "approved_at")
+    readonly_fields = (
+        "id", "created_at", "updated_at", "status", "approved_by", "approved_at",
+        "reviewed_by", "reviewed_at", "review_notes",
+    )
 
     def get_applicant(self, obj):
         return str(obj)
