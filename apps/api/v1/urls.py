@@ -19,6 +19,7 @@ from apps.api.v1.views import (
     DailyLessonLogViewSet,
     DepartmentViewSet,
     EducationalStageViewSet,
+    ExamCommitteeProctorViewSet,
     ExamCommitteeViewSet,
     ExamSeatingViewSet,
     ExamSubmissionViewSet,
@@ -101,6 +102,7 @@ router.register("question-bank", QuestionBankViewSet, basename="app-question-ban
 router.register("online-exams", OnlineExamViewSet, basename="app-online-exam")
 router.register("exam-submissions", ExamSubmissionViewSet, basename="app-exam-submission")
 router.register("exam-committees", ExamCommitteeViewSet, basename="app-exam-committee")
+router.register("exam-committee-proctors", ExamCommitteeProctorViewSet, basename="app-exam-committee-proctor")
 router.register("exam-seatings", ExamSeatingViewSet, basename="app-exam-seating")
 
 router.register("timetable-plans", TimetablePlanViewSet, basename="app-timetable-plan")
