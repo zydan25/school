@@ -35,6 +35,7 @@ from apps.payroll.models import (
 )
 from apps.payroll.services import (
     approve_payroll_run,
+    disburse_payroll_run,
     generate_monthly_payroll,
     post_payroll_to_accounting,
 )
@@ -495,6 +496,72 @@ class TaqrerrFixesVerificationTests(TestCase):
         repayment = EmployeeLoanRepayment.objects.filter(loan=loan, payroll_run=payroll_run).first()
         self.assertIsNotNone(repayment)
         self.assertEqual(repayment.amount, Decimal("300.00"))
+        loan.refresh_from_db()
+        self.assertEqual(loan.repaid_amount, Decimal("300.00"))
+
+        payable_line = entry.lines.get(account__code="2103")
+        self.assertEqual(payable_line.credit, payroll_run.total_net)
+        self.assertEqual(post_payroll_to_accounting(payroll_run).pk, entry.pk)
+
+        cash_account = Account.objects.get(school=self.school, code="1101")
+        disbursement = disburse_payroll_run(
+            payroll_run, payment_account=cash_account, disbursed_by=self.owner,
+            reference_number="PAYROLL-TEST-REF",
+        )
+        self.assertEqual(disbursement.status, JournalEntry.Status.POSTED)
+        self.assertEqual(
+            disbursement.lines.get(account__code="2103").debit,
+            payroll_run.total_net,
+        )
+        self.assertEqual(
+            disbursement.lines.get(account=cash_account).credit,
+            payroll_run.total_net,
+        )
+        self.assertEqual(
+            disburse_payroll_run(
+                payroll_run, payment_account=cash_account,
+                disbursed_by=self.owner, reference_number="PAYROLL-TEST-REF",
+            ).pk,
+            disbursement.pk,
+        )
+
+    def test_payroll_rejects_loan_deduction_without_real_loan_balance(self):
+        EmployeeContract.objects.create(
+            school=self.school,
+            staff_member=self.staff_member,
+            contract_number="CNT-LOAN-SHORT",
+            contract_type=EmployeeContract.ContractType.FULL_TIME,
+            basic_salary=Decimal("3000.00"),
+            start_date=date(2026, 1, 1),
+            is_active=True,
+        )
+        loan = EmployeeLoanAdvance.objects.create(
+            school=self.school,
+            staff_member=self.staff_member,
+            loan_number="LN-LOAN-SHORT",
+            amount=Decimal("100.00"),
+            monthly_installment=Decimal("100.00"),
+            start_date=date(2026, 1, 1),
+            status=EmployeeLoanAdvance.Status.ACTIVE,
+        )
+        run = generate_monthly_payroll(self.school, year=2026, month=10)
+        slip = run.payslips.get(staff_member=self.staff_member)
+        slip.loan_deduction = Decimal("150.00")
+        slip.net_salary -= Decimal("50.00")
+        slip.save(update_fields=["loan_deduction", "net_salary", "updated_at"])
+        run.total_deductions += Decimal("50.00")
+        run.total_net -= Decimal("50.00")
+        run.save(update_fields=["total_deductions", "total_net", "updated_at"])
+        approve_payroll_run(run, approved_by=self.owner)
+
+        with self.assertRaises(ValidationError):
+            post_payroll_to_accounting(run)
+
+        loan.refresh_from_db()
+        run.refresh_from_db()
+        self.assertEqual(loan.repaid_amount, Decimal("0.00"))
+        self.assertFalse(run.journal_entry_id)
+        self.assertEqual(run.status, PayrollRun.Status.APPROVED)
 
     # -------------------------------------------------------------------------
     # Phase 4 & 5: Security, Permissions, OpenAPI & Bearer Auth Tests
