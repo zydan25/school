@@ -1,6 +1,7 @@
 """Fiscal period closing, fiscal year closing, and opening balance services."""
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -79,7 +80,7 @@ def _assert_year_period_coverage(year: FiscalYear) -> list[FiscalPeriod]:
             raise ValidationError(
                 f"يوجد انقطاع في التغطية المحاسبية قبل الفترة {period.name}."
             )
-        expected_start = period.end_date + timezone.timedelta(days=1)
+        expected_start = period.end_date + timedelta(days=1)
     if expected_start != year.end_date + timezone.timedelta(days=1):
         raise ValidationError("الفترات المحاسبية لا تغطي السنة المالية كاملة حتى تاريخ انتهائها.")
     if any(not period.is_closed for period in periods):
