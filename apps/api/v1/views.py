@@ -827,6 +827,33 @@ class HomeworkViewSet(TenantModelViewSet):
                 raise PermissionDenied("لا يمكنك إسناد واجب لمادة أو شعبة غير مسندة إليك.")
         serializer.save(school=school, teacher=teacher)
 
+    def perform_update(self, serializer):
+        school = self.get_school()
+        instance = serializer.instance
+        teacher = user_teacher_profiles(self.request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
+        section = serializer.validated_data.get("section", instance.section)
+        subject = serializer.validated_data.get("subject", instance.subject)
+        if not is_admin(self.request.user, school):
+            if not teacher or instance.teacher_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك تعديل واجب أسنده معلم آخر.")
+            assigned = TeacherAssignment.objects.filter(
+                school=school, teacher=teacher, section=section,
+                subject=subject, academic_year=section.academic_year,
+                is_archived=False,
+            ).exists()
+            if not assigned:
+                raise PermissionDenied("لا يمكنك نقل الواجب إلى مادة أو شعبة غير مسندة إليك.")
+        serializer.save(teacher=instance.teacher)
+        record_event(
+            action="homework.updated",
+            description="تم تعديل بيانات الواجب.",
+            actor=self.request.user, school=school, obj=instance,
+            metadata={"subject_id": str(subject.pk), "section_id": str(section.pk)},
+            request=self.request,
+        )
+
 
 class HomeworkSubmissionViewSet(TenantModelViewSet):
     serializer_class = HomeworkSubmissionSerializer
@@ -2408,6 +2435,34 @@ class DailyLessonLogViewSet(TenantModelViewSet):
             serializer.save(school=school, branch=schedule.branch)
         except DjangoValidationError as exc:
             raise ValidationError(detail=str(exc))
+        record_event(
+            action="timetable.lesson_log_created",
+            description="تم توثيق تنفيذ الحصة الدراسية.",
+            actor=self.request.user, school=school, obj=serializer.instance,
+            metadata={"schedule_id": str(schedule.pk), "lesson_date": str(serializer.instance.date)},
+            request=self.request,
+        )
+
+    def perform_update(self, serializer):
+        school = self.get_school()
+        schedule = serializer.validated_data.get("schedule", serializer.instance.schedule)
+        teacher = user_teacher_profiles(self.request.user, school).filter(
+            is_active_teaching=True,
+        ).first()
+        if not is_admin(self.request.user, school):
+            if not teacher or schedule.teacher_id != teacher.pk:
+                raise PermissionDenied("لا يمكنك تعديل سجل تنفيذ حصة لمعلم آخر.")
+        try:
+            serializer.save(branch=schedule.branch)
+        except DjangoValidationError as exc:
+            raise ValidationError(detail=str(exc))
+        record_event(
+            action="timetable.lesson_log_updated",
+            description="تم تعديل سجل تنفيذ حصة دراسية.",
+            actor=self.request.user, school=school, obj=serializer.instance,
+            metadata={"schedule_id": str(schedule.pk), "lesson_date": str(serializer.instance.date)},
+            request=self.request,
+        )
 
 class MyWeeklyTimetableAPIView(APIView):
     permission_classes = [IsAuthenticated]
