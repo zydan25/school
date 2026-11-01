@@ -279,11 +279,10 @@ class AcademicStructureBranchMixin:
         if len(related_branch_ids) > 1:
             raise serializers.ValidationError("العلاقات الأكاديمية المحددة تتبع فروعاً مختلفة.")
 
-        branch_provided = "branch" in attrs
         branch = attrs.get("branch", getattr(self.instance, "branch", None))
         if related_branch_ids:
             required_branch_id = next(iter(related_branch_ids))
-            if branch is None and not branch_provided:
+            if branch is None:
                 branch = Branch.objects.filter(
                     pk=required_branch_id,
                     school=school,
@@ -292,7 +291,7 @@ class AcademicStructureBranchMixin:
                 if branch is None:
                     raise serializers.ValidationError({"branch": "تعذر تحديد الفرع المرتبط بالبيانات الأكاديمية."})
                 attrs["branch"] = branch
-            elif branch is None or branch.pk != required_branch_id:
+            elif branch.pk != required_branch_id:
                 raise serializers.ValidationError({"branch": "الفرع المحدد لا يطابق فروع العناصر الأكاديمية المرتبطة."})
         if branch and school and (branch.school_id != school.pk or branch.is_archived):
             raise serializers.ValidationError({"branch": "الفرع غير نشط أو لا يتبع المدرسة الحالية."})
