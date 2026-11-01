@@ -324,6 +324,55 @@ class PhaseSixTeachingAssessmentTests(TestCase):
         self.assertEqual(visible.data["final_score"], "5.00")
         self.assertTrue(visible.data["result_published"])
 
+    def test_student_cannot_access_exam_from_another_academic_year(self):
+        old_year = AcademicYear.objects.create(
+            school=self.school, code="2025-2026", name="2025-2026",
+            starts_on=date(2025, 9, 1), ends_on=date(2026, 6, 30),
+            status=AcademicYear.Status.COMPLETED, is_current=False,
+        )
+        old_term = AcademicTerm.objects.create(
+            school=self.school, academic_year=old_year,
+            name="الفصل السابق", number=1,
+            starts_on=date(2025, 9, 1), ends_on=date(2026, 1, 31),
+            is_current=False,
+        )
+        old_section = Section.objects.create(
+            school=self.school, academic_year=old_year, grade=self.grade,
+            code="10-A-OLD", name="العاشر أ - العام السابق",
+        )
+        question = QuestionBank.objects.create(
+            school=self.school, subject=self.subject, grade_level=self.grade,
+            unit_name="الجبر", topic="المعادلات",
+            question_text="1 + 1 = ؟",
+            question_type=QuestionBank.QuestionType.MCQ,
+            default_marks=Decimal("5.00"),
+            options_json=[{"id": "A", "text": "2"}, {"id": "B", "text": "3"}],
+            correct_answer="A", created_by=self.teacher_user,
+        )
+        exam = OnlineExam.objects.create(
+            school=self.school, subject=self.subject, academic_term=old_term,
+            grade_level=self.grade, section=old_section,
+            title="اختبار سنة سابقة", duration_minutes=20,
+            total_marks=Decimal("5.00"), passing_marks=Decimal("2.50"),
+            start_time=timezone.now() - timedelta(minutes=1),
+            end_time=timezone.now() + timedelta(minutes=30),
+            is_published=True, created_by=self.teacher_user,
+        )
+        exam.questions.add(question)
+
+        paper = self.student_client.get(
+            f"/api/v1/app/online-exams/{exam.pk}/paper/",
+            self.school_query,
+        )
+        self.assertEqual(paper.status_code, status.HTTP_404_NOT_FOUND)
+
+        start = self.student_client.post(
+            f"/api/v1/app/online-exams/{exam.pk}/start/",
+            self.school_query, format="json",
+        )
+        self.assertEqual(start.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(exam.submissions.filter(student=self.student).exists())
+
     def test_exam_committee_proctors_are_visible_only_to_assigned_teacher(self):
         committee = ExamCommittee.objects.create(
             school=self.school, name="اللجنة أ", committee_number="A-1",
