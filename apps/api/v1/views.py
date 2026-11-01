@@ -1835,7 +1835,6 @@ class OnlineExamViewSet(TenantModelViewSet):
             "submission_id": str(submission.pk),
             "status": submission.status,
             "submitted_at": submission.submitted_at,
-            "auto_score": str(submission.auto_score),
             "result_published": False,
         })
 
