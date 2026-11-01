@@ -93,20 +93,16 @@ class EmployeeContract(TenantOwnedModel):
                 school_id=self.school_id,
                 is_active=True,
                 is_archived=False,
-                start_date__lte=self.end_date or timezone.localdate().replace(year=9999),
             ).exclude(pk=self.pk)
             if self.teacher_id:
                 overlapping = overlapping.filter(teacher_id=self.teacher_id, staff_member__isnull=True)
             else:
                 overlapping = overlapping.filter(staff_member_id=self.staff_member_id, teacher__isnull=True)
+            overlapping = overlapping.filter(
+                models.Q(end_date__isnull=True) | models.Q(end_date__gte=self.start_date)
+            )
             if self.end_date:
-                overlapping = overlapping.filter(
-                    models.Q(end_date__isnull=True) | models.Q(end_date__gte=self.start_date)
-                )
-            else:
-                overlapping = overlapping.filter(
-                    models.Q(end_date__isnull=True) | models.Q(end_date__gte=self.start_date)
-                )
+                overlapping = overlapping.filter(start_date__lte=self.end_date)
             if overlapping.exists():
                 raise ValidationError("يوجد عقد نشط متداخل زمنياً لهذا الموظف؛ أنهِ العقد السابق قبل إضافة عقد جديد.")
         employee_branch_id = (

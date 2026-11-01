@@ -1,5 +1,13 @@
 from django.urls import path
 
+from apps.payroll.api.hr_views import (
+    EmployeeContractDetailAPIView,
+    EmployeeContractListCreateAPIView,
+    EmployeeLoanAdvanceListCreateAPIView,
+    EmployeeLoanApproveAPIView,
+    EmployeeLoanDisburseAPIView,
+    EmployeeLoanRepaymentsAPIView,
+)
 from apps.payroll.api.views import (
     PayrollRunApproveAPIView,
     PayrollRunDetailAPIView,
@@ -11,6 +19,12 @@ from apps.payroll.api.views import (
 )
 
 urlpatterns = [
+    path("contracts/", EmployeeContractListCreateAPIView.as_view(), name="employee-contract-list-create"),
+    path("contracts/<uuid:pk>/", EmployeeContractDetailAPIView.as_view(), name="employee-contract-detail"),
+    path("loans/", EmployeeLoanAdvanceListCreateAPIView.as_view(), name="employee-loan-list-create"),
+    path("loans/repayments/", EmployeeLoanRepaymentsAPIView.as_view(), name="employee-loan-repayments"),
+    path("loans/<uuid:pk>/approve/", EmployeeLoanApproveAPIView.as_view(), name="employee-loan-approve"),
+    path("loans/<uuid:pk>/disburse/", EmployeeLoanDisburseAPIView.as_view(), name="employee-loan-disburse"),
     path("runs/", PayrollRunListAPIView.as_view(), name="payroll-run-list"),
     path("runs/<uuid:pk>/", PayrollRunDetailAPIView.as_view(), name="payroll-run-detail"),
     path("runs/generate/", PayrollRunGenerateAPIView.as_view(), name="payroll-run-generate"),
