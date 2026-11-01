@@ -174,7 +174,7 @@ def post_payroll_to_accounting(
     """
     ترحيل مسير الرواتب المعتمد إلى دفتر الأستاذ العام وإنشاء قيد الاستحقاق المزدوج:
     مدين: مصروف الرواتب والأجور (Gross Salary 5101)
-    دائن: الرواتب المستحقة للموظفين (Net 2101) + أمانات التأمينات (2103) والسلف (1105) وجزاءات الغياب (4201).
+    دائن: الرواتب المستحقة للموظفين (Net 2103) + أمانات التأمينات (2104) والسلف (1105) وجزاءات الغياب (4201).
     """
     if user is not None and posted_by is None:
         posted_by = user
@@ -203,12 +203,12 @@ def post_payroll_to_accounting(
             raise ValidationError("حساب مصروف الرواتب لا يتبع نفس المدرسة.")
 
         if payable_account is None:
-            payable_account = _get_account_or_seed(school, "2101", "الرواتب والأجور المستحقة")
+            payable_account = _get_account_or_seed(school, "2103", "الرواتب والأجور المستحقة")
         elif payable_account.school_id != school.pk:
             raise ValidationError("حساب مستحقات الرواتب لا يتبع نفس المدرسة.")
 
         loans_acc = _get_account_or_seed(school, "1105", "سلف وقروض الموظفين")
-        insurance_acc = _get_account_or_seed(school, "2103", "أمانات التأمينات الاجتماعية")
+        insurance_acc = _get_account_or_seed(school, "2104", "أمانات التأمينات الاجتماعية")
         absence_acc = _get_account_or_seed(school, "4201", "إيرادات جزاءات واستقطاعات غياب الموظفين")
 
         last_day_num = calendar.monthrange(locked_run.year, locked_run.month)[1]
