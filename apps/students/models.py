@@ -10,7 +10,18 @@ from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 
-from apps.core.models import TenantOwnedModel
+from apps.core.models import TenantOwnedModel, TenantQuerySet
+
+
+class StudentQuerySet(TenantQuerySet):
+    """Prevent bypassing the student credit ledger through bulk ORM updates."""
+
+    def update(self, **kwargs):
+        if "credit_balance" in kwargs:
+            raise ValidationError(
+                "لا يمكن تعديل الرصيد الدائن عبر تحديث جماعي؛ استخدم دفتر حركات الرسوم."
+            )
+        return super().update(**kwargs)
 
 
 def _validate_academic_branch(instance, field_name: str) -> None:
@@ -22,6 +33,8 @@ def _validate_academic_branch(instance, field_name: str) -> None:
 
 class Student(TenantOwnedModel):
     """ملف الطالب الأكاديمي والتشغيلي."""
+
+    objects = StudentQuerySet.as_manager()
     class Gender(models.TextChoices):
         MALE = "male", "ذكر"
         FEMALE = "female", "أنثى"
@@ -113,6 +126,27 @@ class Student(TenantOwnedModel):
             raise ValidationError({"section": "الشعبة الصفية لا تنتمي إلى السنة الدراسية المحددة للطالب."})
 
     def save(self, *args, **kwargs):
+        # Credit balances are maintained by the student-fees ledger only.
+        if self._state.adding:
+            if self.credit_balance != Decimal("0.00"):
+                raise ValidationError({
+                    "credit_balance": "لا يمكن تعيين رصيد دائن ابتدائي مباشرة؛ يجب إثباته بحركة مالية.",
+                })
+        elif (
+            not getattr(self, "_allow_credit_balance_update", False)
+            and (
+                kwargs.get("update_fields") is None
+                or "credit_balance" in kwargs.get("update_fields", ())
+            )
+        ):
+            stored_balance = type(self).objects.filter(pk=self.pk).values_list(
+                "credit_balance", flat=True,
+            ).first()
+            if stored_balance is not None and stored_balance != self.credit_balance:
+                raise ValidationError({
+                    "credit_balance": "لا يمكن تعديل الرصيد الدائن مباشرة؛ استخدم دفتر حركات الرسوم.",
+                })
+
         # The student record and its initial annual enrollment are one operation.
         with transaction.atomic():
             super().save(*args, **kwargs)

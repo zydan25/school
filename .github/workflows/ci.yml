@@ -39,6 +39,15 @@ jobs:
             apps/api/views.py \
             apps/payroll/services.py \
             apps/student_fees/models.py \
+            apps/student_fees/admin.py \
+            apps/student_fees/api/serializers.py \
+            apps/student_fees/api/urls.py \
+            apps/student_fees/api/views.py \
+            apps/student_fees/api/workflow_views.py \
+            apps/students/models.py \
+            apps/students/admin.py \
+            apps/accounting/services/auto_posting.py \
+            tests/test_stage7_student_fees.py \
             apps/school_services/models.py \
             apps/tenants/admin.py \
             apps/attendance/api/serializers.py \

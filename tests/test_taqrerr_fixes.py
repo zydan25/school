@@ -352,8 +352,13 @@ class TaqrerrFixesVerificationTests(TestCase):
 
     def test_concurrent_credit_balance_and_settlement_posting(self):
         """استخدام الرصيد الدائن للطالب لسداد فاتورة مع توليد قيد تسوية مزدوج (مدين 2102، دائن 1104)."""
-        self.student.credit_balance = Decimal("600.00")
-        self.student.save(update_fields=["credit_balance"])
+        PaymentReceipt.objects.create(
+            school=self.school, student=self.student,
+            receipt_number="REC-CRED-OPEN-01",
+            amount=Decimal("600.00"),
+            payment_method=PaymentReceipt.PaymentMethod.CASH,
+            received_by=self.owner,
+        )
 
         inv = StudentInvoice.objects.create(
             school=self.school,

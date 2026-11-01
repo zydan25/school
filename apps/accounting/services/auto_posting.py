@@ -161,6 +161,7 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
         entry_number = f"JV-REC-{receipt.receipt_number}"
         entry = JournalEntry.objects.create(
             school=school,
+            branch=receipt.branch,
             fiscal_period=period,
             entry_number=entry_number,
             date=receipt.paid_at.date(),
@@ -173,6 +174,7 @@ def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
         # 1. Debit: Cash/Bank/POS
         JournalEntryLine.objects.create(
             school=school,
+            branch=receipt.branch,
             journal_entry=entry,
             account=debit_acc,
             description=f"إيداع نقدي/بنكي لقاء سند قبض #{receipt.receipt_number}",
@@ -243,6 +245,7 @@ def post_credit_settlement_to_journal(credit_tx) -> JournalEntry | None:
 
         entry = JournalEntry.objects.create(
             school=school,
+            branch=credit_tx.branch,
             fiscal_period=period,
             entry_number=entry_num,
             date=tx_date,
@@ -255,6 +258,7 @@ def post_credit_settlement_to_journal(credit_tx) -> JournalEntry | None:
         # Debit: 2102 (Reduce liability)
         JournalEntryLine.objects.create(
             school=school,
+            branch=credit_tx.branch,
             journal_entry=entry,
             account=acc_liability,
             debit=credit_tx.amount,
@@ -265,6 +269,7 @@ def post_credit_settlement_to_journal(credit_tx) -> JournalEntry | None:
         # Credit: 1104 (Reduce student receivable)
         JournalEntryLine.objects.create(
             school=school,
+            branch=credit_tx.branch,
             journal_entry=entry,
             account=acc_receivable,
             debit=Decimal("0.00"),
@@ -274,6 +279,134 @@ def post_credit_settlement_to_journal(credit_tx) -> JournalEntry | None:
 
         entry.post(user=credit_tx.created_by)
         return entry
+
+
+def post_student_credit_refund_to_journal(credit_tx) -> JournalEntry:
+    """قيد استرداد رصيد الطالب: مدين الأرصدة الدائنة ودائن وسيلة الصرف."""
+    from apps.student_fees.models import StudentCreditTransaction
+
+    if credit_tx.transaction_type != StudentCreditTransaction.TransactionType.REFUND:
+        raise ValidationError("الحركة المحددة ليست استرداد رصيد دائن.")
+    if credit_tx.amount <= Decimal("0.00"):
+        raise ValidationError("قيمة استرداد الرصيد يجب أن تكون أكبر من الصفر.")
+    school = credit_tx.school
+    tx_date = credit_tx.created_at.date()
+    period = _get_active_fiscal_period(school, tx_date)
+    existing = JournalEntry.objects.filter(
+        school=school,
+        source_module="student_fees_credit_refund",
+        source_reference=str(credit_tx.pk),
+        is_archived=False,
+    ).first()
+    if existing:
+        return existing
+
+    payment_accounts = {
+        PaymentReceipt.PaymentMethod.CASH: ("1101", "الصندوق / الخزينة"),
+        PaymentReceipt.PaymentMethod.BANK_TRANSFER: ("1102", "البنك"),
+        PaymentReceipt.PaymentMethod.POS: ("1103", "نقاط البيع - شبكة"),
+        PaymentReceipt.PaymentMethod.ONLINE: ("1102", "البنك"),
+    }
+    account_code, account_name = payment_accounts.get(
+        credit_tx.refund_payment_method, (None, None),
+    )
+    if not account_code:
+        raise ValidationError("طريقة صرف استرداد الرصيد غير معتمدة.")
+    liability = _get_account_or_seed(school, "2102", "أرصدة وأمانات الطلاب الدائنة")
+    payment_account = _get_account_or_seed(school, account_code, account_name)
+    entry = JournalEntry.objects.create(
+        school=school,
+        branch=credit_tx.branch,
+        fiscal_period=period,
+        entry_number=f"JV-REFUND-{credit_tx.pk.hex[:8].upper()}",
+        date=tx_date,
+        status=JournalEntry.Status.DRAFT,
+        source_module="student_fees_credit_refund",
+        source_reference=str(credit_tx.pk),
+        description=f"استرداد رصيد دائن للطالب {credit_tx.student}",
+    )
+    JournalEntryLine.objects.create(
+        school=school, branch=credit_tx.branch, journal_entry=entry, account=liability,
+        debit=credit_tx.amount, credit=Decimal("0.00"),
+        description=f"تخفيض الرصيد الدائن المستحق للطالب {credit_tx.student}",
+    )
+    JournalEntryLine.objects.create(
+        school=school, branch=credit_tx.branch, journal_entry=entry, account=payment_account,
+        debit=Decimal("0.00"), credit=credit_tx.amount,
+        description=f"صرف استرداد رصيد الطالب {credit_tx.student}",
+    )
+    entry.post(user=credit_tx.created_by)
+    return entry
+
+
+def post_student_invoice_discount_to_journal(discount_request) -> JournalEntry:
+    """قيد الخصم المعتمد: تخفيض إيراد الرسوم والذمم بالقيمة نفسها."""
+    if discount_request.amount <= Decimal("0.00"):
+        raise ValidationError("قيمة الخصم يجب أن تكون أكبر من الصفر.")
+    invoice = discount_request.invoice
+    if not invoice.journal_entry_id:
+        raise ValidationError("لا يمكن اعتماد خصم محاسبي قبل ترحيل قيد استحقاق الفاتورة.")
+    school = discount_request.school
+    tx_date = discount_request.decided_at.date() if discount_request.decided_at else timezone.localdate()
+    period = _get_active_fiscal_period(school, tx_date)
+    existing = JournalEntry.objects.filter(
+        school=school,
+        source_module="student_invoice_discount",
+        source_reference=str(discount_request.pk),
+        is_archived=False,
+    ).first()
+    if existing:
+        return existing
+    old_net_amount = max(
+        Decimal("0.00"), invoice.total_amount
+        - (invoice.discount_amount - discount_request.amount),
+    )
+    new_net_amount = max(
+        Decimal("0.00"), invoice.total_amount - invoice.discount_amount,
+    )
+    old_overpayment = max(Decimal("0.00"), invoice.paid_amount - old_net_amount)
+    new_overpayment = max(Decimal("0.00"), invoice.paid_amount - new_net_amount)
+    credit_delta = max(Decimal("0.00"), new_overpayment - old_overpayment)
+
+    revenue = _get_account_or_seed(school, "4101", "إيرادات الرسوم الدراسية")
+    receivable = _get_account_or_seed(school, "1104", "ذمم ورسوم الطلاب")
+    liability = (
+        _get_account_or_seed(school, "2102", "أرصدة وأمانات الطلاب الدائنة")
+        if credit_delta > Decimal("0.00") else None
+    )
+    receivable_credit = discount_request.amount - credit_delta
+    entry = JournalEntry.objects.create(
+        school=school,
+        branch=discount_request.branch,
+        fiscal_period=period,
+        entry_number=f"JV-DISC-{discount_request.pk.hex[:8].upper()}",
+        date=tx_date,
+        status=JournalEntry.Status.DRAFT,
+        source_module="student_invoice_discount",
+        source_reference=str(discount_request.pk),
+        description=f"اعتماد خصم للفاتورة #{invoice.invoice_number}: {discount_request.reason[:150]}",
+    )
+    JournalEntryLine.objects.create(
+        school=school, branch=discount_request.branch, journal_entry=entry, account=revenue,
+        debit=discount_request.amount, credit=Decimal("0.00"),
+        description=f"تخفيض إيراد الرسوم للفاتورة #{invoice.invoice_number}",
+    )
+    if receivable_credit > Decimal("0.00"):
+        JournalEntryLine.objects.create(
+            school=school, branch=discount_request.branch,
+            journal_entry=entry, account=receivable,
+            debit=Decimal("0.00"), credit=receivable_credit,
+            description=f"تخفيض ذمم الطالب عن الفاتورة #{invoice.invoice_number}",
+        )
+    if credit_delta > Decimal("0.00"):
+        JournalEntryLine.objects.create(
+            school=school, branch=discount_request.branch,
+            journal_entry=entry, account=liability,
+            debit=Decimal("0.00"), credit=credit_delta,
+            description=f"تحويل الخصم الزائد إلى رصيد دائن للطالب {invoice.student}",
+        )
+    entry.post(user=discount_request.approved_by)
+    return entry
 
 
 def post_payment_voucher_to_journal(voucher: PaymentVoucher) -> JournalEntry:
@@ -510,6 +643,7 @@ def post_student_invoice_to_journal(invoice) -> JournalEntry:
         entry_number = f"JV-INV-{invoice.invoice_number}"
         entry = JournalEntry.objects.create(
             school=school,
+            branch=invoice.branch,
             fiscal_period=period,
             entry_number=entry_number,
             date=post_date,
@@ -521,6 +655,7 @@ def post_student_invoice_to_journal(invoice) -> JournalEntry:
 
         JournalEntryLine.objects.create(
             school=school,
+            branch=invoice.branch,
             journal_entry=entry,
             account=debit_acc,
             description=f"ذمة الطالب: {invoice.student} - فاتورة #{invoice.invoice_number}",
@@ -530,6 +665,7 @@ def post_student_invoice_to_journal(invoice) -> JournalEntry:
 
         JournalEntryLine.objects.create(
             school=school,
+            branch=invoice.branch,
             journal_entry=entry,
             account=credit_acc,
             description=f"إيراد رسوم دراسية - فاتورة #{invoice.invoice_number}",
@@ -575,6 +711,7 @@ def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by
         reversal_num = f"REV-{original_entry.entry_number}"
         rev_entry = JournalEntry.objects.create(
             school=school,
+            branch=original_entry.branch,
             fiscal_period=period,
             entry_number=reversal_num,
             date=timezone.localdate(),
@@ -587,6 +724,7 @@ def reverse_journal_entry(original_entry: JournalEntry, reason: str, reversed_by
         for line in original_entry.lines.all():
             JournalEntryLine.objects.create(
                 school=school,
+                branch=original_entry.branch,
                 journal_entry=rev_entry,
                 account=line.account,
                 cost_center=line.cost_center,

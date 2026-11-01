@@ -317,7 +317,13 @@ class Report5AndTimetableSystemTests(TestCase):
             academic_year=self.academic_year,
             grade_level=self.grade,
             section=self.section,
-            credit_balance=Decimal("2000.00"),
+        )
+        PaymentReceipt.objects.create(
+            school=self.school, student=student,
+            receipt_number="RCP-CR-SEED-01",
+            amount=Decimal("2000.00"),
+            payment_method=PaymentReceipt.PaymentMethod.CASH,
+            received_by=self.owner,
         )
         invoice = StudentInvoice.objects.create(
             school=self.school,

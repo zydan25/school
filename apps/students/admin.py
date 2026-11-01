@@ -27,7 +27,7 @@ class StudentAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("status", "grade_level", "school", "academic_year")
     search_fields = ("student_id_number", "first_name", "last_name", "national_id", "school__name")
     autocomplete_fields = ("school", "branch", "user", "grade_level", "section", "academic_year")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "credit_balance")
     inlines = (StudentGuardianInline,)
 
 
