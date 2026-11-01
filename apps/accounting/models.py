@@ -603,7 +603,7 @@ class PaymentVoucher(TenantOwnedModel):
         CANCELLED = "cancelled", "ملغى"
 
     voucher_number = models.CharField("رقم سند الصرف", max_length=50, db_index=True)
-    idempotency_key = models.CharField("مفتاح منع تكرار السند", max_length=100, blank=True)
+    idempotency_key = models.CharField("مفتاح منع تكرار السند", max_length=100, blank=True, default="")
     date = models.DateField("تاريخ الصرف", default=timezone.localdate)
     paid_to = models.CharField("صُرف إلى (المستفيد / الجهة)", max_length=200)
     amount = models.DecimalField("المبلغ المصروف", max_digits=14, decimal_places=2)
