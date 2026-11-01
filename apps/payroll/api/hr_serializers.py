@@ -5,7 +5,7 @@ from django.db.models import Q
 from rest_framework import serializers
 
 from apps.accounting.models import PaymentVoucher, ReceiptVoucher
-from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, EmployeeLoanRepayment
+from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance
 
 
 class EmployeeContractSerializer(serializers.ModelSerializer):
