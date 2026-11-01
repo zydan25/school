@@ -155,6 +155,8 @@ class GradeBook(TenantOwnedModel):
             raise ValidationError({"score": "الدرجة المحصلة لا يمكن أن تتجاوز الدرجة العظمى."})
         if self.student_id and self.student.school_id != self.school_id:
             raise ValidationError({"student": "الطالب لا يتبع نفس المدرسة."})
+        if self.student_id and self.student.branch_id and self.branch_id and self.student.branch_id != self.branch_id:
+            raise ValidationError({"branch": "سجل الدرجة يجب أن يتبع فرع الطالب."})
         if self.subject_id and self.subject.school_id != self.school_id:
             raise ValidationError({"subject": "المادة لا تتبع نفس المدرسة."})
         if self.graded_by_id and self.graded_by.school_id != self.school_id:
@@ -392,11 +394,17 @@ class QuestionBank(TenantOwnedModel):
         if self.question_type == self.QuestionType.MCQ:
             if not isinstance(self.options_json, list):
                 raise ValidationError({"options_json": "خيارات السؤال يجب أن تكون قائمة من الخيارات."})
-            option_ids = {
-                str(item.get("id", "")).strip()
+            if any(
+                not isinstance(item, dict)
+                or not str(item.get("id", "")).strip()
+                or not str(item.get("text", "")).strip()
                 for item in self.options_json
-                if isinstance(item, dict) and item.get("id") is not None
-            }
+            ):
+                raise ValidationError({"options_json": "كل خيار يجب أن يحتوي على رمز ونص واضحين."})
+            option_ids_list = [str(item["id"]).strip() for item in self.options_json]
+            option_ids = set(option_ids_list)
+            if len(option_ids) != len(option_ids_list):
+                raise ValidationError({"options_json": "رموز خيارات السؤال يجب أن تكون فريدة."})
             if len(option_ids) < 2:
                 raise ValidationError({"options_json": "سؤال الاختيار من متعدد يحتاج خيارين صالحين على الأقل."})
             if str(self.correct_answer).strip() not in option_ids:
