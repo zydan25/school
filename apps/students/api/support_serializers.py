@@ -15,6 +15,7 @@ from apps.students.models import (
     Student,
     StudentGuardianRelation,
     StudentIncidentReport,
+    validate_student_document_file,
 )
 
 
@@ -208,7 +209,10 @@ class ComplaintReviewSerializer(serializers.Serializer):
 class StudentDocumentSerializer(StudentSupportTenantSerializer):
     """Metadata and upload contract; file bytes are served only by the guarded API."""
 
-    file = serializers.FileField(write_only=True)
+    file = serializers.FileField(
+        write_only=True,
+        validators=[validate_student_document_file],
+    )
     file_name = serializers.SerializerMethodField()
     file_size = serializers.SerializerMethodField()
     download_url = serializers.SerializerMethodField()
