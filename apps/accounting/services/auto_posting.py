@@ -116,6 +116,30 @@ def _get_active_fiscal_period(school, target_date=None) -> FiscalPeriod:
 
 
 def post_student_receipt_to_journal(receipt: PaymentReceipt) -> JournalEntry:
+    """ترحيل سند قبض الطالب بعد قفل المصدر وإعادة القيد نفسه عند إعادة الطلب."""
+    with transaction.atomic():
+        locked_receipt = PaymentReceipt.objects.select_for_update(of=("self",)).get(
+            pk=receipt.pk,
+        )
+        if locked_receipt.is_cancelled:
+            raise ValidationError("لا يمكن ترحيل سند قبض ملغى أو مسترد.")
+        if locked_receipt.journal_entry_id:
+            existing = locked_receipt.journal_entry
+            if existing.status != JournalEntry.Status.POSTED:
+                raise ValidationError("سند القبض مرتبط بقيد غير مرحّل؛ يجب مراجعته.")
+            receipt.journal_entry = existing
+            return existing
+
+        entry = _post_student_receipt_to_journal_locked(locked_receipt)
+        if entry.status != JournalEntry.Status.POSTED:
+            raise ValidationError("قيد سند القبض السابق غير مرحّل؛ لا يمكن ربطه بالسند.")
+        locked_receipt.journal_entry = entry
+        locked_receipt.save(update_fields=["journal_entry", "updated_at"])
+        receipt.journal_entry = entry
+        return entry
+
+
+def _post_student_receipt_to_journal_locked(receipt: PaymentReceipt) -> JournalEntry:
     """
     الترحيل الآلي لسند قبض رسوم الطالب إلى قيد يومية محاسبي مزدوج متوازن.
     الجانب المدين: الصندوق (1101) أو البنك (1102) أو الشبكة (1103) حسب طريقة الدفع.
