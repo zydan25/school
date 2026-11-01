@@ -603,6 +603,7 @@ class PaymentVoucher(TenantOwnedModel):
         CANCELLED = "cancelled", "ملغى"
 
     voucher_number = models.CharField("رقم سند الصرف", max_length=50, db_index=True)
+    idempotency_key = models.CharField("مفتاح منع تكرار السند", max_length=100, blank=True)
     date = models.DateField("تاريخ الصرف", default=timezone.localdate)
     paid_to = models.CharField("صُرف إلى (المستفيد / الجهة)", max_length=200)
     amount = models.DecimalField("المبلغ المصروف", max_digits=14, decimal_places=2)
@@ -647,8 +648,48 @@ class PaymentVoucher(TenantOwnedModel):
                 fields=["school", "voucher_number"],
                 condition=models.Q(is_archived=False),
                 name="accounting_pay_voucher_num_uniq",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["school", "idempotency_key"],
+                condition=models.Q(is_archived=False, idempotency_key__gt=""),
+                name="acct_payment_idem_uniq",
+            ),
         ]
+
+    def clean(self):
+        super().clean()
+        if self.amount <= Decimal("0.00"):
+            raise ValidationError({"amount": "مبلغ سند الصرف يجب أن يكون أكبر من الصفر."})
+        for account in (self.debit_account, self.credit_account):
+            if account.school_id != self.school_id:
+                raise ValidationError("حسابات سند الصرف يجب أن تتبع المدرسة نفسها.")
+            if not account.is_leaf or account.is_archived:
+                raise ValidationError("لا يمكن استخدام حساب تجميعي أو مؤرشف في سند الصرف.")
+            if self.branch_id and account.branch_id and account.branch_id != self.branch_id:
+                raise ValidationError("فرع حساب سند الصرف لا يطابق فرع السند.")
+        if self.credit_account.account_type != Account.AccountType.ASSET:
+            raise ValidationError({"credit_account": "حساب الصرف يجب أن يكون حساب أصول (صندوق أو بنك)."})
+        if self.cost_center_id and self.cost_center.school_id != self.school_id:
+            raise ValidationError({"cost_center": "مركز التكلفة لا يتبع المدرسة نفسها."})
+        if self.idempotency_key and len(self.idempotency_key.strip()) < 8:
+            raise ValidationError({"idempotency_key": "مفتاح منع التكرار يجب ألا يقل عن 8 أحرف."})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = PaymentVoucher.objects.filter(pk=self.pk).first()
+            if original and original.status == self.Status.POSTED:
+                protected = (
+                    "school_id", "branch_id", "voucher_number", "date", "paid_to",
+                    "amount", "payment_method", "credit_account_id", "debit_account_id",
+                    "cost_center_id", "description", "reference_number", "idempotency_key",
+                )
+                if any(getattr(original, field) != getattr(self, field) for field in protected):
+                    raise ValidationError("سند الصرف المرحّل غير قابل للتعديل؛ استخدم قيداً عكسياً.")
+                if original.journal_entry_id and original.journal_entry_id != self.journal_entry_id:
+                    raise ValidationError("لا يمكن تغيير القيد المرتبط بسند صرف مرحّل.")
+                if self.status != self.Status.POSTED:
+                    raise ValidationError("لا يمكن تغيير حالة سند صرف مرحّل مباشرة.")
+        return super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"سند صرف #{self.voucher_number} - {self.paid_to}: {self.amount}"
@@ -667,6 +708,7 @@ class ReceiptVoucher(TenantOwnedModel):
         CANCELLED = "cancelled", "ملغى"
 
     voucher_number = models.CharField("رقم سند القبض العام", max_length=50, db_index=True)
+    idempotency_key = models.CharField("مفتاح منع تكرار السند", max_length=100, blank=True)
     date = models.DateField("تاريخ القبض", default=timezone.localdate)
     received_from = models.CharField("قُبض من (الجهة / الشخص)", max_length=200)
     amount = models.DecimalField("المبلغ المقبوض", max_digits=14, decimal_places=2)
@@ -711,8 +753,48 @@ class ReceiptVoucher(TenantOwnedModel):
                 fields=["school", "voucher_number"],
                 condition=models.Q(is_archived=False),
                 name="accounting_rec_voucher_num_uniq",
-            )
+            ),
+            models.UniqueConstraint(
+                fields=["school", "idempotency_key"],
+                condition=models.Q(is_archived=False, idempotency_key__gt=""),
+                name="acct_receipt_idem_uniq",
+            ),
         ]
+
+    def clean(self):
+        super().clean()
+        if self.amount <= Decimal("0.00"):
+            raise ValidationError({"amount": "مبلغ سند القبض يجب أن يكون أكبر من الصفر."})
+        for account in (self.debit_account, self.credit_account):
+            if account.school_id != self.school_id:
+                raise ValidationError("حسابات سند القبض يجب أن تتبع المدرسة نفسها.")
+            if not account.is_leaf or account.is_archived:
+                raise ValidationError("لا يمكن استخدام حساب تجميعي أو مؤرشف في سند القبض.")
+            if self.branch_id and account.branch_id and account.branch_id != self.branch_id:
+                raise ValidationError("فرع حساب سند القبض لا يطابق فرع السند.")
+        if self.debit_account.account_type != Account.AccountType.ASSET:
+            raise ValidationError({"debit_account": "حساب القبض يجب أن يكون حساب أصول (صندوق أو بنك)."})
+        if self.cost_center_id and self.cost_center.school_id != self.school_id:
+            raise ValidationError({"cost_center": "مركز التكلفة لا يتبع المدرسة نفسها."})
+        if self.idempotency_key and len(self.idempotency_key.strip()) < 8:
+            raise ValidationError({"idempotency_key": "مفتاح منع التكرار يجب ألا يقل عن 8 أحرف."})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = ReceiptVoucher.objects.filter(pk=self.pk).first()
+            if original and original.status == self.Status.POSTED:
+                protected = (
+                    "school_id", "branch_id", "voucher_number", "date", "received_from",
+                    "amount", "payment_method", "debit_account_id", "credit_account_id",
+                    "cost_center_id", "description", "reference_number", "idempotency_key",
+                )
+                if any(getattr(original, field) != getattr(self, field) for field in protected):
+                    raise ValidationError("سند القبض المرحّل غير قابل للتعديل؛ استخدم قيداً عكسياً.")
+                if original.journal_entry_id and original.journal_entry_id != self.journal_entry_id:
+                    raise ValidationError("لا يمكن تغيير القيد المرتبط بسند قبض مرحّل.")
+                if self.status != self.Status.POSTED:
+                    raise ValidationError("لا يمكن تغيير حالة سند قبض مرحّل مباشرة.")
+        return super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"سند قبض عام #{self.voucher_number} - {self.received_from}: {self.amount}"
