@@ -328,7 +328,7 @@ class PhaseSixTeachingAssessmentTests(TestCase):
         old_year = AcademicYear.objects.create(
             school=self.school, code="2025-2026", name="2025-2026",
             starts_on=date(2025, 9, 1), ends_on=date(2026, 6, 30),
-            status=AcademicYear.Status.COMPLETED, is_current=False,
+            status=AcademicYear.Status.CLOSED, is_current=False,
         )
         old_term = AcademicTerm.objects.create(
             school=self.school, academic_year=old_year,
