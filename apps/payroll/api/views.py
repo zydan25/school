@@ -140,6 +140,7 @@ class PayrollRunPostAPIView(APIView):
             journal_entry = post_payroll_to_accounting(payroll_run=run, user=request.user)
         except DjangoValidationError as exc:
             raise ValidationError(exc.messages) from exc
+        run.refresh_from_db(fields=["status"])
         return Response({
             "message": f"تم ترحيل مسير الرواتب محاسبياً بنجاح برقم قيد {journal_entry.entry_number}.",
             "journal_entry": journal_entry.entry_number,
@@ -201,7 +202,9 @@ class PayrollRunReverseAPIView(APIView):
         reason = serializer.validated_data["reason"]
 
         try:
-            reverse_payroll_run(payroll_run=run, reason=reason, reversed_by=request.user)
+            run = reverse_payroll_run(
+                payroll_run=run, reason=reason, reversed_by=request.user,
+            )
         except DjangoValidationError as exc:
             raise ValidationError(exc.messages) from exc
 

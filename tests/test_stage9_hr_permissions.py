@@ -1,5 +1,7 @@
 from django.contrib.auth.models import Permission
 from datetime import date
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.test import TestCase
 from rest_framework.authtoken.models import Token
@@ -295,3 +297,64 @@ class Stage9PayrollPermissionTests(TestCase):
             set(loan_admin.get_readonly_fields(request)),
             {field.name for field in EmployeeLoanAdvance._meta.fields},
         )
+
+    def test_payroll_post_and_reverse_endpoints_return_the_persisted_state(self):
+        from rest_framework.authtoken.models import Token
+        from rest_framework.test import APIClient
+
+        self.role.permissions.add(
+            Permission.objects.get(
+                content_type__app_label="payroll", codename="post_payrollrun",
+            ),
+            Permission.objects.get(
+                content_type__app_label="payroll", codename="reverse_payrollrun",
+            ),
+        )
+        run = PayrollRun.objects.create(
+            school=self.school,
+            name="مسير اختبار تحديث الحالة",
+            year=2026,
+            month=9,
+            status=PayrollRun.Status.APPROVED,
+        )
+        token, _ = Token.objects.get_or_create(user=self.user)
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {token.key}",
+            HTTP_X_SCHOOL_ID=str(self.school.pk),
+        )
+
+        def post_and_persist(*, payroll_run, user):
+            PayrollRun.objects.filter(pk=payroll_run.pk).update(
+                status=PayrollRun.Status.POSTED,
+            )
+            return SimpleNamespace(entry_number="JE-STAGE9-TEST")
+
+        with patch(
+            "apps.payroll.api.views.post_payroll_to_accounting",
+            side_effect=post_and_persist,
+        ):
+            posted = client.post(
+                f"/api/v1/payroll/runs/{run.pk}/post/", {}, format="json",
+            )
+        self.assertEqual(posted.status_code, 200)
+        self.assertEqual(posted.data["status"], PayrollRun.Status.POSTED)
+
+        def reverse_and_persist(*, payroll_run, reason, reversed_by):
+            PayrollRun.objects.filter(pk=payroll_run.pk).update(
+                status=PayrollRun.Status.DRAFT,
+                journal_entry=None,
+            )
+            return PayrollRun.objects.get(pk=payroll_run.pk)
+
+        with patch(
+            "apps.payroll.api.views.reverse_payroll_run",
+            side_effect=reverse_and_persist,
+        ):
+            reversed_response = client.post(
+                f"/api/v1/payroll/runs/{run.pk}/reverse/",
+                {"reason": "اختبار العكس"},
+                format="json",
+            )
+        self.assertEqual(reversed_response.status_code, 200)
+        self.assertEqual(reversed_response.data["status"], PayrollRun.Status.DRAFT)

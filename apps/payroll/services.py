@@ -465,6 +465,8 @@ def reverse_payroll_run(payroll_run: PayrollRun, reason: str, reversed_by=None) 
         locked_run = PayrollRun.objects.select_for_update().get(pk=payroll_run.pk)
         if locked_run.status == PayrollRun.Status.PAID:
             raise ValidationError("لا يمكن عكس مسير رواتب تم صرفه فعلياً.")
+        if locked_run.status != PayrollRun.Status.POSTED or not locked_run.journal_entry_id:
+            raise ValidationError("تغيرت حالة المسير؛ لا يمكن عكسه إلا إذا كان مرحلاً محاسبياً.")
         
         # 1. Reverse EmployeeLoanRepayment records and restore loan balances
         repayments = list(locked_run.loan_repayments.filter(is_reversed=False))
