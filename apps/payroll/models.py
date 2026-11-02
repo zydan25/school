@@ -231,6 +231,12 @@ class EmployeeLoanAdvance(TenantOwnedModel):
             raise ValidationError({"teacher": "المعلم لا ينتمي إلى نفس المدرسة."})
         if self.staff_member_id and self.staff_member.school_id != self.school_id:
             raise ValidationError({"staff_member": "الموظف الإداري لا ينتمي إلى نفس المدرسة."})
+        employee_branch_id = (
+            self.teacher.branch_id if self.teacher_id else
+            self.staff_member.branch_id if self.staff_member_id else None
+        )
+        if self.branch_id and employee_branch_id and self.branch_id != employee_branch_id:
+            raise ValidationError({"branch": "فرع السلفة يجب أن يطابق فرع ملف الموظف."})
         if self.amount <= Decimal("0.00"):
             raise ValidationError({"amount": "مبلغ السلفة الإجمالي يجب أن يكون أكبر من الصفر."})
         if self.monthly_installment <= Decimal("0.00"):

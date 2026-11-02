@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -163,15 +163,15 @@ class EmployeeLoanAdvanceListCreateAPIView(APIView):
         branch = None
         employee = teacher or staff_member
         if teacher and not teacher.is_active_teaching:
-            raise ValidationError("لا يمكن طلب سلفة لمعلم غير نشط تدريسياً.")
+            raise DRFValidationError("لا يمكن طلب سلفة لمعلم غير نشط تدريسياً.")
         if staff_member and not staff_member.is_active:
-            raise ValidationError("لا يمكن طلب سلفة لموظف غير نشط.")
+            raise DRFValidationError("لا يمكن طلب سلفة لموظف غير نشط.")
 
         if data.get("branch_id"):
             from apps.tenants.models import Branch
             branch = get_object_or_404(Branch, pk=data["branch_id"], school=school, is_archived=False)
         if branch and employee.branch_id and branch.pk != employee.branch_id:
-            raise ValidationError("فرع السلفة يجب أن يطابق فرع ملف الموظف.")
+            raise DRFValidationError("فرع السلفة يجب أن يطابق فرع ملف الموظف.")
         if branch is None:
             branch = employee.branch
 
