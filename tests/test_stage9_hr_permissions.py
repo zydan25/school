@@ -12,6 +12,7 @@ from apps.accounts.services import (
     school_assignable_permissions,
 )
 from apps.payroll.api.hr_serializers import EmployeeContractSerializer
+from apps.payroll.models import PayrollRun
 from apps.staff.models import LeaveRequest, LeaveType, StaffAttendance, StaffMember, Teacher
 from apps.tenants.models import Branch, School
 
@@ -215,3 +216,43 @@ class Stage9PayrollPermissionTests(TestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(LeaveRequest.objects.filter(staff_member=inactive).count(), 0)
+
+    def test_payroll_approval_does_not_grant_post_or_disbursement_access(self):
+        from rest_framework.authtoken.models import Token
+        from rest_framework.test import APIClient
+
+        self.role.permissions.add(Permission.objects.get(
+            content_type__app_label="payroll",
+            codename="approve_payrollrun",
+        ))
+        run = PayrollRun.objects.create(
+            school=self.school,
+            name="مسير اختبار الصلاحيات",
+            year=2026,
+            month=11,
+        )
+        token, _ = Token.objects.get_or_create(user=self.user)
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {token.key}",
+            HTTP_X_SCHOOL_ID=str(self.school.pk),
+        )
+
+        # Approval permission reaches the business rule (empty payroll cannot be approved).
+        approved = client.post(
+            f"/api/v1/payroll/runs/{run.pk}/approve/", {}, format="json",
+        )
+        self.assertEqual(approved.status_code, 400)
+
+        # Approval alone must not authorize ledger posting, payment, or reversal.
+        posted = client.post(f"/api/v1/payroll/runs/{run.pk}/post/", {}, format="json")
+        disbursed = client.post(
+            f"/api/v1/payroll/runs/{run.pk}/disburse/", {}, format="json",
+        )
+        reversed_run = client.post(
+            f"/api/v1/payroll/runs/{run.pk}/reverse/",
+            {"reason": "اختبار صلاحيات"}, format="json",
+        )
+        self.assertEqual(posted.status_code, 403)
+        self.assertEqual(disbursed.status_code, 403)
+        self.assertEqual(reversed_run.status_code, 403)

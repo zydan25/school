@@ -14,7 +14,10 @@ from apps.accounts.models import (
     DeviceSession, PhoneVerificationChallenge, SchoolInvitation, SchoolMembership, User,
 )
 from apps.accounts.services import (
-    accept_school_invitation, issue_school_invitation, school_assignable_permissions,
+    SCHOOL_CUSTOM_ACTION_PERMISSIONS,
+    accept_school_invitation,
+    issue_school_invitation,
+    school_assignable_permissions,
 )
 from apps.tenants.models import School
 from apps.tenants.services import provision_school
@@ -373,7 +376,15 @@ class IdentitySessionSecurityTests(TestCase):
             app_label not in {"accounts", "auth", "admin", "contenttypes", "sessions", "tenants"}
             for app_label, _codename in allowed
         ))
-        self.assertTrue(all(
-            codename.startswith(("view_", "add_", "change_", "delete_"))
-            for _app_label, codename in allowed
-        ))
+        standard_permissions = {
+            (app_label, codename)
+            for app_label, codename in allowed
+            if codename.startswith(("view_", "add_", "change_", "delete_"))
+        }
+        custom_permissions = set(allowed) - standard_permissions
+        expected_custom_permissions = {
+            (app_label, codename)
+            for app_label, codenames in SCHOOL_CUSTOM_ACTION_PERMISSIONS.items()
+            for codename in codenames
+        }
+        self.assertEqual(custom_permissions, expected_custom_permissions)
