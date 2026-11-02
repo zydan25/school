@@ -1,5 +1,9 @@
 from django.contrib.auth.models import Permission
+from datetime import date
+
 from django.test import TestCase
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APIClient
 
 from apps.accounts.models import MembershipRole, SchoolMembership, SchoolRole, User
 from apps.accounts.services import (
@@ -8,7 +12,7 @@ from apps.accounts.services import (
     school_assignable_permissions,
 )
 from apps.payroll.api.hr_serializers import EmployeeContractSerializer
-from apps.staff.models import Teacher
+from apps.staff.models import LeaveRequest, LeaveType, StaffAttendance, StaffMember, Teacher
 from apps.tenants.models import Branch, School
 
 
@@ -118,3 +122,96 @@ class Stage9PayrollPermissionTests(TestCase):
         )
         self.assertTrue(valid.is_valid(), valid.errors)
         self.assertEqual(valid.validated_data["branch"].pk, branch_a.pk)
+
+    def test_employee_self_service_includes_all_staff_profiles_in_the_school(self):
+        first = StaffMember.objects.create(
+            school=self.school,
+            user=self.user,
+            employee_number="STF-SELF-01",
+            job_title="مشرف",
+            role=StaffMember.StaffRole.SUPERVISOR,
+        )
+        second = StaffMember.objects.create(
+            school=self.school,
+            user=self.user,
+            employee_number="STF-SELF-02",
+            job_title="سكرتير",
+            role=StaffMember.StaffRole.SECRETARY,
+        )
+        leave_type = LeaveType.objects.create(
+            school=self.school,
+            code="STAGE9-SELF",
+            name="إجازة اختبار",
+            days_allowed=10,
+        )
+        leave_one = LeaveRequest.objects.create(
+            school=self.school, staff_member=first, leave_type=leave_type,
+            start_date=date(2026, 11, 10), end_date=date(2026, 11, 10),
+            reason="موعد",
+        )
+        leave_two = LeaveRequest.objects.create(
+            school=self.school, staff_member=second, leave_type=leave_type,
+            start_date=date(2026, 11, 12), end_date=date(2026, 11, 12),
+            reason="مراجعة",
+        )
+        attendance_one = StaffAttendance.objects.create(
+            school=self.school, staff_member=first, date=date(2026, 11, 10),
+        )
+        attendance_two = StaffAttendance.objects.create(
+            school=self.school, staff_member=second, date=date(2026, 11, 12),
+        )
+
+        token, _ = Token.objects.get_or_create(user=self.user)
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {token.key}",
+            HTTP_X_SCHOOL_ID=str(self.school.pk),
+        )
+
+        leaves = client.get("/api/v1/staff/leaves/")
+        attendance = client.get("/api/v1/staff/attendance/")
+        self.assertEqual(leaves.status_code, 200)
+        self.assertEqual(attendance.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in leaves.data},
+            {str(leave_one.pk), str(leave_two.pk)},
+        )
+        self.assertEqual(
+            {item["id"] for item in attendance.data},
+            {str(attendance_one.pk), str(attendance_two.pk)},
+        )
+
+    def test_inactive_employee_cannot_submit_a_leave_request(self):
+        inactive = StaffMember.objects.create(
+            school=self.school,
+            user=self.user,
+            employee_number="STF-SELF-INACTIVE",
+            job_title="موظف سابق",
+            role=StaffMember.StaffRole.OTHER,
+            is_active=False,
+        )
+        leave_type = LeaveType.objects.create(
+            school=self.school,
+            code="STAGE9-INACTIVE",
+            name="إجازة",
+            days_allowed=10,
+        )
+        token, _ = Token.objects.get_or_create(user=self.user)
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {token.key}",
+            HTTP_X_SCHOOL_ID=str(self.school.pk),
+        )
+        response = client.post(
+            "/api/v1/staff/leaves/",
+            {
+                "staff_member_id": str(inactive.pk),
+                "leave_type_id": str(leave_type.pk),
+                "start_date": "2026-11-15",
+                "end_date": "2026-11-15",
+                "reason": "طلب إجازة",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(LeaveRequest.objects.filter(staff_member=inactive).count(), 0)
