@@ -8,8 +8,12 @@ from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, PayrollRu
 class PayslipInline(TabularInline):
     model = Payslip
     extra = 0
-    readonly_fields = ("teacher", "basic_salary", "housing_allowance", "transport_allowance", "loan_deduction", "insurance_deduction", "net_salary", "is_paid")
+    fields = tuple(field.name for field in Payslip._meta.fields)
+    readonly_fields = fields
     can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(EmployeeContract)
@@ -20,6 +24,17 @@ class EmployeeContractAdmin(AuditedAdminMixin, ModelAdmin):
     raw_id_fields = ("school", "branch", "teacher", "staff_member")
     readonly_fields = ("id", "created_at", "updated_at")
 
+    def get_readonly_fields(self, request, obj=None):
+        fields = list(super().get_readonly_fields(request, obj))
+        if obj:
+            fields.extend([
+                "branch", "teacher", "staff_member", "contract_number",
+                "contract_type", "start_date", "basic_salary",
+                "housing_allowance", "transport_allowance", "other_allowances",
+                "insurance_deduction", "bank_name", "iban",
+            ])
+        return tuple(dict.fromkeys(fields))
+
 
 @admin.register(EmployeeLoanAdvance)
 class EmployeeLoanAdvanceAdmin(AuditedAdminMixin, ModelAdmin):
@@ -27,7 +42,16 @@ class EmployeeLoanAdvanceAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("status", "school")
     search_fields = ("loan_number", "teacher__user__first_name", "staff_member__user__first_name", "school__name")
     raw_id_fields = ("school", "branch", "teacher", "staff_member")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = tuple(field.name for field in EmployeeLoanAdvance._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return super().has_view_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(PayrollRun)
@@ -36,8 +60,17 @@ class PayrollRunAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("status", "year", "school")
     search_fields = ("name", "school__name")
     autocomplete_fields = ("school", "branch", "journal_entry")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = tuple(field.name for field in PayrollRun._meta.fields)
     inlines = (PayslipInline,)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return super().has_view_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Payslip)
@@ -46,4 +79,13 @@ class PayslipAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("is_paid", "payroll_run__year", "school")
     search_fields = ("teacher__user__first_name", "staff_member__user__first_name", "payroll_run__name", "school__name")
     raw_id_fields = ("school", "branch", "payroll_run", "teacher", "staff_member")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = tuple(field.name for field in Payslip._meta.fields)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return super().has_view_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return False

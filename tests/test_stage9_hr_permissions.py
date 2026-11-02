@@ -256,3 +256,42 @@ class Stage9PayrollPermissionTests(TestCase):
         self.assertEqual(posted.status_code, 403)
         self.assertEqual(disbursed.status_code, 403)
         self.assertEqual(reversed_run.status_code, 403)
+
+    def test_payroll_admin_cannot_bypass_financial_workflow(self):
+        from django.contrib import admin
+        from django.test import RequestFactory
+
+        from apps.payroll.models import EmployeeLoanAdvance, Payslip
+
+        request = RequestFactory().get("/admin/")
+        request.user = self.owner
+        run = PayrollRun.objects.create(
+            school=self.school,
+            name="مسير للعرض فقط",
+            year=2026,
+            month=10,
+        )
+        run_admin = admin.site._registry[PayrollRun]
+        payslip_admin = admin.site._registry[Payslip]
+        loan_admin = admin.site._registry[EmployeeLoanAdvance]
+
+        self.assertFalse(run_admin.has_add_permission(request))
+        self.assertFalse(run_admin.has_delete_permission(request, run))
+        self.assertTrue({
+            "status", "total_basic", "total_allowances", "total_deductions",
+            "total_net", "approved_by", "journal_entry",
+        }.issubset(set(run_admin.get_readonly_fields(request, run))))
+
+        self.assertFalse(payslip_admin.has_add_permission(request))
+        self.assertFalse(payslip_admin.has_delete_permission(request))
+        self.assertEqual(
+            set(payslip_admin.get_readonly_fields(request)),
+            {field.name for field in Payslip._meta.fields},
+        )
+
+        self.assertFalse(loan_admin.has_add_permission(request))
+        self.assertFalse(loan_admin.has_delete_permission(request))
+        self.assertEqual(
+            set(loan_admin.get_readonly_fields(request)),
+            {field.name for field in EmployeeLoanAdvance._meta.fields},
+        )
