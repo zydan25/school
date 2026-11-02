@@ -161,9 +161,20 @@ class EmployeeLoanAdvanceListCreateAPIView(APIView):
             if not (owns_teacher or owns_staff):
                 raise PermissionDenied("يمكنك تقديم طلب سلفة لملفك الوظيفي فقط.")
         branch = None
+        employee = teacher or staff_member
+        if teacher and not teacher.is_active_teaching:
+            raise ValidationError("لا يمكن طلب سلفة لمعلم غير نشط تدريسياً.")
+        if staff_member and not staff_member.is_active:
+            raise ValidationError("لا يمكن طلب سلفة لموظف غير نشط.")
+
         if data.get("branch_id"):
             from apps.tenants.models import Branch
             branch = get_object_or_404(Branch, pk=data["branch_id"], school=school, is_archived=False)
+        if branch and employee.branch_id and branch.pk != employee.branch_id:
+            raise ValidationError("فرع السلفة يجب أن يطابق فرع ملف الموظف.")
+        if branch is None:
+            branch = employee.branch
+
         loan = EmployeeLoanAdvance.objects.create(
             school=school,
             branch=branch,
@@ -189,7 +200,7 @@ class EmployeeLoanApproveAPIView(APIView):
     def post(self, request, pk, *args, **kwargs):
         school = _school(request)
         require_school_role_or_permission(
-            request, school, HR_ROLES, "payroll.change_employeeloanadvance",
+            request, school, HR_ROLES, "payroll.approve_employeeloanadvance",
         )
         loan = get_object_or_404(
             EmployeeLoanAdvance, pk=pk, school=school, is_archived=False,
@@ -210,7 +221,7 @@ class EmployeeLoanDisburseAPIView(APIView):
     def post(self, request, pk, *args, **kwargs):
         school = _school(request)
         require_school_role_or_permission(
-            request, school, FINANCIAL_ROLES, "payroll.change_employeeloanadvance",
+            request, school, FINANCIAL_ROLES, "payroll.disburse_employeeloanadvance",
         )
         loan = get_object_or_404(
             EmployeeLoanAdvance, pk=pk, school=school, is_archived=False,

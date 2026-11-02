@@ -33,7 +33,7 @@ class EmployeeContractSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = self.instance
         protected = {
-            "teacher", "staff_member", "contract_number", "contract_type",
+            "branch", "teacher", "staff_member", "contract_number", "contract_type",
             "start_date", "basic_salary", "housing_allowance",
             "transport_allowance", "other_allowances", "insurance_deduction",
             "bank_name", "iban",
@@ -72,6 +72,10 @@ class EmployeeContractSerializer(serializers.ModelSerializer):
         branch = attrs.get("branch", instance.branch if instance else None)
         if branch and branch.school_id != school.pk:
             raise serializers.ValidationError({"branch": "الفرع لا يتبع المدرسة النشطة."})
+        if branch and employee.branch_id and branch.pk != employee.branch_id:
+            raise serializers.ValidationError({"branch": "فرع العقد يجب أن يطابق فرع ملف الموظف."})
+        if not instance and branch is None and employee.branch_id:
+            attrs["branch"] = employee.branch
         if is_active and start_date:
             overlaps = EmployeeContract.objects.filter(
                 school=school, is_active=True, is_archived=False,

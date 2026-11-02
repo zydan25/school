@@ -112,7 +112,7 @@ class PayrollRunApproveAPIView(APIView):
         require_school_role_or_permission(
             request, school,
             {"school-director", "school_director", "principal", "hr-manager", "hr_manager"},
-            "payroll.change_payrollrun",
+            "payroll.approve_payrollrun",
         )
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
         try:
@@ -133,7 +133,7 @@ class PayrollRunPostAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
-        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.change_payrollrun")
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.post_payrollrun")
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
 
         try:
@@ -154,7 +154,7 @@ class PayrollRunDisburseAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
-        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.change_payrollrun")
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.disburse_payrollrun")
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
         serializer = DisbursePayrollSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -194,7 +194,7 @@ class PayrollRunReverseAPIView(APIView):
         school = _resolve_school(request)
         if not school:
             raise PermissionDenied("لم يتم تحديد المدرسة.")
-        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.delete_payrollrun")
+        require_school_role_or_permission(request, school, FINANCIAL_ROLES, "payroll.reverse_payrollrun")
         run = get_object_or_404(PayrollRun, pk=pk, school=school, is_archived=False)
         serializer = ReversePayrollSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

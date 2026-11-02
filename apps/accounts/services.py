@@ -51,14 +51,38 @@ SCHOOL_PERMISSION_APP_LABELS = {
     "notifications", "copilot",
 }
 
+# These are deliberately narrow workflow permissions. They are not generic
+# Django model permissions and must never grant access to other app labels.
+SCHOOL_CUSTOM_ACTION_PERMISSIONS = {
+    "payroll": {
+        "approve_payrollrun",
+        "post_payrollrun",
+        "disburse_payrollrun",
+        "reverse_payrollrun",
+        "approve_employeeloanadvance",
+        "disburse_employeeloanadvance",
+    },
+}
+
+
+def is_school_permission_codename_allowed(app_label: str, codename: str) -> bool:
+    return (
+        app_label in SCHOOL_PERMISSION_APP_LABELS
+        and (
+            codename.startswith(("view_", "add_", "change_", "delete_"))
+            or codename in SCHOOL_CUSTOM_ACTION_PERMISSIONS.get(app_label, set())
+        )
+    )
+
 
 def is_school_permission_allowed(permission) -> bool:
     """School roles cannot grant Django, account, tenant or platform privileges."""
     content_type = getattr(permission, "content_type", None)
-    if content_type is None or content_type.app_label not in SCHOOL_PERMISSION_APP_LABELS:
+    if content_type is None:
         return False
-    codename = getattr(permission, "codename", "")
-    return codename.startswith(("view_", "add_", "change_", "delete_"))
+    return is_school_permission_codename_allowed(
+        content_type.app_label, getattr(permission, "codename", ""),
+    )
 
 
 def school_assignable_permissions():
@@ -68,6 +92,8 @@ def school_assignable_permissions():
     actions = Q()
     for prefix in ("view_", "add_", "change_", "delete_"):
         actions |= Q(codename__startswith=prefix)
+    for app_label, codenames in SCHOOL_CUSTOM_ACTION_PERMISSIONS.items():
+        actions |= Q(content_type__app_label=app_label, codename__in=codenames)
     return Permission.objects.filter(
         content_type__app_label__in=SCHOOL_PERMISSION_APP_LABELS,
     ).filter(actions).select_related("content_type").distinct()
@@ -83,9 +109,7 @@ def has_school_permission(*, user, school, permission: str) -> bool:
     if membership is None or "." not in permission:
         return False
     app_label, codename = permission.split(".", 1)
-    if app_label not in SCHOOL_PERMISSION_APP_LABELS or not codename.startswith(
-        ("view_", "add_", "change_", "delete_")
-    ):
+    if not is_school_permission_codename_allowed(app_label, codename):
         return False
     today = timezone.localdate()
     assignments = MembershipRole.objects.filter(

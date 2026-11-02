@@ -157,6 +157,12 @@ def record_employee_loan_repayment(
         if payment_account.school_id != school.pk:
             raise ValidationError("حساب التحصيل لا يتبع المدرسة نفسها.")
         if (
+            locked_loan.branch_id
+            and payment_account.branch_id
+            and locked_loan.branch_id != payment_account.branch_id
+        ):
+            raise ValidationError("حساب التحصيل لا يتبع فرع السلفة.")
+        if (
             payment_account.account_type != Account.AccountType.ASSET
             or not payment_account.is_leaf
             or payment_account.is_archived
