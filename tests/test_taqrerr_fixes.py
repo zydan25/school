@@ -701,7 +701,7 @@ class TaqrerrFixesVerificationTests(TestCase):
         )
         response = client.get("/api/v1/payroll/me/payslips/")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual([item["id"] for item in response.data], [str(own_slip.pk)])
+        self.assertEqual([item["id"] for item in response.data["results"]], [str(own_slip.pk)])
         own_detail = client.get(f"/api/v1/payroll/me/payslips/{own_slip.pk}/")
         other_detail = client.get(f"/api/v1/payroll/me/payslips/{other_slip.pk}/")
         self.assertEqual(own_detail.status_code, status.HTTP_200_OK)

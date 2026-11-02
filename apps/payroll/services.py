@@ -35,7 +35,8 @@ def generate_monthly_payroll(
     month_start = datetime.date(year, month, 1)
     last_day_num = calendar.monthrange(year, month)[1]
     month_end = datetime.date(year, month, last_day_num)
-    money = lambda value: value.quantize(Decimal("0.01"))
+    def money(value: Decimal) -> Decimal:
+        return value.quantize(Decimal("0.01"))
 
     with transaction.atomic():
         run, created = PayrollRun.objects.get_or_create(
@@ -167,7 +168,6 @@ def generate_monthly_payroll(
                 employee_attendance = employee_attendance.filter(teacher=teacher)
             else:
                 employee_attendance = employee_attendance.filter(staff_member=staff_member)
-            attendance_dates = set(employee_attendance.values_list("date", flat=True))
             unexcused_dates = set(employee_attendance.filter(
                 status=StaffAttendance.Status.UNEXCUSED,
             ).values_list("date", flat=True))

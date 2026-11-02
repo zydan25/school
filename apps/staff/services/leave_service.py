@@ -27,7 +27,7 @@ def review_leave_request(
 ) -> LeaveRequest:
     """Approve/reject one leave request with employee locking and annual quotas."""
     with transaction.atomic():
-        locked = LeaveRequest.objects.select_for_update().select_related(
+        locked = LeaveRequest.objects.select_for_update(of=("self",)).select_related(
             "leave_type", "teacher", "staff_member",
         ).get(pk=leave_request.pk)
 
