@@ -1,9 +1,9 @@
 {
   "expo": {
-    "name": "School",
-    "slug": "school-mobile",
+    "name": "مدرستي",
+    "slug": "madrasati-mobile",
     "version": "0.1.0",
-    "scheme": "school",
+    "scheme": "madrasati",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "plugins": [
@@ -13,7 +13,9 @@
         {
           "supportsRTL": true,
           "forcesRTL": true,
-          "supportedLocales": ["ar"]
+          "supportedLocales": [
+            "ar"
+          ]
         }
       ],
       "expo-secure-store",
@@ -21,6 +23,15 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "android": {
+      "package": "com.zydan25.madrasati",
+      "versionCode": 1,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE"
+      ],
+      "usesCleartextTraffic": false
     }
   }
 }
