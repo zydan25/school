@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text } from "react-native-paper";
@@ -42,11 +42,19 @@ const statusLabels: Record<string, string> = {
 export function HomeDashboardScreen() {
   const session = useAuthStore((state) => state.session);
   const logout = useAuthStore((state) => state.logout);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
 
   const schoolId = session?.activeSchoolId;
   const workspace = session?.activeWorkspace;
   const school = session?.schools.find((item) => item.id === schoolId);
+
+  useEffect(() => {
+    if (!hasHydrated) return;
+    if (!session) router.replace("/login" as never);
+    else if (!schoolId) router.replace("/schools" as never);
+    else if (!workspace) router.replace("/workspace" as never);
+  }, [hasHydrated, session, schoolId, workspace]);
   const dashboardQuery = useQuery({
     queryKey: ["school-dashboard", session?.user.id, session?.sessionId, schoolId, workspace],
     queryFn: () => loadDashboardData(workspace as WorkspaceType),
@@ -201,7 +209,7 @@ function GuardianDashboard({
               <DetailLine label="إشعارات ولي الأمر" value={selectedChild.receives_notifications === null ? "غير محدد" : selectedChild.receives_notifications ? "مفعلة" : "غير مفعلة"} />
             </AppCard>
           ) : null}
-          <LessonsSection lessons={lessons} />
+          <LessonsSection lessons={lessons} title="جداول الأبناء" />
         </>
       ) : (
         <AppEmptyState
@@ -309,10 +317,10 @@ function ManagementDashboard() {
   );
 }
 
-function LessonsSection({ lessons }: { lessons: Lesson[] }) {
+function LessonsSection({ lessons, title = "الجدول الدراسي" }: { lessons: Lesson[]; title?: string }) {
   return (
     <View style={styles.sectionStack}>
-      <AppSectionHeader title="الجدول الدراسي" trailing={lessons.length + " حصص"} />
+      <AppSectionHeader title={title} trailing={lessons.length + " حصص"} />
       {lessons.length ? (
         <AppCard padding={4}>
           {lessons.slice(0, 8).map((lesson, index) => (

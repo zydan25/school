@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text } from "react-native-paper";
@@ -26,13 +27,15 @@ export function SchoolSelectionScreen() {
   const session = useAuthStore((state) => state.session);
   const chooseSchool = useAuthStore((state) => state.chooseSchool);
   const logout = useAuthStore((state) => state.logout);
+  const [selectionError, setSelectionError] = useState("");
 
   async function selectSchool(id: string) {
+    setSelectionError("");
     try {
       await chooseSchool(id);
       router.replace("/workspace" as never);
-    } catch {
-      // The selector remains open; the current session is not changed on failure.
+    } catch (error) {
+      setSelectionError(error instanceof Error ? error.message : "تعذر اختيار المدرسة.");
     }
   }
 
@@ -46,6 +49,7 @@ export function SchoolSelectionScreen() {
         <Text style={styles.subtitle}>هذا الحساب مرتبط بالمدارس التالية. اختر المدرسة التي تريد العمل فيها.</Text>
       </View>
 
+      {selectionError ? <Text style={styles.selectionError}>{selectionError}</Text> : null}
       {session.schools.length ? (
         <>
           <AppSectionHeader title="مدارسي" trailing={session.schools.length + " مدارس"} />
@@ -68,14 +72,16 @@ export function SchoolSelectionScreen() {
           ))}
         </>
       ) : (
-        <AppEmptyState
-          icon={School}
-          title="لا توجد مدرسة مرتبطة بحسابك"
-          description="تم تسجيل الدخول بنجاح، لكن لا توجد عضوية مدرسية نشطة. اطلب من إدارة المدرسة إرسال دعوة إلى رقم هاتفك أو بريدك الموثق، ثم أدخل رمزها هنا لقبول العضوية."
-        />
-        <Button mode="contained" icon="ticket-confirmation" onPress={() => router.push("/accept-invitation" as never)} buttonColor={palette.primary}>
-          لدي رمز دعوة للمدرسة
-        </Button>
+        <>
+          <AppEmptyState
+            icon={School}
+            title="لا توجد مدرسة مرتبطة بحسابك"
+            description="تم تسجيل الدخول بنجاح، لكن لا توجد عضوية مدرسية نشطة. اطلب من إدارة المدرسة إرسال دعوة إلى رقم هاتفك أو بريدك الموثق، ثم أدخل رمزها هنا لقبول العضوية."
+          />
+          <Button mode="contained" icon="ticket-confirmation" onPress={() => router.push("/accept-invitation" as never)} buttonColor={palette.primary}>
+            لدي رمز دعوة للمدرسة
+          </Button>
+        </>
       )}
 
       <View style={styles.footer}>
@@ -101,4 +107,5 @@ const styles = StyleSheet.create({
   schoolCode: { color: palette.muted, fontSize: 10 },
   roles: { color: palette.secondary, fontSize: 10, lineHeight: 16 },
   footer: { alignItems: "center", paddingVertical: spacing.md },
+  selectionError: { color: palette.danger, fontSize: 12, textAlign: "right" },
 });

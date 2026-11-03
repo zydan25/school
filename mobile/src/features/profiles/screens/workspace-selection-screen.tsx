@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text } from "react-native-paper";
@@ -27,6 +27,7 @@ const icons = {
 
 export function WorkspaceSelectionScreen() {
   const session = useAuthStore((state) => state.session);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const chooseWorkspace = useAuthStore((state) => state.chooseWorkspace);
   const schoolId = session?.activeSchoolId;
   const profilesQuery = useQuery({
@@ -40,6 +41,11 @@ export function WorkspaceSelectionScreen() {
     [session, profilesQuery.data],
   );
   const school = session?.schools.find((item) => item.id === schoolId);
+
+  useEffect(() => {
+    if (hasHydrated && !session) router.replace("/login" as never);
+    else if (session && !schoolId) router.replace("/schools" as never);
+  }, [hasHydrated, session, schoolId]);
 
   async function selectWorkspace(type: (typeof options)[number]["type"]) {
     await chooseWorkspace(type);
@@ -62,6 +68,7 @@ export function WorkspaceSelectionScreen() {
         <View style={styles.loading}><ActivityIndicator color={palette.secondary} /><Text style={styles.loadingText}>جارٍ تحميل ملفاتك من المدرسة...</Text></View>
       ) : profilesQuery.isError ? (
         <AppNotice message={getApiErrorMessage(profilesQuery.error)} />
+        <Button mode="outlined" onPress={() => void profilesQuery.refetch()} icon="refresh" textColor={palette.primary}>إعادة تحميل الملفات</Button>
       ) : options.length ? (
         options.map((option) => {
           const Icon = icons[option.type];

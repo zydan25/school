@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { Button, Text, TextInput } from "react-native-paper";
@@ -13,9 +13,15 @@ import { palette, spacing } from "@/core/theme/tokens";
 
 export function AcceptInvitationScreen() {
   const acceptInvitation = useAuthStore((state) => state.acceptInvitation);
+  const session = useAuthStore((state) => state.session);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (hasHydrated && !session) router.replace("/login" as never);
+  }, [hasHydrated, session]);
 
   async function submit() {
     setError("");
