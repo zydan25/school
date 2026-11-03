@@ -18,6 +18,9 @@ import {
   getAttendanceRecords,
   getAttendanceScores,
   getAttendanceRegister,
+  getAttendanceRegisters,
+  approveAttendanceRegister,
+  reviewAttendanceExcuse,
   getAttendanceStatusTypes,
   getStudentsForAttendance,
   getTeacherAssignmentsForAttendance,
@@ -105,7 +108,8 @@ export function AttendanceScreen() {
   return (
     <AppScreen>
       {workspace === "guardian" ? <GuardianAttendance /> :
-        workspace === "teacher" || workspace === "management" ? <TeacherAttendance /> :
+        workspace === "teacher" ? <TeacherAttendance /> :
+          workspace === "management" ? <ManagementAttendance /> :
           <ModuleEmpty
             title="سجل الحضور"
             body="السجل الذاتي للطالب يحتاج مسار قراءة مخصصاً من الخادم. هذه الوحدة تعرض حالياً سجل أبناء ولي الأمر، وتتيح للمعلم رصد سجل الشعبة وفق صلاحياته."
@@ -294,6 +298,207 @@ function ExcuseCard({ item }: { item: AttendanceExcuse }) {
       <ValueLine label="السبب" value={item.reason} />
       {item.review_notes ? <ValueLine label="ملاحظة المدرسة" value={item.review_notes} /> : null}
     </ModuleCard>
+  );
+}
+
+function ManagementAttendance() {
+  const queryClient = useQueryClient();
+  const queryScope = useModuleQueryScope();
+  const [date, setDate] = useState(todayIso());
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+
+  const registersQuery = useQuery({
+    queryKey: ["module", "attendance-management-registers", date, ...queryScope],
+    queryFn: () => getAttendanceRegisters(date),
+    enabled: isValidDateRange(date, date),
+    refetchInterval: 30_000,
+  });
+  const excusesQuery = useQuery({
+    queryKey: ["module", "attendance-management-excuses", ...queryScope],
+    queryFn: () => getAttendanceExcuses("submitted"),
+    refetchInterval: 30_000,
+  });
+
+  const approveRegisterMutation = useMutation({
+    mutationFn: approveAttendanceRegister,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["module", "attendance-management-registers", ...queryScope],
+      });
+    },
+  });
+  const reviewExcuseMutation = useMutation({
+    mutationFn: ({ id, approved }: { id: string; approved: boolean }) =>
+      reviewAttendanceExcuse(id, approved, reviewNotes[id] ?? ""),
+    onSuccess: async (_, variables) => {
+      setReviewNotes((current) => {
+        const next = { ...current };
+        delete next[variables.id];
+        return next;
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["module", "attendance-management-excuses", ...queryScope],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["module", "attendance", ...queryScope],
+      });
+    },
+  });
+
+  const registers = registersQuery.data ?? [];
+  const submittedRegisters = registers.filter((item) => item.status === "submitted");
+  const excuses = excusesQuery.data ?? [];
+
+  return (
+    <>
+      <ModuleHeader
+        title="مراجعة الحضور والأعذار"
+        subtitle="اعتماد سجلات المعلمين ومراجعة أعذار أولياء الأمور. يتحقق الخادم من الصلاحية وحالة كل سجل قبل التنفيذ."
+      />
+
+      <ModuleCard>
+        <Text style={styles.fieldLabel}>تاريخ سجلات الحضور</Text>
+        <TextInput
+          mode="outlined"
+          label="التاريخ (YYYY-MM-DD)"
+          value={date}
+          onChangeText={setDate}
+          style={styles.input}
+          contentStyle={styles.inputText}
+        />
+        {!isValidDateRange(date, date) ? (
+          <AppNotice message="أدخل تاريخاً صحيحاً بصيغة YYYY-MM-DD." />
+        ) : null}
+        <View style={styles.managementSummary}>
+          <View style={styles.managementMetric}>
+            <Text style={styles.managementMetricValue}>{submittedRegisters.length}</Text>
+            <Text style={styles.managementMetricLabel}>سجلات بانتظار الاعتماد</Text>
+          </View>
+          <View style={styles.managementMetric}>
+            <Text style={styles.managementMetricValue}>{excuses.length}</Text>
+            <Text style={styles.managementMetricLabel}>أعذار بانتظار المراجعة</Text>
+          </View>
+        </View>
+      </ModuleCard>
+
+      <View style={styles.sectionTitle}>
+        <AppIcon icon={CalendarCheck2} color={palette.secondary} size={19} />
+        <Text style={styles.sectionHeading}>سجلات الحضور المرسلة</Text>
+      </View>
+      {registersQuery.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
+      {registersQuery.isError ? (
+        <AppNotice message={getApiErrorMessage(registersQuery.error)} />
+      ) : null}
+      {!registersQuery.isLoading && !registersQuery.isError && !submittedRegisters.length ? (
+        <ModuleEmpty
+          title="لا توجد سجلات تنتظر الاعتماد"
+          body="لم يرسل المعلمون سجلات حضور معلقة لهذا التاريخ، أو لا تتوفر لك صلاحية قراءة سجلات هذه المدرسة."
+        />
+      ) : null}
+      {submittedRegisters.map((register) => {
+        const absentCount = register.student_records.filter((item) =>
+          ["absent_unexcused", "absent_excused"].includes(item.status_category),
+        ).length;
+        const lateCount = register.student_records.filter((item) =>
+          ["late", "late_excused"].includes(item.status_category),
+        ).length;
+        return (
+          <ModuleCard key={register.id}>
+            <View style={styles.cardTop}>
+              <View style={styles.studentDetails}>
+                <Text style={styles.cardTitle}>{register.section_name}</Text>
+                <Text style={styles.footnote}>
+                  {register.grade_name ? register.grade_name + " · " : ""}
+                  {formatDate(register.date)}
+                </Text>
+              </View>
+              <StatusPill value={register.status} labels={{ submitted: "مرسل للمراجعة" }} />
+            </View>
+            <ValueLine label="عدد الطلاب في السجل" value={String(register.student_records.length)} />
+            <ValueLine label="غياب" value={String(absentCount)} />
+            <ValueLine label="تأخر" value={String(lateCount)} />
+            <ValueLine label="وقت الإرسال" value={register.submitted_at ? formatDate(register.submitted_at) : "—"} />
+            <Button
+              mode="contained"
+              buttonColor={palette.success}
+              loading={approveRegisterMutation.isPending}
+              disabled={approveRegisterMutation.isPending}
+              onPress={() => approveRegisterMutation.mutate(register.id)}
+            >
+              اعتماد سجل الحضور
+            </Button>
+          </ModuleCard>
+        );
+      })}
+      {approveRegisterMutation.isError ? (
+        <AppNotice message={getApiErrorMessage(approveRegisterMutation.error)} />
+      ) : null}
+      {approveRegisterMutation.isSuccess ? (
+        <AppNotice tone="success" message="استلم الخادم طلب الاعتماد ونفذ انتقال السجل حسب دورة الاعتماد." />
+      ) : null}
+
+      <View style={styles.sectionTitle}>
+        <AppIcon icon={Users} color={palette.secondary} size={19} />
+        <Text style={styles.sectionHeading}>أعذار أولياء الأمور</Text>
+      </View>
+      {excusesQuery.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
+      {excusesQuery.isError ? <AppNotice message={getApiErrorMessage(excusesQuery.error)} /> : null}
+      {!excusesQuery.isLoading && !excusesQuery.isError && !excuses.length ? (
+        <ModuleEmpty
+          title="لا توجد أعذار معلقة"
+          body="لا توجد طلبات في حالة مقدم للدراسة. لا يظهر هنا الطلب إلا قبل مراجعته، ويزيله الخادم من قائمة الانتظار بعد القبول أو الرفض."
+        />
+      ) : null}
+      {excuses.map((item) => (
+        <ModuleCard key={item.id}>
+          <View style={styles.cardTop}>
+            <Text style={styles.cardTitle}>{item.student_name}</Text>
+            <StatusPill value={item.status} labels={excuseLabels} />
+          </View>
+          <ValueLine label="ولي الأمر" value={item.guardian_name ?? "—"} />
+          <ValueLine label="نوع الطلب" value={excuseLabels[item.request_type] ?? item.request_type} />
+          <ValueLine label="الفترة" value={formatDate(item.start_date) + " – " + formatDate(item.end_date)} />
+          <ValueLine label="السبب" value={item.reason} />
+          <TextInput
+            mode="outlined"
+            label="ملاحظات المراجعة (اختياري)"
+            value={reviewNotes[item.id] ?? ""}
+            onChangeText={(value) => setReviewNotes((current) => ({ ...current, [item.id]: value }))}
+            multiline
+            numberOfLines={2}
+            style={styles.input}
+            contentStyle={styles.inputText}
+          />
+          <View style={styles.reviewButtons}>
+            <Button
+              mode="contained"
+              buttonColor={palette.success}
+              loading={reviewExcuseMutation.isPending}
+              disabled={reviewExcuseMutation.isPending}
+              onPress={() => reviewExcuseMutation.mutate({ id: item.id, approved: true })}
+            >
+              قبول العذر
+            </Button>
+            <Button
+              mode="outlined"
+              textColor={palette.danger}
+              loading={reviewExcuseMutation.isPending}
+              disabled={reviewExcuseMutation.isPending}
+              onPress={() => reviewExcuseMutation.mutate({ id: item.id, approved: false })}
+            >
+              رفض العذر
+            </Button>
+          </View>
+        </ModuleCard>
+      ))}
+      {reviewExcuseMutation.isError ? (
+        <AppNotice message={getApiErrorMessage(reviewExcuseMutation.error)} />
+      ) : null}
+      {reviewExcuseMutation.isSuccess ? (
+        <AppNotice tone="success" message="تمت مراجعة الطلب عبر الخادم وتحديث حالته وسجل الحضور المتأثر عند الموافقة." />
+      ) : null}
+      <AppNotice message="إذا لم يكن دورك يملك صلاحية اعتماد الحضور أو مراجعة الأعذار، سيمنع الخادم العملية وتظهر رسالة الصلاحيات. لا يغيّر التطبيق السجل أو حالة العذر محلياً." />
+    </>
   );
 }
 
@@ -516,4 +721,9 @@ const styles = StyleSheet.create({
   assignmentChoiceSelected: { borderColor: palette.primary, backgroundColor: palette.primary },
   assignmentText: { color: palette.text, fontSize: 11, textAlign: "right" },
   studentDetails: { flex: 1, gap: 3, alignItems: "flex-start" },
+  managementSummary: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.sm },
+  managementMetric: { flex: 1, backgroundColor: palette.surfaceSoft, borderWidth: 1, borderColor: palette.border, borderRadius: 12, padding: 10, gap: 4 },
+  managementMetricValue: { color: palette.primary, fontSize: 20, fontWeight: "900", textAlign: "right" },
+  managementMetricLabel: { color: palette.muted, fontSize: 10, textAlign: "right" },
+  reviewButtons: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
 });
