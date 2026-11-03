@@ -5,6 +5,8 @@ import hashlib
 import http.client
 import ipaddress
 import json
+import base64
+import re
 import logging
 import socket
 import urllib.error
@@ -295,40 +297,110 @@ def _format_payload(value, values):
 
 def _post_gateway_json(gateway, payload, idempotency_key):
     parsed, pinned_ip, port = _resolve_gateway_url(gateway.api_endpoint_url)
+    provider = gateway.provider
     headers = {
-        "Content-Type": "application/json",
         "Accept": "application/json",
         "User-Agent": "School-ERP-Notifications/1.0",
         "X-Idempotency-Key": idempotency_key,
     }
-    if gateway.auth_token:
-        headers["Authorization"] = f"Bearer {gateway.auth_token}"
-        headers["X-API-Key"] = gateway.auth_token
-    for name, value in (gateway.custom_headers or {}).items():
-        if name.lower() in {"authorization", "proxy-authorization", "host", "content-length"}:
-            continue
-        if isinstance(value, (str, int, float)):
-            headers[str(name)] = str(value)
+    endpoint_path = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
 
-    data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    path = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+    if provider == SchoolMessagingGateway.Provider.TWILIO:
+        match = re.search(r"/Accounts/([A-Z0-9]+)/Messages(?:\\.json)?$", parsed.path, re.IGNORECASE)
+        if not match or not gateway.auth_token or not gateway.sender_id:
+            raise DeliveryError("إعداد Twilio يتطلب Account SID وAuth Token ورقم مرسل.", code="twilio_config", retryable=False)
+        account_sid = match.group(1)
+        credential = base64.b64encode(f"{account_sid}:{gateway.auth_token}".encode("utf-8")).decode("ascii")
+        headers["Authorization"] = f"Basic {credential}"
+        to_number = str(payload.get("to", ""))
+        from_number = gateway.sender_id
+        if gateway.channel == SchoolMessagingGateway.Channel.WHATSAPP:
+            if not to_number.startswith("whatsapp:"):
+                to_number = f"whatsapp:{to_number if to_number.startswith('+') else '+' + to_number}"
+            if not from_number.startswith("whatsapp:"):
+                from_number = f"whatsapp:{from_number if from_number.startswith('+') else '+' + from_number}"
+        form_data = {
+            "To": to_number,
+            "From": from_number,
+            "Body": str(payload.get("body") or payload.get("message") or ""),
+        }
+        callback_url = payload.get("StatusCallback") or payload.get("status_callback_url")
+        if callback_url:
+            if not _public_gateway_url(str(callback_url)):
+                raise DeliveryError("رابط إيصال Twilio غير آمن.", code="unsafe_status_callback", retryable=False)
+            form_data["StatusCallback"] = str(callback_url)
+        body = urllib.parse.urlencode(form_data).encode("utf-8")
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+    elif provider == SchoolMessagingGateway.Provider.ULTRAMSG:
+        if not gateway.auth_token or not payload.get("to") or not (payload.get("body") or payload.get("message")):
+            raise DeliveryError("إعداد UltraMsg أو محتوى الرسالة غير مكتمل.", code="ultramsg_config", retryable=False)
+        query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        query = [(key, value) for key, value in query if key.lower() != "token"]
+        query.append(("token", gateway.auth_token))
+        endpoint_path = urllib.parse.urlunsplit(("", "", parsed.path or "/", urllib.parse.urlencode(query), ""))
+        body = urllib.parse.urlencode({
+            "to": str(payload["to"]).replace("+", ""),
+            "body": str(payload.get("body") or payload.get("message")),
+            "priority": "1",
+        }).encode("utf-8")
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+    elif provider == SchoolMessagingGateway.Provider.INFOBIP:
+        if not gateway.auth_token or not gateway.sender_id:
+            raise DeliveryError("إعداد Infobip يتطلب App API Key ومعرف مرسل.", code="infobip_config", retryable=False)
+        headers["Authorization"] = f"App {gateway.auth_token}"
+        destination = str(payload.get("to", ""))
+        message_text = str(payload.get("body") or payload.get("message") or "")
+        if gateway.channel == SchoolMessagingGateway.Channel.WHATSAPP:
+            message = {
+                "from": gateway.sender_id,
+                "to": destination,
+                "content": {"text": message_text},
+                "callbackData": idempotency_key,
+            }
+        else:
+            message = {
+                "from": gateway.sender_id,
+                "destinations": [{"to": destination}],
+                "text": message_text,
+            }
+        body = json.dumps({"messages": [message]}, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    else:
+        headers["Content-Type"] = "application/json"
+        if gateway.auth_token:
+            headers["Authorization"] = f"Bearer {gateway.auth_token}"
+            headers["X-API-Key"] = gateway.auth_token
+        for name, value in (gateway.custom_headers or {}).items():
+            if name.lower() in {
+                "authorization", "proxy-authorization", "host", "content-length",
+                "x-api-key", "cookie", "set-cookie",
+            }:
+                continue
+            if isinstance(value, (str, int, float)):
+                headers[str(name)] = str(value)
+        if not isinstance(payload, dict):
+            raise DeliveryError("قالب بوابة الرسائل يجب أن ينتج كائن JSON.", code="gateway_template", retryable=False)
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+
+    path = urllib.parse.urlunsplit(("", "", parsed.path or "/", urllib.parse.urlsplit(endpoint_path).query, ""))
     if parsed.scheme == "https":
         class PinnedHTTPSConnection(http.client.HTTPSConnection):
             def connect(self):
                 sock = socket.create_connection((pinned_ip, self.port), timeout=self.timeout)
                 self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
-
         connection_class = PinnedHTTPSConnection
     else:
         class PinnedHTTPConnection(http.client.HTTPConnection):
             def connect(self):
                 self.sock = socket.create_connection((pinned_ip, self.port), timeout=self.timeout)
-
         connection_class = PinnedHTTPConnection
 
     conn = connection_class(parsed.hostname, port=port, timeout=8)
     try:
-        conn.request("POST", path, body=data, headers=headers)
+        conn.request("POST", path, body=body, headers=headers)
         response = conn.getresponse()
         raw = response.read(65536)
         if response.status < 200 or response.status >= 300:
@@ -342,6 +414,10 @@ def _post_gateway_json(gateway, payload, idempotency_key):
         except (UnicodeDecodeError, json.JSONDecodeError):
             response_data = {}
         reference = response_data.get("message_id") or response_data.get("id") or response_data.get("sid")
+        if provider == SchoolMessagingGateway.Provider.INFOBIP:
+            messages = response_data.get("messages") or []
+            if messages:
+                reference = messages[0].get("messageId") or reference
         return str(reference or "")[:160], response.status
     except DeliveryError:
         raise
