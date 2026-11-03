@@ -1081,7 +1081,8 @@ class SchoolAssetDisposalAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 from apps.inventory.models import (
     InventoryItem, PurchaseOrder, PurchaseReceipt, StockMovement, Supplier,
-    VendorInvoice, VendorInvoicePayment, Warehouse, WarehouseStock, WarehouseTransfer,
+    VendorInvoice, VendorInvoicePayment, Warehouse, WarehouseStock,
+    WarehouseStocktake, WarehouseStocktakeLine, WarehouseTransfer,
 )
 
 
@@ -1133,6 +1134,47 @@ class SchoolWarehouseStockAdmin(SchoolScopedAdmin):
     list_filter = ("warehouse",)
     search_fields = ("item__code", "item__name", "warehouse__name")
     readonly_fields = ("id", "created_at", "updated_at", "item", "warehouse", "quantity", "average_unit_cost")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+
+
+@admin.register(WarehouseStocktake, site=school_admin_site)
+class SchoolWarehouseStocktakeAdmin(SchoolScopedAdmin):
+    list_display = ("stocktake_number", "warehouse", "count_date", "status", "created_by", "posted_by")
+    list_filter = ("status", "count_date", "warehouse")
+    search_fields = ("stocktake_number", "warehouse__name")
+    readonly_fields = (
+        "id", "created_at", "updated_at", "warehouse", "stocktake_number",
+        "count_date", "idempotency_key", "status", "created_by", "posted_by",
+        "posted_at", "cancelled_by", "cancelled_at", "notes",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WarehouseStocktakeLine, site=school_admin_site)
+class SchoolWarehouseStocktakeLineAdmin(SchoolScopedAdmin):
+    list_display = ("stocktake", "item", "system_quantity", "counted_quantity", "variance", "unit_cost")
+    list_filter = ("stocktake__status", "stocktake__warehouse")
+    search_fields = ("stocktake__stocktake_number", "item__code", "item__name")
+    readonly_fields = (
+        "id", "created_at", "updated_at", "stocktake", "item",
+        "system_quantity", "counted_quantity", "unit_cost",
+    )
+
+    @admin.display(description="فرق الجرد")
+    def variance(self, obj):
+        return obj.variance
 
     def has_add_permission(self, request):
         return False
