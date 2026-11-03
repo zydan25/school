@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   build-apk:
-    name: Build Madrasati ARM64 debug APK
+    name: Build Madrasati standalone ARM64 APK
     runs-on: ubuntu-latest
     env:
       EXPO_PUBLIC_API_BASE_URL: https://school.alattab.site/api/v1
@@ -43,7 +43,6 @@ jobs:
       - name: Setup Gradle Cache
         uses: gradle/actions/setup-gradle@v6
         with:
-          # Allow this feature branch to populate its own Gradle cache.
           cache-read-only: false
 
       - name: Install JavaScript dependencies
@@ -73,14 +72,14 @@ jobs:
             exit 1
           fi
 
-      - name: Assemble debug APK (ARM64 only)
-        id: gradle-build
+      # Release variant embeds the app bundle and does not open the Expo Dev Launcher.
+      # ARM64 is retained for the target physical Android phone used for this test.
+      - name: Assemble standalone Release APK (ARM64 only)
         working-directory: mobile/android
         shell: bash
         run: |
           set -o pipefail
-          echo "Building ARM64 APK for physical Android devices."
-          ./gradlew :app:assembleDebug \
+          ./gradlew :app:assembleRelease \
             -PreactNativeArchitectures=arm64-v8a \
             --build-cache \
             --max-workers=2 \
@@ -89,15 +88,15 @@ jobs:
             --stacktrace \
             --info
 
-      - name: Verify APK output
+      - name: Verify standalone APK output
         working-directory: mobile
-        run: test -s android/app/build/outputs/apk/debug/app-debug.apk
+        run: test -s android/app/build/outputs/apk/release/app-release.apk
 
-      - name: Upload Madrasati APK
+      - name: Upload Madrasati standalone APK
         uses: actions/upload-artifact@v4
         with:
-          name: madrasati-android-arm64-debug-apk
-          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: madrasati-android-arm64-standalone-apk
+          path: mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
 
