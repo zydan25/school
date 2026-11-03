@@ -6,10 +6,14 @@ from apps.inventory.models import (
     InventoryItem,
     PurchaseOrder,
     PurchaseOrderItem,
+    PurchaseReceipt,
     StockMovement,
     Supplier,
     VendorInvoice,
+    VendorInvoicePayment,
     Warehouse,
+    WarehouseStock,
+    WarehouseTransfer,
 )
 
 
@@ -116,3 +120,72 @@ class VendorInvoiceAdmin(ModelAdmin):
             self.message_user(request, f"تم اعتماد وترحيل {posted_count} فاتورة مورد بنجاح.")
         for error in errors[:10]:
             self.message_user(request, error, level="ERROR")
+
+
+
+@admin.register(WarehouseStock)
+class WarehouseStockAdmin(ModelAdmin):
+    list_display = ("item", "warehouse", "quantity", "average_unit_cost", "school")
+    list_filter = ("school", "warehouse")
+    search_fields = ("item__code", "item__name", "warehouse__name")
+    readonly_fields = ("id", "school", "branch", "item", "warehouse", "quantity", "average_unit_cost", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PurchaseReceipt)
+class PurchaseReceiptAdmin(ModelAdmin):
+    list_display = ("receipt_number", "purchase_order", "received_at", "received_by", "school")
+    list_filter = ("school", "received_at")
+    search_fields = ("receipt_number", "purchase_order__order_number")
+    readonly_fields = ("id", "school", "branch", "purchase_order", "receipt_number", "idempotency_key", "payload_hash", "received_at", "received_by", "notes", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WarehouseTransfer)
+class WarehouseTransferAdmin(ModelAdmin):
+    list_display = ("transfer_number", "item", "source_warehouse", "destination_warehouse", "quantity", "status", "school")
+    list_filter = ("school", "status", "transfer_date")
+    search_fields = ("transfer_number", "item__code", "item__name")
+    readonly_fields = ("id", "school", "branch", "transfer_number", "item", "source_warehouse", "destination_warehouse", "quantity", "unit_cost", "transfer_date", "idempotency_key", "status", "posted_by", "posted_at", "reversed_at", "notes", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(VendorInvoicePayment)
+class VendorInvoicePaymentAdmin(ModelAdmin):
+    list_display = ("invoice", "payment_voucher", "amount", "payment_date", "recorded_by", "school")
+    list_filter = ("school", "payment_date")
+    search_fields = ("invoice__invoice_number", "payment_voucher__voucher_number")
+    readonly_fields = ("id", "school", "branch", "invoice", "payment_voucher", "journal_entry", "amount", "idempotency_key", "payment_date", "recorded_by", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
