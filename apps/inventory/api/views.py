@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Sum, F, Q
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -337,6 +337,11 @@ class VendorInvoiceDetailAPIView(SchoolDetailAPIView):
     def get_queryset(self):
         return super().get_queryset().select_related("supplier", "purchase_order", "journal_entry")
 
+    def perform_destroy(self, instance):
+        if instance.journal_entry_id or instance.paid_amount > 0:
+            raise ValidationError("لا يمكن أرشفة فاتورة مرتبطة بقيد أو دفعة؛ استخدم إجراءات العكس المحاسبي.")
+        instance.archive(actor=self.request.user, reason="أرشفة فاتورة مورد غير معتمدة")
+
 
 class VendorInvoiceApproveAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -416,7 +421,6 @@ class WarehouseTransferListCreateAPIView(generics.ListCreateAPIView):
         return self.get_paginated_response(rows) if page is not None else Response(rows)
 
     def post(self, request, *args, **kwargs):
-        from rest_framework import serializers
         from apps.inventory.api.serializers import WarehouseTransferCreateSerializer
 
         serializer = WarehouseTransferCreateSerializer(data=request.data, context={"school": _school(request)})
