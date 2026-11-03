@@ -469,7 +469,7 @@ class Report5AndTimetableSystemTests(TestCase):
             unit_cost=item_b.unit_cost,
             idempotency_key="legacy-receipt-b",
             notes="توريد اختباري",
-            created_by=self.user,
+            created_by=self.owner,
         )
         record_stock_movement(
             school=self.school,
@@ -489,7 +489,7 @@ class Report5AndTimetableSystemTests(TestCase):
                 movement=receipt_mov,
                 idempotency_key="legacy-receipt-b-rev",
                 reason="محاولة عكس توريد تجاوز ما تبقى من الرصيد",
-                reversed_by=self.user,
+                reversed_by=self.owner,
             )
         item_b.refresh_from_db()
         self.assertEqual(item_b.current_stock, Decimal("2.00"))
