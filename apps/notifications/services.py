@@ -24,6 +24,7 @@ from apps.notifications.models import (
     InboundWebhookMessage,
     Notification,
     NotificationDeliveryAttempt,
+    NotificationDeliveryReceipt,
     NotificationPreference,
     NotificationTemplate,
     OutboxEvent,

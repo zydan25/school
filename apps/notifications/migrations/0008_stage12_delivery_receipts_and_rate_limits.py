@@ -9,6 +9,20 @@ class Migration(migrations.Migration):
     dependencies = [("notifications", "0007_stage12_private_conversation_attachments")]
     operations = [
         migrations.AlterField(
+            model_name="outboxevent",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("pending", "بانتظار المعالجة"),
+                    ("processing", "قيد المعالجة"),
+                    ("processed", "تمت المعالجة"),
+                    ("failed", "فشلت"),
+                    ("cancelled", "ملغاة"),
+                ],
+                db_index=True, default="pending", max_length=12, verbose_name="الحالة",
+            ),
+        ),
+        migrations.AlterField(
             model_name="notification",
             name="status",
             field=models.CharField(

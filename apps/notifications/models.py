@@ -117,6 +117,7 @@ class OutboxEvent(UUIDTimestampedModel):
         PROCESSING = "processing", "قيد المعالجة"
         PROCESSED = "processed", "تمت المعالجة"
         FAILED = "failed", "فشلت"
+        CANCELLED = "cancelled", "ملغاة"
 
     school = models.ForeignKey("tenants.School", verbose_name="المدرسة", null=True, blank=True, on_delete=models.PROTECT, related_name="outbox_events")
     event_name = models.CharField("اسم الحدث", max_length=120, db_index=True)
