@@ -268,6 +268,11 @@ class StockMovement(TenantOwnedModel):
         "self", null=True, blank=True, on_delete=models.PROTECT,
         related_name="reversal", verbose_name="الحركة الأصلية المعكوسة",
     )
+    stocktake_line = models.OneToOneField(
+        "inventory.WarehouseStocktakeLine", null=True, blank=True,
+        on_delete=models.PROTECT, related_name="stock_movement",
+        verbose_name="بند الجرد المصدر",
+    )
 
     class Meta:
         verbose_name = "حركة مخزنية"
@@ -323,6 +328,14 @@ class StockMovement(TenantOwnedModel):
         if self.reversal_of_id:
             if self.reversal_of.school_id != self.school_id or self.reversal_of.item_id != self.item_id:
                 raise ValidationError({"reversal_of": "الحركة الأصلية لا تتطابق مع المدرسة والصنف."})
+        if self.stocktake_line_id:
+            line = self.stocktake_line
+            if (
+                line.school_id != self.school_id
+                or line.item_id != self.item_id
+                or line.stocktake.warehouse_id != self.warehouse_id
+            ):
+                raise ValidationError({"stocktake_line": "بند الجرد لا يطابق المدرسة والصنف والمستودع."})
 
     def save(self, *args, **kwargs):
         from django.db import transaction
@@ -344,6 +357,20 @@ class StockMovement(TenantOwnedModel):
                 self.branch_id = warehouse.branch_id
             elif self.branch_id and item.branch_id and self.branch_id != item.branch_id:
                 raise ValidationError("فرع الحركة لا يطابق فرع الصنف.")
+
+            active_stocktake = WarehouseStocktake.objects.select_for_update().filter(
+                school_id=self.school_id,
+                warehouse=warehouse,
+                status=WarehouseStocktake.Status.COUNTING,
+                is_archived=False,
+            ).first()
+            if active_stocktake and (
+                not self.stocktake_line_id
+                or self.stocktake_line.stocktake_id != active_stocktake.pk
+            ):
+                raise ValidationError(
+                    "المستودع في حالة جرد فعّال؛ أوقف الحركات حتى اعتماد الجرد أو إلغائه."
+                )
 
             balance, _ = WarehouseStock.objects.get_or_create(
                 school_id=self.school_id,
@@ -843,3 +870,148 @@ class VendorInvoicePayment(TenantOwnedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("لا يجوز حذف دفعة مورد؛ التصحيح عبر عكس سند الصرف والقيد المحاسبي.")
+
+
+class WarehouseStocktake(TenantOwnedModel):
+    """محضر جرد فعلي يقفل المستودع مؤقتاً حتى الاعتماد أو الإلغاء."""
+
+    class Status(models.TextChoices):
+        COUNTING = "counting", "قيد الجرد"
+        POSTED = "posted", "معتمد ومرحّل"
+        CANCELLED = "cancelled", "ملغى"
+
+    warehouse = models.ForeignKey(
+        Warehouse, on_delete=models.PROTECT, related_name="stocktakes",
+        verbose_name="المستودع",
+    )
+    stocktake_number = models.CharField("رقم محضر الجرد", max_length=60)
+    count_date = models.DateField("تاريخ الجرد", default=timezone.localdate)
+    idempotency_key = models.CharField("مفتاح منع تكرار الجرد", max_length=100)
+    status = models.CharField("حالة الجرد", max_length=20, choices=Status.choices, default=Status.COUNTING)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="created_inventory_stocktakes", verbose_name="منشئ الجرد",
+    )
+    posted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="posted_inventory_stocktakes", verbose_name="معتمد الجرد",
+    )
+    posted_at = models.DateTimeField("تاريخ اعتماد الجرد", null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="cancelled_inventory_stocktakes", verbose_name="ملغي الجرد",
+    )
+    cancelled_at = models.DateTimeField("تاريخ إلغاء الجرد", null=True, blank=True)
+    notes = models.TextField("ملاحظات الجرد", blank=True)
+
+    class Meta:
+        verbose_name = "محضر جرد مخزني"
+        verbose_name_plural = "محاضر الجرد المخزني"
+        permissions = [
+            ("count_warehousestocktake", "Can record warehouse stock counts"),
+            ("post_warehousestocktake", "Can post warehouse stocktakes"),
+            ("cancel_warehousestocktake", "Can cancel warehouse stocktakes"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "stocktake_number"],
+                condition=models.Q(is_archived=False),
+                name="inventory_stocktake_number_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "idempotency_key"],
+                condition=models.Q(is_archived=False),
+                name="inventory_stocktake_idem_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "warehouse"],
+                condition=models.Q(is_archived=False, status="counting"),
+                name="inventory_one_active_stocktake_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["school", "warehouse", "status"], name="inventory_stocktake_scope_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.warehouse_id and self.warehouse.school_id != self.school_id:
+            raise ValidationError({"warehouse": "المستودع لا يتبع المدرسة نفسها."})
+        if self.warehouse_id and self.warehouse.is_archived:
+            raise ValidationError({"warehouse": "لا يمكن جرد مستودع مؤرشف."})
+        if not 8 <= len(self.idempotency_key.strip()) <= 100:
+            raise ValidationError({"idempotency_key": "مفتاح منع التكرار يجب أن يكون بين 8 و100 حرف."})
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("محضر الجرد لا يعدل مباشرة؛ استخدم خدمات الجرد المعتمدة.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("لا تحذف محاضر الجرد؛ استخدم الإلغاء قبل الترحيل.")
+
+
+class WarehouseStocktakeLine(TenantOwnedModel):
+    """سطر جرد يحتفظ برصيد النظام ونتيجة العد الفعلي قبل التسوية."""
+
+    stocktake = models.ForeignKey(
+        WarehouseStocktake, on_delete=models.PROTECT, related_name="lines",
+        verbose_name="محضر الجرد",
+    )
+    item = models.ForeignKey(
+        InventoryItem, on_delete=models.PROTECT, related_name="stocktake_lines",
+        verbose_name="الصنف",
+    )
+    system_quantity = models.DecimalField("رصيد النظام عند بدء الجرد", max_digits=14, decimal_places=2)
+    counted_quantity = models.DecimalField(
+        "الكمية الفعلية المعدودة", max_digits=14, decimal_places=2,
+        null=True, blank=True,
+    )
+    unit_cost = models.DecimalField("متوسط تكلفة الوحدة وقت الجرد", max_digits=14, decimal_places=4, default=Decimal("0.0000"))
+
+    class Meta:
+        verbose_name = "بند محضر جرد"
+        verbose_name_plural = "بنود محاضر الجرد"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "stocktake", "item"],
+                condition=models.Q(is_archived=False),
+                name="inventory_stocktake_item_uniq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(system_quantity__gte=0),
+                name="inventory_stocktake_system_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(counted_quantity__isnull=True) | models.Q(counted_quantity__gte=0),
+                name="inventory_stocktake_count_nonnegative",
+            ),
+        ]
+
+    @property
+    def variance(self):
+        if self.counted_quantity is None:
+            return None
+        return self.counted_quantity - self.system_quantity
+
+    def clean(self):
+        super().clean()
+        if self.stocktake_id and self.stocktake.school_id != self.school_id:
+            raise ValidationError({"stocktake": "محضر الجرد لا يتبع المدرسة نفسها."})
+        if self.item_id and self.item.school_id != self.school_id:
+            raise ValidationError({"item": "الصنف لا يتبع المدرسة نفسها."})
+        if self.stocktake_id and self.item_id:
+            if self.stocktake.warehouse_id != self.item.warehouse_id and not self.item.warehouse_balances.filter(
+                warehouse=self.stocktake.warehouse, is_archived=False,
+            ).exists():
+                raise ValidationError({"item": "الصنف لا يملك مستودعاً أو رصيداً في المستودع الجاري جرده."})
+        if self.system_quantity < 0 or (self.counted_quantity is not None and self.counted_quantity < 0):
+            raise ValidationError("كميات الجرد لا يمكن أن تكون سالبة.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("سطر الجرد تاريخي؛ تسجل نتيجة العد عبر خدمة الجرد فقط.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("لا يجوز حذف سطر جرد؛ ألغِ المحضر قبل ترحيله.")
