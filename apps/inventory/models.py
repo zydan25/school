@@ -185,7 +185,7 @@ class StockMovement(TenantOwnedModel):
     )
     warehouse = models.ForeignKey(
         Warehouse, verbose_name="المستودع", on_delete=models.PROTECT,
-        related_name="movements", null=True, blank=True,
+        related_name="movements",
     )
     movement_type = models.CharField("نوع الحركة", max_length=20, choices=MovementType.choices)
     quantity = models.DecimalField("الكمية", max_digits=12, decimal_places=2)
@@ -350,6 +350,7 @@ class PurchaseReceipt(TenantOwnedModel):
     receipt_number = models.CharField("رقم محضر الاستلام", max_length=60)
     idempotency_key = models.CharField("مفتاح منع التكرار", max_length=100)
     received_at = models.DateTimeField("تاريخ الاستلام", default=timezone.now)
+    payload_hash = models.CharField("بصمة بيانات طلب الاستلام", max_length=64)
     received_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="inventory_receipts", verbose_name="مستلم التوريد",
