@@ -288,9 +288,7 @@ class SchoolConversationsAPIView(APIView):
             role = _user_role(user, school)
             if role is None:
                 raise ValidationError("أحد المشاركين لا يملك ملفاً أو عضوية نشطة في المدرسة.")
-            if conversation_type == SchoolConversation.ConversationType.STUDENT and role in {
-                ConversationParticipant.Role.GUARDIAN, ConversationParticipant.Role.STUDENT,
-            } and not _can_access_student(user, school, student):
+            if conversation_type == SchoolConversation.ConversationType.STUDENT and role != ConversationParticipant.Role.ADMIN and not _can_access_student(user, school, student):
                 raise PermissionDenied("أحد المشاركين غير مرتبط بالطالب المحدد.")
             ConversationParticipant.objects.get_or_create(
                 school=school, conversation=conversation, user=user,
@@ -417,9 +415,7 @@ class ConversationParticipantsAPIView(APIView):
             raise PermissionDenied("لا يمكن إضافة مشاركين إلى محادثة مغلقة.")
         user = _school_user(school, request.data.get("user_id"))
         role = _user_role(user, school)
-        if conversation.student_id and role in {
-            ConversationParticipant.Role.GUARDIAN, ConversationParticipant.Role.STUDENT,
-        }:
+        if conversation.student_id and role != ConversationParticipant.Role.ADMIN:
             if not _can_access_student(user, school, conversation.student):
                 raise PermissionDenied("المشارك غير مرتبط بالطالب المحدد.")
         participant, created = ConversationParticipant.objects.get_or_create(
@@ -483,8 +479,9 @@ class ConversationAttachmentAPIView(APIView):
             raise Http404
         handle = message.attachment.open("rb")
         response = FileResponse(handle, content_type="application/octet-stream")
-        filename = os.path.basename(message.attachment_name or message.attachment.name)
-        response["Content-Disposition"] = f'attachment; filename="{filename.replace(chr(34), "")}"'
+        from urllib.parse import quote
+        filename = os.path.basename(message.attachment_name or message.attachment.name).replace('"', "")
+        response["Content-Disposition"] = f"attachment; filename*=UTF-8\'\'{quote(filename)}"
         response["X-Content-Type-Options"] = "nosniff"
         response["Cache-Control"] = "private, no-store"
         return response

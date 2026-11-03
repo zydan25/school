@@ -475,7 +475,7 @@ def _dispatch_notification(notification, attempt_number):
     raise DeliveryError(f"قناة إشعار غير مدعومة: {channel}", code="unsupported_channel", retryable=False)
 
 
-def _safe_whatsapp_auto_reply(inbound, gateway):
+def _safe_whatsapp_auto_reply(inbound, gateway, message_text):
     """Reply only to verified, directly linked accounts; never infer identity from student numbers."""
     from apps.students.models import Guardian, Student
 
@@ -497,7 +497,7 @@ def _safe_whatsapp_auto_reply(inbound, gateway):
         elif children.exists():
             return "تم التحقق من حساب ولي الأمر. يرجى تحديد اسم الطالب المطلوب عبر تطبيق المدرسة لضمان عرض بياناته الصحيحة."
 
-    message_text = str(inbound.payload.get("message", ""))[:2000] if hasattr(inbound, "payload") else ""
+    message_text = str(message_text or "")[:2000]
     if student is None:
         return f"أهلاً بكم في {school.name}. لاستعراض بيانات الطلاب يرجى استخدام تطبيق المدرسة بالحساب الموثق."
 
@@ -546,7 +546,7 @@ def _process_inbound_webhook(event):
         inbound.save(update_fields=["processed", "updated_at"])
         return
     try:
-        reply = _safe_whatsapp_auto_reply(inbound, gateway)
+        reply = _safe_whatsapp_auto_reply(inbound, gateway, event.payload.get("message_text", ""))
         _send_message_to_gateway(
             school=inbound.school,
             channel=Notification.Channel.WHATSAPP,
@@ -598,6 +598,7 @@ def process_outbox_batch(*, limit=50, stale_after_seconds=600):
         queryset = OutboxEvent.objects.filter(
             Q(status=OutboxEvent.Status.PENDING, available_at__lte=now)
             | Q(status=OutboxEvent.Status.PROCESSING, locked_at__lt=stale_before)
+            | Q(status=OutboxEvent.Status.PROCESSING, locked_at__isnull=True)
         ).order_by("available_at", "created_at")
         if connection.features.has_select_for_update:
             queryset = queryset.select_for_update(
@@ -646,6 +647,8 @@ def process_outbox_batch(*, limit=50, stale_after_seconds=600):
                 event.processed_at = timezone.now()
                 event.locked_at = None
                 event.last_error = ""
+                if event.event_name == "webhook.whatsapp.inbound":
+                    event.payload = {"inbound_id": event.payload.get("inbound_id")}
                 event.save(update_fields=[
                     "status", "processed_at", "locked_at", "last_error", "updated_at",
                 ])

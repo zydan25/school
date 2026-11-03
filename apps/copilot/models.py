@@ -7,7 +7,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from apps.core.models import TenantOwnedModel
+from apps.core.models import UUIDTimestampedModel, TenantOwnedModel
 
 
 def curriculum_document_upload_path(instance: CurriculumDocument, filename: str) -> str:
