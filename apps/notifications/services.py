@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import ipaddress
 import json
 import logging
@@ -237,26 +238,36 @@ def mark_notification_read(*, notification_id, user, school=None):
         return notification
 
 
-def _public_gateway_url(url: str) -> bool:
+def _resolve_gateway_url(url: str):
     try:
         parsed = urllib.parse.urlsplit(url)
         allowed_schemes = {"https"} | ({"http"} if settings.DEBUG else set())
         if parsed.scheme not in allowed_schemes or not parsed.hostname:
-            return False
+            raise DeliveryError("يجب استخدام HTTPS لبوابة الرسائل.", code="unsafe_gateway_url", retryable=False)
         if parsed.username or parsed.password or parsed.fragment:
-            return False
+            raise DeliveryError("رابط البوابة يحتوي مكونات غير مسموحة.", code="unsafe_gateway_url", retryable=False)
         host = parsed.hostname.rstrip(".").lower()
         if host in {"localhost", "localhost.localdomain"}:
-            return False
-        addresses = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80))
-        if not addresses:
-            return False
-        for address in addresses:
-            ip = ipaddress.ip_address(address[4][0].split("%", 1)[0])
-            if not ip.is_global:
-                return False
+            raise DeliveryError("لا يسمح بالاتصال بمضيف محلي.", code="unsafe_gateway_url", retryable=False)
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if port not in ({443} if parsed.scheme == "https" else {80}):
+            raise DeliveryError("منفذ بوابة الرسائل غير مسموح.", code="unsafe_gateway_url", retryable=False)
+        addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        ips = list(dict.fromkeys(item[4][0].split("%", 1)[0] for item in addresses))
+        if not ips or any(not ipaddress.ip_address(ip).is_global for ip in ips):
+            raise DeliveryError("رابط البوابة يحل إلى عنوان شبكة خاصة أو محلية.", code="unsafe_gateway_url", retryable=False)
+        return parsed, ips[0], port
+    except DeliveryError:
+        raise
+    except (ValueError, OSError, socket.gaierror) as exc:
+        raise DeliveryError("تعذر التحقق من عنوان بوابة الرسائل.", code="gateway_dns_error", retryable=True) from exc
+
+
+def _public_gateway_url(url: str) -> bool:
+    try:
+        _resolve_gateway_url(url)
         return True
-    except (ValueError, OSError, socket.gaierror):
+    except DeliveryError:
         return False
 
 
@@ -283,9 +294,7 @@ def _format_payload(value, values):
 
 
 def _post_gateway_json(gateway, payload, idempotency_key):
-    if not _public_gateway_url(gateway.api_endpoint_url):
-        raise DeliveryError("رابط بوابة الرسائل غير آمن أو غير قابل للوصول.", code="unsafe_gateway_url", retryable=False)
-
+    parsed, pinned_ip, port = _resolve_gateway_url(gateway.api_endpoint_url)
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
@@ -302,37 +311,44 @@ def _post_gateway_json(gateway, payload, idempotency_key):
             headers[str(name)] = str(value)
 
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    request = urllib.request.Request(
-        gateway.api_endpoint_url, data=data, headers=headers, method="POST",
-    )
-    opener = urllib.request.build_opener(
-        urllib.request.ProxyHandler({}), _NoRedirect(),
-    )
+    path = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
+    if parsed.scheme == "https":
+        class PinnedHTTPSConnection(http.client.HTTPSConnection):
+            def connect(self):
+                sock = socket.create_connection((pinned_ip, self.port), timeout=self.timeout)
+                self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+        connection_class = PinnedHTTPSConnection
+    else:
+        class PinnedHTTPConnection(http.client.HTTPConnection):
+            def connect(self):
+                self.sock = socket.create_connection((pinned_ip, self.port), timeout=self.timeout)
+
+        connection_class = PinnedHTTPConnection
+
+    conn = connection_class(parsed.hostname, port=port, timeout=8)
     try:
-        with opener.open(request, timeout=8) as response:
-            raw = response.read(65536)
-            try:
-                response_data = json.loads(raw.decode("utf-8")) if raw else {}
-            except (UnicodeDecodeError, json.JSONDecodeError):
-                response_data = {}
-            if response.status < 200 or response.status >= 300:
-                raise DeliveryError(
-                    f"بوابة الرسائل أعادت HTTP {response.status}.",
-                    code=f"http_{response.status}",
-                    retryable=response.status in {408, 425, 429} or response.status >= 500,
-                )
-            reference = response_data.get("message_id") or response_data.get("id") or response_data.get("sid")
-            return str(reference or "")[:160], response.status
-    except urllib.error.HTTPError as exc:
-        retryable = exc.code in {408, 425, 429} or exc.code >= 500
-        raise DeliveryError(
-            f"بوابة الرسائل أعادت HTTP {exc.code}.",
-            code=f"http_{exc.code}", retryable=retryable,
-        ) from exc
-    except urllib.error.URLError as exc:
+        conn.request("POST", path, body=data, headers=headers)
+        response = conn.getresponse()
+        raw = response.read(65536)
+        if response.status < 200 or response.status >= 300:
+            raise DeliveryError(
+                f"بوابة الرسائل أعادت HTTP {response.status}.",
+                code=f"http_{response.status}",
+                retryable=response.status in {408, 425, 429} or response.status >= 500,
+            )
+        try:
+            response_data = json.loads(raw.decode("utf-8")) if raw else {}
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            response_data = {}
+        reference = response_data.get("message_id") or response_data.get("id") or response_data.get("sid")
+        return str(reference or "")[:160], response.status
+    except DeliveryError:
+        raise
+    except (OSError, http.client.HTTPException, TimeoutError) as exc:
         raise DeliveryError("تعذر الاتصال ببوابة الرسائل.", code="gateway_unreachable", retryable=True) from exc
-    except TimeoutError as exc:
-        raise DeliveryError("انتهت مهلة الاتصال ببوابة الرسائل.", code="gateway_timeout", retryable=True) from exc
+    finally:
+        conn.close()
 
 
 def _record_attempt(notification, attempt_number, destination, provider, *, succeeded, reference="", code=None, error=None):
