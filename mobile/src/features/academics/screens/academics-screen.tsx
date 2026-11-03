@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Dialog, Portal, Text, TextInput } from "react-native-paper";
 import { BookOpen, ClipboardCheck, GraduationCap, RefreshCw } from "lucide-react-native";
@@ -47,11 +47,12 @@ function formatNumber(value: string | number | null | undefined): string {
 }
 
 export function AcademicsScreen() {
+  const params = useLocalSearchParams<{ tab?: string }>();
   const session = useAuthStore((state) => state.session);
   const workspace = session?.activeWorkspace;
   const schoolId = session?.activeSchoolId;
   const queryClient = useQueryClient();
-  const [tab, setTab] = useState<Tab>("homework");
+  const [tab, setTab] = useState<Tab>(params.tab === "grades" ? "grades" : "homework");
   const [selectedHomework, setSelectedHomework] = useState<HomeworkItem | null>(null);
   const [submissionText, setSubmissionText] = useState("");
   const [submitError, setSubmitError] = useState("");
@@ -99,8 +100,7 @@ export function AcademicsScreen() {
     );
   }
 
-  const isStudent = workspace === "student";
-  const canSubmit = isStudent;
+  const canSubmit = workspace === "student";
 
   return (
     <AppScreen>
