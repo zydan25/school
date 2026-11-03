@@ -1,8 +1,10 @@
-"""Fail-closed, signed WhatsApp webhook intake; processing is delegated to Outbox."""
+"""Signed WhatsApp message and delivery-status webhook intake."""
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
+import json
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -15,33 +17,116 @@ from apps.notifications.services import enqueue_event
 from apps.tenants.models import School
 
 
+def _plain_payload(request):
+    if isinstance(request.data, dict):
+        return request.data
+    if hasattr(request.data, "dict"):
+        return request.data.dict()
+    return {}
+
+
 def _extract_message(payload):
     sender = message = provider_id = ""
-    if isinstance(payload.get("entry"), list) and payload["entry"]:
-        for change in payload["entry"][0].get("changes", []):
-            value = change.get("value", {})
-            messages = value.get("messages", [])
-            if messages:
-                item = messages[0]
-                sender = str(item.get("from", ""))
-                provider_id = str(item.get("id", ""))
-                text = item.get("text") or {}
-                message = str(text.get("body", "")) if isinstance(text, dict) else str(text)
-                break
+    if isinstance(payload.get("entry"), list):
+        for entry in payload["entry"]:
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                messages = value.get("messages", [])
+                if messages:
+                    item = messages[0]
+                    sender = str(item.get("from", ""))
+                    provider_id = str(item.get("id", ""))
+                    text = item.get("text") or {}
+                    message = str(text.get("body", "")) if isinstance(text, dict) else str(text)
+                    if sender and message:
+                        return sender.strip(), message.strip(), provider_id.strip()
+    elif "From" in payload and "Body" in payload:
+        sender = str(payload.get("From", "")).replace("whatsapp:", "")
+        message = str(payload.get("Body", ""))
+        provider_id = str(payload.get("MessageSid", ""))
     elif isinstance(payload.get("data"), dict):
         item = payload["data"]
         sender = str(item.get("from", ""))
         message = str(item.get("body", ""))
         provider_id = str(item.get("id", ""))
-    elif "From" in payload and "Body" in payload:
-        sender = str(payload.get("From", "")).replace("whatsapp:", "")
-        message = str(payload.get("Body", ""))
-        provider_id = str(payload.get("MessageSid", ""))
     else:
         sender = str(payload.get("from") or payload.get("phone") or payload.get("sender") or "")
         message = str(payload.get("message") or payload.get("text") or payload.get("body") or "")
         provider_id = str(payload.get("id") or payload.get("message_id") or "")
     return sender.strip(), message.strip(), provider_id.strip()
+
+
+def _extract_delivery_receipts(payload):
+    receipts = []
+    if isinstance(payload.get("entry"), list):
+        for entry in payload["entry"]:
+            for change in entry.get("changes", []):
+                value = change.get("value", {})
+                for item in value.get("statuses", []):
+                    errors = item.get("errors") or []
+                    receipts.append({
+                        "provider_reference": str(item.get("id", "")),
+                        "status": str(item.get("status", "")).lower(),
+                        "error_code": str(errors[0].get("code", "")) if errors else "",
+                    })
+    elif payload.get("MessageSid") and payload.get("MessageStatus"):
+        receipts.append({
+            "provider_reference": str(payload.get("MessageSid", "")),
+            "status": str(payload.get("MessageStatus", "")).lower(),
+            "error_code": str(payload.get("ErrorCode", "")),
+        })
+    else:
+        status_updates = payload.get("status_updates")
+        if isinstance(status_updates, list):
+            for item in status_updates:
+                if isinstance(item, dict):
+                    receipts.append({
+                        "provider_reference": str(item.get("provider_reference") or item.get("id") or ""),
+                        "status": str(item.get("status", "")).lower(),
+                        "error_code": str(item.get("error_code", "")),
+                    })
+        elif payload.get("provider_reference") and payload.get("status"):
+            receipts.append({
+                "provider_reference": str(payload.get("provider_reference")),
+                "status": str(payload.get("status")).lower(),
+                "error_code": str(payload.get("error_code", "")),
+            })
+    return receipts
+
+
+def _twilio_signature_is_valid(request, secret):
+    signature = request.headers.get("X-Twilio-Signature", "")
+    if not signature:
+        return False
+    signed = request.build_absolute_uri()
+    params = request.data
+    if hasattr(params, "lists"):
+        values = params.lists()
+    elif isinstance(params, dict):
+        values = [(key, [value] if not isinstance(value, list) else value) for key, value in params.items()]
+    else:
+        values = []
+    for key, items in sorted(values, key=lambda pair: pair[0]):
+        for value in sorted(str(item) for item in items):
+            signed += str(key) + value
+    expected = base64.b64encode(
+        hmac.new(secret.encode("utf-8"), signed.encode("utf-8"), hashlib.sha1).digest()
+    ).decode("ascii")
+    return hmac.compare_digest(signature, expected)
+
+
+def _signature_is_valid(request, gateway):
+    if gateway.provider == SchoolMessagingGateway.Provider.TWILIO:
+        return _twilio_signature_is_valid(request, gateway.webhook_verify_token)
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if not signature.startswith("sha256="):
+        return False
+    expected = "sha256=" + hmac.new(
+        gateway.webhook_verify_token.encode("utf-8"),
+        request.body,
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected)
 
 
 class WhatsAppWebhookAPIView(APIView):
@@ -94,22 +179,41 @@ class WhatsAppWebhookAPIView(APIView):
         school, gateway = self._gateway(school_code)
         if school is None or gateway is None or not gateway.webhook_verify_token:
             return Response({"detail": "المدرسة أو بوابة Webhook غير نشطة أو غير مهيأة."}, status=status.HTTP_403_FORBIDDEN)
+        if not _signature_is_valid(request, gateway):
+            required = "X-Twilio-Signature" if gateway.provider == SchoolMessagingGateway.Provider.TWILIO else "X-Hub-Signature-256"
+            return Response({"detail": f"توقيع Webhook صالح عبر {required} مطلوب."}, status=status.HTTP_401_UNAUTHORIZED)
 
-        signature = request.headers.get("X-Hub-Signature-256", "")
-        if not signature.startswith("sha256="):
-            return Response({"detail": "توقيع X-Hub-Signature-256 مطلوب."}, status=status.HTTP_401_UNAUTHORIZED)
-        expected = "sha256=" + hmac.new(
-            gateway.webhook_verify_token.encode("utf-8"),
-            request.body,
-            hashlib.sha256,
-        ).hexdigest()
-        if not hmac.compare_digest(signature, expected):
-            return Response({"detail": "توقيع Webhook غير صحيح."}, status=status.HTTP_403_FORBIDDEN)
+        payload = _plain_payload(request)
+        receipts = _extract_delivery_receipts(payload)
+        queued_receipts = 0
+        for receipt in receipts:
+            reference = receipt["provider_reference"][:160]
+            provider_status = receipt["status"]
+            if not reference or provider_status not in {"sent", "accepted", "delivered", "read", "failed"}:
+                continue
+            key_digest = hashlib.sha256(
+                f"{reference}|{provider_status}|{gateway.provider}".encode("utf-8")
+            ).hexdigest()
+            enqueue_event(
+                event_name="notification.delivery_receipt",
+                aggregate_type="notification_delivery",
+                aggregate_id=reference,
+                payload={
+                    "provider_reference": reference,
+                    "status": provider_status,
+                    "provider": gateway.provider,
+                    "error_code": receipt["error_code"][:80],
+                },
+                idempotency_key=f"receipt:{school.pk}:{key_digest}",
+                school=school,
+            )
+            queued_receipts += 1
+        if queued_receipts:
+            return Response({"status": "receipts_accepted", "count": queued_receipts}, status=status.HTTP_202_ACCEPTED)
 
-        payload = request.data if isinstance(request.data, dict) else {}
         sender, message, provider_id = _extract_message(payload)
         if not sender or not message:
-            return Response({"status": "ignored", "reason": "لا توجد رسالة نصية واردة."}, status=status.HTTP_200_OK)
+            return Response({"status": "ignored", "reason": "لا توجد رسالة أو إيصال تسليم صالح."}, status=status.HTTP_200_OK)
         if len(sender) > 50 or len(message) > 2000:
             return Response({"detail": "بيانات الرسالة تتجاوز الحدود المسموحة."}, status=status.HTTP_400_BAD_REQUEST)
         if not provider_id:
