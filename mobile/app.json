@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "School",
+    "slug": "school-mobile",
+    "version": "0.1.0",
+    "scheme": "school",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      [
+        "expo-localization",
+        {
+          "supportsRTL": true,
+          "forcesRTL": true,
+          "supportedLocales": ["ar", "en"]
+        }
+      ],
+      "expo-secure-store",
+      "expo-notifications"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
