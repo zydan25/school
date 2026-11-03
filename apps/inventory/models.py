@@ -356,8 +356,12 @@ class StockMovement(TenantOwnedModel):
                     if aggregate_qty > 0:
                         item.unit_cost = (aggregate_value / aggregate_qty).quantize(Decimal("0.0001"))
             elif inbound and self.movement_type == self.MovementType.TRANSFER_IN:
-                if self.unit_cost > 0 and previous_quantity == 0:
-                    balance.average_unit_cost = self.unit_cost
+                if self.unit_cost > 0:
+                    old_value = previous_quantity * balance.average_unit_cost
+                    new_value = self.quantity * self.unit_cost
+                    balance.average_unit_cost = (
+                        (old_value + new_value) / next_quantity
+                    ).quantize(Decimal("0.0001"))
 
             balance.quantity = next_quantity
             balance.save(update_fields=["quantity", "average_unit_cost", "updated_at"])
