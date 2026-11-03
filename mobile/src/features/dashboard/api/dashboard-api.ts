@@ -1,3 +1,4 @@
+import { ApiError } from "@/core/api/api-client";
 import { authenticatedRequest } from "@/core/api/authenticated-request";
 import { toResults, type ApiPage } from "@/core/api/api-response";
 import { getMyProfiles } from "@/features/profiles/api/profiles-api";
@@ -69,9 +70,18 @@ async function getList<T>(path: string): Promise<T[]> {
 }
 
 async function getLessons(profileType: "student" | "teacher" | "guardian") {
-  return authenticatedRequest<Lesson[]>(
-    "app/my/timetable/?profile_type=" + profileType,
-  );
+  try {
+    return await authenticatedRequest<Lesson[]>(
+      "app/my/timetable/?profile_type=" + profileType,
+    );
+  } catch (error) {
+    // A role can be valid before a timetable is published or while an
+    // assignment is inactive. Keep the profile dashboard usable in that case.
+    if (error instanceof ApiError && [403, 404].includes(error.status)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 export async function loadDashboardData(workspace: WorkspaceType): Promise<DashboardData> {
@@ -92,11 +102,15 @@ export async function loadDashboardData(workspace: WorkspaceType): Promise<Dashb
   }
 
   if (workspace === "teacher") {
-    const [assignments, students, lessons] = await Promise.all([
+    const [assignments, lessons] = await Promise.all([
       getList<TeacherAssignment>("app/teacher-assignments/"),
-      getList<StudentSummary>("students/"),
       getLessons("teacher"),
     ]);
+    // A teacher without active assignments must still see the proper empty
+    // state; the student endpoint is intentionally not queried in that case.
+    const students = assignments.length
+      ? await getList<StudentSummary>("students/")
+      : [];
     return { assignments, students, lessons };
   }
 
