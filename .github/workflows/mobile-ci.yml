@@ -8,6 +8,7 @@ on:
   push:
     branches:
       - feature/mobile-expo-foundation
+      - feature/mobile-madrasati-android
     paths:
       - "mobile/**"
       - ".github/workflows/mobile-ci.yml"
