@@ -71,11 +71,19 @@ export function SchoolSelectionScreen() {
         <AppEmptyState
           icon={School}
           title="لا توجد مدرسة مرتبطة بحسابك"
-          description="تم تسجيل الدخول بنجاح، لكن الخادم لم يُرجع عضوية مدرسية نشطة. اطلب من إدارة المدرسة إرسال دعوة إلى رقم هاتفك، ثم اقبلها بعد تسجيل الدخول."
+          description="تم تسجيل الدخول بنجاح، لكن لا توجد عضوية مدرسية نشطة. اطلب من إدارة المدرسة إرسال دعوة إلى رقم هاتفك أو بريدك الموثق، ثم أدخل رمزها هنا لقبول العضوية."
         />
+        <Button mode="contained" icon="ticket-confirmation" onPress={() => router.push("/accept-invitation" as never)} buttonColor={palette.primary}>
+          لدي رمز دعوة للمدرسة
+        </Button>
       )}
 
       <View style={styles.footer}>
+        {session.schools.length ? (
+          <Button mode="text" onPress={() => router.push("/accept-invitation" as never)} textColor={palette.secondary}>
+            الانضمام إلى مدرسة أخرى برمز دعوة
+          </Button>
+        ) : null}
         <Button mode="text" onPress={() => void logout().then(() => router.replace("/login" as never))} icon={LogOut} textColor={palette.muted}>تسجيل الخروج</Button>
       </View>
     </AppScreen>
