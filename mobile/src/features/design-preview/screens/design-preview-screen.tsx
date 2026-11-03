@@ -47,28 +47,30 @@ export function DesignPreviewScreen() {
           }}
         />
 
-        <Pressable
-          onPress={() => {
-            setShowEmptyState((current) => !current);
-            setNotice(null);
-          }}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: showEmptyState }}
-          style={({ pressed }) => [styles.emptyToggle, pressed && styles.pressed]}
-        >
-          <View style={styles.emptyToggleIcon}>
-            <AppIcon icon={showEmptyState ? EyeOff : Eye} size={17} color={showEmptyState ? palette.warning : palette.secondary} />
-          </View>
-          <View style={styles.emptyToggleText}>
-            <Text style={styles.emptyToggleTitle}>معاينة حالة عدم وجود ملفات</Text>
-            <Text style={styles.emptyToggleSubtitle}>
-              {showEmptyState ? "وضع البيانات الفارغة مفعل" : "اعرض كيف تبدو الشاشة قبل ربط الأبناء أو الشعب"}
-            </Text>
-          </View>
-          <View style={[styles.switchTrack, showEmptyState && styles.switchTrackActive]}>
-            <View style={styles.switchThumb} />
-          </View>
-        </Pressable>
+        {persona !== "student" ? (
+          <Pressable
+            onPress={() => {
+              setShowEmptyState((current) => !current);
+              setNotice(null);
+            }}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: showEmptyState }}
+            style={({ pressed }) => [styles.emptyToggle, pressed && styles.pressed]}
+          >
+            <View style={styles.emptyToggleIcon}>
+              <AppIcon icon={showEmptyState ? EyeOff : Eye} size={17} color={showEmptyState ? palette.warning : palette.secondary} />
+            </View>
+            <View style={styles.emptyToggleText}>
+              <Text style={styles.emptyToggleTitle}>معاينة حالة عدم وجود ملفات</Text>
+              <Text style={styles.emptyToggleSubtitle}>
+                {showEmptyState ? "وضع البيانات الفارغة مفعل" : "اعرض كيف تبدو الشاشة قبل ربط الأبناء أو الشعب"}
+              </Text>
+            </View>
+            <View style={[styles.switchTrack, showEmptyState && styles.switchTrackActive]}>
+              <View style={styles.switchThumb} />
+            </View>
+          </Pressable>
+        ) : null}
 
         {notice ? <AppNotice message={notice} onDismiss={() => setNotice(null)} /> : null}
 

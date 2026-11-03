@@ -36,3 +36,6 @@ jobs:
 
       - name: TypeScript type check
         run: npm run typecheck
+
+      - name: Export Android JavaScript bundle
+        run: npx expo export --platform android --output-dir /tmp/school-mobile-export-check

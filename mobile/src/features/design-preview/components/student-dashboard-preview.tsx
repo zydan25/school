@@ -7,7 +7,6 @@ import { AppActionTile } from "@/shared/components/app-action-tile";
 import { AppAvatar } from "@/shared/components/app-avatar";
 import { AppCard } from "@/shared/components/app-card";
 import { AppSectionHeader } from "@/shared/components/app-section-header";
-import { AppStatCard } from "@/shared/components/app-stat-card";
 import { previewLessons } from "@/features/design-preview/data";
 
 type Props = { onAction: (label: string) => void };
@@ -64,10 +63,6 @@ export function StudentDashboardPreview({ onAction }: Props) {
           </View>
         </View>
       </AppCard>
-      <View style={styles.quickStats}>
-        <AppStatCard icon={CalendarDays} value="5" label="حصص اليوم" color={palette.info} tint="#EAF1FB" />
-        <AppStatCard icon={ClipboardCheck} value="2" label="واجبات معلقة" />
-      </View>
     </View>
   );
 }
@@ -102,5 +97,4 @@ const styles = StyleSheet.create({
   encouragementText: { flex: 1, alignItems: "flex-start", gap: 4 },
   encouragementTitle: { color: palette.primary, fontWeight: "800", fontSize: 12, textAlign: "right" },
   encouragementDescription: { color: palette.muted, fontSize: 11, lineHeight: 17, textAlign: "right" },
-  quickStats: { flexDirection: "row", gap: spacing.sm },
 });
