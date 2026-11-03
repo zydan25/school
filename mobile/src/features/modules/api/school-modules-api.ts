@@ -480,6 +480,93 @@ export async function approveAttendanceRegister(registerId: string) {
   );
 }
 
+export type AttendanceReopenRequest = {
+  id: string;
+  register: string;
+  register_date: string;
+  section_name: string;
+  requested_by: string;
+  requested_by_name: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected" | string;
+  reviewed_by?: string | null;
+  reviewed_by_name?: string | null;
+  reviewed_at?: string | null;
+  review_notes: string;
+  created_at: string;
+};
+
+export type AttendanceAuditLog = {
+  id: string;
+  register: string;
+  student_record?: string | null;
+  student_name?: string | null;
+  action: string;
+  performed_by?: string | null;
+  performed_by_name?: string | null;
+  timestamp: string;
+  old_value?: unknown;
+  new_value?: unknown;
+  reason: string;
+};
+
+export async function lockAttendanceRegister(registerId: string) {
+  return authenticatedRequest<AttendanceRegister>(
+    "attendance/registers/" + encodeURIComponent(registerId) + "/lock/",
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function requestAttendanceRegisterReopen(registerId: string, reason: string) {
+  return authenticatedRequest<{ message: string; request_id: string }>(
+    "attendance/registers/" + encodeURIComponent(registerId) + "/reopen-request/",
+    { method: "POST", body: JSON.stringify({ reason }) },
+  );
+}
+
+export async function getAttendanceReopenRequests(status?: string, registerId?: string) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (registerId) params.set("register_id", registerId);
+  const query = params.toString();
+  return authenticatedListRequest<AttendanceReopenRequest>(
+    "attendance/reopen-requests/" + (query ? "?" + query : ""),
+  );
+}
+
+export async function reviewAttendanceRegisterReopen(
+  registerId: string,
+  isApproved: boolean,
+  reviewNotes = "",
+) {
+  return authenticatedRequest<{ message: string }>(
+    "attendance/registers/" + encodeURIComponent(registerId) + "/review-reopen/",
+    {
+      method: "POST",
+      body: JSON.stringify({ is_approved: isApproved, review_notes: reviewNotes }),
+    },
+  );
+}
+
+export async function getAttendanceAuditLogs(filters: {
+  registerId?: string;
+  studentId?: string;
+  action?: string;
+  from?: string;
+  to?: string;
+} = {}) {
+  const params = new URLSearchParams();
+  if (filters.registerId) params.set("register_id", filters.registerId);
+  if (filters.studentId) params.set("student_id", filters.studentId);
+  if (filters.action) params.set("action", filters.action);
+  if (filters.from) params.set("from", filters.from);
+  if (filters.to) params.set("to", filters.to);
+  const query = params.toString();
+  return authenticatedListRequest<AttendanceAuditLog>(
+    "attendance/audit-logs/" + (query ? "?" + query : ""),
+  );
+}
+
 export async function reviewAttendanceExcuse(
   excuseId: string,
   approved: boolean,
