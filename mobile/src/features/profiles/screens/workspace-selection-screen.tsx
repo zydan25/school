@@ -30,7 +30,7 @@ export function WorkspaceSelectionScreen() {
   const chooseWorkspace = useAuthStore((state) => state.chooseWorkspace);
   const schoolId = session?.activeSchoolId;
   const profilesQuery = useQuery({
-    queryKey: ["identity", "my-profiles", schoolId],
+    queryKey: ["identity", "my-profiles", session?.user.id, session?.sessionId, schoolId],
     queryFn: getMyProfiles,
     enabled: Boolean(session?.accessToken && schoolId),
     staleTime: 30_000,

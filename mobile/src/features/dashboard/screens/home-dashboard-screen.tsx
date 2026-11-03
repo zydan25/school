@@ -49,7 +49,7 @@ export function HomeDashboardScreen() {
   const workspace = session?.activeWorkspace;
   const school = session?.schools.find((item) => item.id === schoolId);
   const dashboardQuery = useQuery({
-    queryKey: ["school-dashboard", schoolId, workspace],
+    queryKey: ["school-dashboard", session?.user.id, session?.sessionId, schoolId, workspace],
     queryFn: () => loadDashboardData(workspace as WorkspaceType),
     enabled: Boolean(session?.accessToken && schoolId && workspace),
     staleTime: 30_000,
