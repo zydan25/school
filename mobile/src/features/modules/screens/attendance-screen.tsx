@@ -69,6 +69,7 @@ const excuseLabels: Record<string, string> = {
   post_absence_excuse: "عذر لغياب سابق",
   late_excuse: "عذر تأخر صباحي",
   update_excuse: "طلب مراجعة غياب",
+  draft: "مسودة",
   submitted: "مقدم للدراسة",
   under_review: "قيد التدقيق",
   approved: "مقبول",

@@ -162,13 +162,15 @@ export function HomeDashboardScreen() {
       )}
 
       <View style={styles.moduleShortcuts}>
-        <AppActionTile
-          icon={CalendarDays}
-          label="الحضور والغياب"
-          onPress={() => router.push("/attendance" as never)}
-          color={palette.info}
-          tint={palette.infoTint}
-        />
+        {["guardian", "teacher", "management"].includes(workspace) ? (
+          <AppActionTile
+            icon={CalendarDays}
+            label="الحضور والغياب"
+            onPress={() => router.push("/attendance" as never)}
+            color={palette.info}
+            tint={palette.infoTint}
+          />
+        ) : null}
         {["student", "guardian", "teacher", "management"].includes(workspace) ? (
           <AppActionTile
             icon={BookOpen}
