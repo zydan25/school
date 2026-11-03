@@ -365,6 +365,33 @@ def _record_attempt(notification, attempt_number, destination, provider, *, succ
     )
 
 
+
+
+@transaction.atomic
+def _reserve_send_slot(gateway):
+    """Atomically reserve one send from a database-backed per-gateway minute window."""
+    current = type(gateway).objects.select_for_update().get(pk=gateway.pk)
+    now = timezone.now()
+    window_start = current.rate_limit_window_started_at
+    count = current.rate_limit_window_count
+    if window_start is None or (now - window_start).total_seconds() >= 60:
+        window_start = now
+        count = 0
+    if current.rate_limit_per_minute < 1:
+        raise DeliveryError("إرسال هذه البوابة معطل بحد معدل يساوي صفراً.", code="gateway_rate_disabled", retryable=False)
+    if count >= current.rate_limit_per_minute:
+        wait = max(1, 60 - int((now - window_start).total_seconds()))
+        raise DeliveryError(
+            f"تم بلوغ حد الإرسال للبوابة؛ أعد المحاولة بعد {wait} ثانية.",
+            code="gateway_rate_limited", retryable=True,
+        )
+    current.rate_limit_window_started_at = window_start
+    current.rate_limit_window_count = count + 1
+    current.save(update_fields=[
+        "rate_limit_window_started_at", "rate_limit_window_count", "updated_at",
+    ])
+
+
 def _send_message_to_gateway(*, school, channel, destination, title, body, data, idempotency_key, notification=None, attempt_number=1):
     gateway = _gateway_for(school, channel)
     if gateway is None:
@@ -406,6 +433,7 @@ def _send_message_to_gateway(*, school, channel, destination, title, body, data,
             raise DeliveryError("قالب بوابة الرسائل يجب أن ينتج كائن JSON.", code="gateway_template", retryable=False)
         destination_for_audit = "push-token" if channel == Notification.Channel.PUSH else destination
         try:
+            _reserve_send_slot(gateway)
             reference, code = _post_gateway_json(gateway, payload, idempotency_key)
             if notification:
                 _record_attempt(
@@ -446,6 +474,7 @@ def _dispatch_notification(notification, attempt_number):
                     use_ssl=school_gateway.use_ssl,
                     timeout=10,
                 )
+                _reserve_send_slot(school_gateway)
                 email = EmailMessage(
                     subject=notification.title,
                     body=notification.body,
@@ -589,7 +618,7 @@ def _handle_outbox_event(event):
         ).first()
         if notification is None:
             raise DeliveryError("الإشعار المرتبط بالحدث غير موجود.", code="notification_missing", retryable=False)
-        if notification.status in {Notification.Status.SENT, Notification.Status.DELIVERED, Notification.Status.READ}:
+        if notification.status in {Notification.Status.CANCELLED, Notification.Status.SENT, Notification.Status.DELIVERED, Notification.Status.READ}:
             return
         reference, provider = _dispatch_notification(notification, event.attempts)
         notification.status = Notification.Status.SENT
@@ -597,6 +626,57 @@ def _handle_outbox_event(event):
         notification.provider_reference = reference
         notification.failure_reason = ""
         notification.save(update_fields=["status", "sent_at", "provider_reference", "failure_reason", "updated_at"])
+        return
+    if event.event_name == "notification.delivery_receipt":
+        reference = str(event.payload.get("provider_reference", ""))[:160]
+        provider_status = event.payload.get("status")
+        provider = str(event.payload.get("provider", ""))[:40]
+        error_code = str(event.payload.get("error_code", ""))[:80]
+        attempt = NotificationDeliveryAttempt.objects.select_related("notification").filter(
+            provider_reference=reference,
+            notification__school=event.school,
+        ).exclude(provider_reference="").order_by("-attempted_at").first()
+        if attempt is None:
+            raise DeliveryError(
+                "إيصال التسليم وصل قبل حفظ مرجع محاولة الإرسال؛ ستعاد معالجته.",
+                code="delivery_attempt_not_found", retryable=True,
+            )
+        notification = attempt.notification
+        receipt_status = {
+            "accepted": NotificationDeliveryReceipt.Status.SENT,
+            "sent": NotificationDeliveryReceipt.Status.SENT,
+            "delivered": NotificationDeliveryReceipt.Status.DELIVERED,
+            "read": NotificationDeliveryReceipt.Status.READ,
+            "failed": NotificationDeliveryReceipt.Status.FAILED,
+        }.get(provider_status)
+        if receipt_status is None:
+            raise DeliveryError("حالة إيصال التسليم غير مدعومة.", code="unknown_receipt_status", retryable=False)
+        NotificationDeliveryReceipt.objects.get_or_create(
+            notification=notification,
+            provider=provider or attempt.provider or "unknown",
+            provider_reference=reference,
+            status=receipt_status,
+            defaults={"error_code": error_code},
+        )
+        with transaction.atomic():
+            locked = Notification.objects.select_for_update().get(pk=notification.pk)
+            if receipt_status == NotificationDeliveryReceipt.Status.DELIVERED:
+                if locked.status not in {Notification.Status.READ, Notification.Status.FAILED}:
+                    locked.status = Notification.Status.DELIVERED
+                    locked.delivered_at = locked.delivered_at or timezone.now()
+                    locked.save(update_fields=["status", "delivered_at", "updated_at"])
+            elif receipt_status == NotificationDeliveryReceipt.Status.READ:
+                if locked.status != Notification.Status.FAILED:
+                    locked.status = Notification.Status.READ
+                    locked.is_read = True
+                    locked.read_at = locked.read_at or timezone.now()
+                    locked.delivered_at = locked.delivered_at or timezone.now()
+                    locked.save(update_fields=["status", "is_read", "read_at", "delivered_at", "updated_at"])
+            elif receipt_status == NotificationDeliveryReceipt.Status.FAILED:
+                if locked.status not in {Notification.Status.DELIVERED, Notification.Status.READ}:
+                    locked.status = Notification.Status.FAILED
+                    locked.failure_reason = error_code or "فشل التسليم لدى المزود."
+                    locked.save(update_fields=["status", "failure_reason", "updated_at"])
         return
     if event.event_name == "webhook.whatsapp.inbound":
         _process_inbound_webhook(event)
