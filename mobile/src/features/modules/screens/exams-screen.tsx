@@ -16,7 +16,6 @@ import { AppNotice } from "@/shared/components/app-notice";
 import { AppScreen } from "@/shared/components/app-screen";
 import { palette, spacing } from "@/core/theme/tokens";
 import {
-  formatDate,
   ModuleCard,
   ModuleEmpty,
   ModuleHeader,

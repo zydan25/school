@@ -91,7 +91,7 @@ export function MessagesScreen() {
               <MessageBubble key={message.id} message={message} />
             ))}
             {messagesQuery.data?.has_more ? (
-              <Text style={styles.footnote}>توجد رسائل أقدم؛ يعرض الخادم أحدث 100 رسالة في هذا الطلب.</Text>
+              <Text style={styles.footnote}>توجد رسائل أخرى في المحادثة؛ مسار الخادم الحالي يعيد أول 100 رسالة ولا يوفّر جلب الدفعة التالية من الرسائل.</Text>
             ) : null}
           </ScrollView>
           {activeConversation?.status === "open" ? (

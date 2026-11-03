@@ -85,6 +85,19 @@ function todayIso() {
   ].join("-");
 }
 
+function isValidDateRange(start: string, end: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+    return false;
+  }
+  const startDate = new Date(start + "T12:00:00");
+  const endDate = new Date(end + "T12:00:00");
+  return !Number.isNaN(startDate.getTime()) &&
+    !Number.isNaN(endDate.getTime()) &&
+    startDate.toISOString().slice(0, 10) === start &&
+    endDate.toISOString().slice(0, 10) === end &&
+    endDate >= startDate;
+}
+
 export function AttendanceScreen() {
   const workspace = useAuthStore((state) => state.session?.activeWorkspace);
   return (
@@ -179,6 +192,7 @@ function GuardianAttendance() {
             <Text style={styles.sectionHeading}>درجات المواظبة</Text>
           </View>
           {scoresQuery.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
+          {scoresQuery.isError ? <AppNotice message={getApiErrorMessage(scoresQuery.error)} /> : null}
           {(scoresQuery.data?.results ?? []).map((score) => (
             <AttendanceScoreCard key={score.id} score={score} />
           ))}
@@ -211,7 +225,7 @@ function GuardianAttendance() {
             <TextInput mode="outlined" label="إلى تاريخ (YYYY-MM-DD)" value={endDate} onChangeText={setEndDate} style={styles.input} contentStyle={styles.inputText} />
             <TextInput mode="outlined" label="سبب العذر" value={reason} onChangeText={setReason} multiline numberOfLines={3} style={styles.input} contentStyle={styles.inputText} />
             <Button mode="contained" buttonColor={palette.primary} loading={createMutation.isPending}
-              disabled={createMutation.isPending || !reason.trim() || !activeChild?.id}
+              disabled={createMutation.isPending || !reason.trim() || !activeChild?.id || !isValidDateRange(startDate, endDate)}
               onPress={() => createMutation.mutate({
                 student: activeChild!.id, request_type: requestType,
                 start_date: startDate.trim(), end_date: endDate.trim(), reason: reason.trim(),
@@ -225,6 +239,7 @@ function GuardianAttendance() {
 
           <View style={styles.sectionTitle}><Text style={styles.sectionHeading}>طلبات الأعذار السابقة</Text></View>
           {excusesQuery.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
+          {excusesQuery.isError ? <AppNotice message={getApiErrorMessage(excusesQuery.error)} /> : null}
           {(excusesQuery.data ?? []).map((item) => <ExcuseCard key={item.id} item={item} />)}
           {!excusesQuery.isLoading && !excusesQuery.data?.length ? <ModuleEmpty title="لا توجد طلبات سابقة" body="ستظهر هنا الطلبات التي أرسلتها للمدرسة." /> : null}
         </>

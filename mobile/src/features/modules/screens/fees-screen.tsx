@@ -86,6 +86,8 @@ export function FeesScreen() {
       {statementQuery.isLoading || (isGuardian && childrenQuery.isLoading) || (isStudent && profilesQuery.isLoading) ? (
         <ActivityIndicator color={palette.secondary} />
       ) : null}
+      {childrenQuery.isError ? <AppNotice message={getApiErrorMessage(childrenQuery.error)} /> : null}
+      {profilesQuery.isError ? <AppNotice message={getApiErrorMessage(profilesQuery.error)} /> : null}
       {statementQuery.isError ? <AppNotice message={getApiErrorMessage(statementQuery.error)} /> : null}
       {!studentId && !statementQuery.isLoading ? (
         <ModuleEmpty title="لا يوجد ملف طالب مالي" body="لم يرجع الخادم ملف طالب مرتبطاً بالحساب في المدرسة النشطة." />
