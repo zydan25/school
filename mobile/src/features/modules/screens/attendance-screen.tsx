@@ -339,9 +339,9 @@ function ManagementAttendance() {
       await queryClient.invalidateQueries({
         queryKey: ["module", "attendance-management-excuses", ...queryScope],
       });
-      await queryClient.invalidateQueries({
-        queryKey: ["module", "attendance", ...queryScope],
-      });
+      await queryClient.invalidateQueries({ queryKey: ["module", "attendance"] });
+      await queryClient.invalidateQueries({ queryKey: ["module", "attendance-excuses"] });
+      await queryClient.invalidateQueries({ queryKey: ["module", "attendance-scores"] });
     },
   });
 
