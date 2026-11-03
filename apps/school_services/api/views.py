@@ -24,7 +24,6 @@ from apps.accounts.api_permissions import (
 )
 from apps.accounts.services import is_platform_operator
 from apps.school_services.models import (
-    BookLoan,
     BookRequisitionItem,
     BookRequisitionOrder,
     BusFinancialSettlement,

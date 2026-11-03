@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section
 from apps.accounting.models import FiscalPeriod, FiscalYear
+from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
 from apps.accounts.models import User
 from apps.accounts.services import is_school_permission_codename_allowed
 from apps.inventory.models import InventoryItem, StockMovement, Warehouse
