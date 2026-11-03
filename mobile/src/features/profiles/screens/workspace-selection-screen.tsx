@@ -67,8 +67,10 @@ export function WorkspaceSelectionScreen() {
       {profilesQuery.isLoading ? (
         <View style={styles.loading}><ActivityIndicator color={palette.secondary} /><Text style={styles.loadingText}>جارٍ تحميل ملفاتك من المدرسة...</Text></View>
       ) : profilesQuery.isError ? (
-        <AppNotice message={getApiErrorMessage(profilesQuery.error)} />
-        <Button mode="outlined" onPress={() => void profilesQuery.refetch()} icon="refresh" textColor={palette.primary}>إعادة تحميل الملفات</Button>
+        <>
+          <AppNotice message={getApiErrorMessage(profilesQuery.error)} />
+          <Button mode="outlined" onPress={() => void profilesQuery.refetch()} icon="refresh" textColor={palette.primary}>إعادة تحميل الملفات</Button>
+        </>
       ) : options.length ? (
         options.map((option) => {
           const Icon = icons[option.type];
