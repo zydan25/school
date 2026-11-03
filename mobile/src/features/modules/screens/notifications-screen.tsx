@@ -1,0 +1,103 @@
+import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { Button, Text } from "react-native-paper";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bell, CheckCheck } from "lucide-react-native";
+
+import {
+  getUserNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+  type UserNotification,
+} from "@/features/modules/api/school-modules-api";
+import { getApiErrorMessage } from "@/core/api/api-client";
+import { AppNotice } from "@/shared/components/app-notice";
+import { AppScreen } from "@/shared/components/app-screen";
+import { AppIcon } from "@/shared/components/app-icon";
+import { palette, spacing } from "@/core/theme/tokens";
+import {
+  formatDate,
+  ModuleCard,
+  ModuleEmpty,
+  ModuleHeader,
+  StatusPill,
+} from "@/features/modules/components/module-primitives";
+
+export function NotificationsScreen() {
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: ["module", "notifications"],
+    queryFn: getUserNotifications,
+    refetchInterval: 30_000,
+  });
+  const readMutation = useMutation({
+    mutationFn: markNotificationRead,
+    onSuccess: async () => client.invalidateQueries({ queryKey: ["module", "notifications"] }),
+  });
+  const allMutation = useMutation({
+    mutationFn: markAllNotificationsRead,
+    onSuccess: async () => client.invalidateQueries({ queryKey: ["module", "notifications"] }),
+  });
+  const data = query.data;
+
+  return (
+    <AppScreen>
+      <ModuleHeader title="الإشعارات" subtitle="تنبيهات الحساب ورسائل المدرسة ومتابعة آخر المستجدات" trailing={String(data?.unread_count ?? 0) + " غير مقروء"} />
+      <View style={styles.actions}>
+        <Button mode="outlined" icon={CheckCheck} textColor={palette.secondary}
+          loading={allMutation.isPending}
+          disabled={allMutation.isPending || !data?.unread_count}
+          onPress={() => allMutation.mutate()}>
+          تحديد الكل كمقروء
+        </Button>
+      </View>
+      {query.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
+      {query.isError ? <AppNotice message={getApiErrorMessage(query.error)} /> : null}
+      {!query.isLoading && !data?.notifications.length ? (
+        <ModuleEmpty title="لا توجد إشعارات" body="ستظهر هنا إشعارات المدرسة والمحادثات والحساب." />
+      ) : null}
+      {(data?.notifications ?? []).map((notification) => (
+        <NotificationCard
+          key={notification.id}
+          notification={notification}
+          busy={readMutation.isPending}
+          onRead={() => readMutation.mutate(notification.id)}
+        />
+      ))}
+      {allMutation.isError ? <AppNotice message={getApiErrorMessage(allMutation.error)} /> : null}
+      {readMutation.isError ? <AppNotice message={getApiErrorMessage(readMutation.error)} /> : null}
+    </AppScreen>
+  );
+}
+
+function NotificationCard({ notification, busy, onRead }: {
+  notification: UserNotification;
+  busy: boolean;
+  onRead: () => void;
+}) {
+  return (
+    <ModuleCard>
+      <View style={styles.cardTop}>
+        <View style={styles.icon}><AppIcon icon={Bell} color={notification.is_read ? palette.muted : palette.secondary} size={19} /></View>
+        <View style={styles.titleBlock}>
+          <Text style={styles.title}>{notification.title}</Text>
+          <Text style={styles.date}>{formatDate(notification.created_at)}</Text>
+        </View>
+        <StatusPill value={notification.is_read ? "read" : "unread"} labels={{ read: "مقروء", unread: "جديد" }} />
+      </View>
+      <Text style={styles.body}>{notification.body}</Text>
+      {!notification.is_read ? (
+        <Button mode="text" compact disabled={busy} onPress={onRead} textColor={palette.secondary}>تحديد كمقروء</Button>
+      ) : null}
+    </ModuleCard>
+  );
+}
+
+const styles = StyleSheet.create({
+  actions: { alignItems: "flex-start", paddingBottom: spacing.sm },
+  cardTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  icon: { width: 38, height: 38, borderRadius: 12, backgroundColor: palette.secondaryTint, alignItems: "center", justifyContent: "center" },
+  titleBlock: { flex: 1, alignItems: "flex-start", gap: 3 },
+  title: { color: palette.primary, fontSize: 12, fontWeight: "800", textAlign: "right" },
+  date: { color: palette.muted, fontSize: 10 },
+  body: { color: palette.text, fontSize: 11, lineHeight: 19, textAlign: "right", marginTop: spacing.sm },
+});
