@@ -600,9 +600,6 @@ def post_stocktake(
         return locked
     if locked.status != WarehouseStocktake.Status.COUNTING:
         raise ValidationError("لا يمكن ترحيل محضر جرد ملغى أو غير مفتوح.")
-    Warehouse.objects.select_for_update().get(
-        pk=locked.warehouse_id, school=locked.school, is_archived=False,
-    )
     lines = list(
         WarehouseStocktakeLine.objects.select_for_update().filter(
             stocktake=locked, school=locked.school, is_archived=False,
