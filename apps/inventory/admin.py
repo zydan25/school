@@ -42,7 +42,17 @@ class StockMovementAdmin(ModelAdmin):
     list_display = ("date", "movement_type", "item", "quantity", "unit_cost", "reference", "recipient_name", "school")
     list_filter = ("school", "movement_type", "date")
     search_fields = ("item__name", "item__code", "reference", "recipient_name")
-    raw_id_fields = ("item",)
+    raw_id_fields = ("item", "warehouse")
+    readonly_fields = ("id", "school", "branch", "item", "warehouse", "movement_type", "quantity", "unit_cost", "date", "reference", "recipient_name", "notes", "idempotency_key", "created_by", "purchase_order_item", "purchase_receipt", "transfer", "reversal_of", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 class PurchaseOrderItemInline(TabularInline):
@@ -57,6 +67,7 @@ class PurchaseOrderAdmin(ModelAdmin):
     list_filter = ("school", "status", "order_date")
     search_fields = ("order_number", "supplier__name")
     raw_id_fields = ("supplier", "warehouse", "approved_by")
+    readonly_fields = ("total_amount", "status", "approved_by", "approved_at", "received_at")
     inlines = [PurchaseOrderItemInline]
 
 
@@ -77,8 +88,12 @@ class VendorInvoiceAdmin(ModelAdmin):
     )
     list_filter = ("school", "status", "invoice_date")
     search_fields = ("invoice_number", "supplier__name", "supplier__code")
-    raw_id_fields = ("supplier", "purchase_order", "journal_entry")
+    raw_id_fields = ("supplier", "purchase_order", "journal_entry", "expense_account", "cost_center")
+    readonly_fields = ("paid_amount", "status", "approved_by", "approved_at", "journal_entry")
     actions = ["post_selected_invoices_to_journal"]
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     @admin.display(description="المبلغ المتبقي")
     def remaining_amount_display(self, obj):
