@@ -649,7 +649,7 @@ def post_receipt_voucher_to_journal(voucher: ReceiptVoucher) -> JournalEntry:
         locked.save(update_fields=["status", "journal_entry", "updated_at"])
         return entry
 
-def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> JournalEntry:
+def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry, user=None) -> JournalEntry:
     """ترحيل إهلاك الأصل مرة واحدة مع قفل سجل الإهلاك والأصل لتفادي التكرار."""
     with transaction.atomic():
         locked_entry = AssetDepreciationEntry.objects.select_for_update(of=("self",)).get(
@@ -662,14 +662,6 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
             pk=locked_entry.asset_id,
         )
         locked_entry.asset = locked_asset
-        locked_entry.full_clean()
-        if locked_entry.date < locked_entry.fiscal_year.start_date or (
-            locked_entry.date > locked_entry.fiscal_year.end_date
-        ):
-            raise ValidationError("تاريخ الإهلاك يقع خارج حدود السنة المالية المحددة.")
-        if locked_entry.depreciation_amount > locked_asset.current_book_value - locked_asset.salvage_value:
-            raise ValidationError("مبلغ الإهلاك يتجاوز القيمة القابلة للإهلاك المتبقية للأصل.")
-
         school = locked_entry.school
         source_reference = f"{locked_asset.code}-{locked_entry.fiscal_year_id}"
         existing = JournalEntry.objects.filter(
@@ -686,9 +678,24 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
             if not locked_entry.journal_entry_id:
                 locked_entry.journal_entry = existing
                 locked_entry.posted_at = existing.posted_at or timezone.now()
-                locked_entry.save(update_fields=["journal_entry", "posted_at", "updated_at"])
+                locked_entry.posted_by = user
+                locked_entry.save(update_fields=[
+                    "journal_entry", "posted_at", "posted_by", "updated_at",
+                ])
             return existing
+        if locked_entry.journal_entry_id:
+            linked = locked_entry.journal_entry
+            if linked.status != JournalEntry.Status.POSTED:
+                raise ValidationError("سجل الإهلاك مرتبط بقيد غير مرحّل؛ يجب مراجعته.")
+            return linked
 
+        locked_entry.full_clean()
+        if locked_entry.date < locked_entry.fiscal_year.start_date or (
+            locked_entry.date > locked_entry.fiscal_year.end_date
+        ):
+            raise ValidationError("تاريخ الإهلاك يقع خارج حدود السنة المالية المحددة.")
+        if locked_entry.depreciation_amount > locked_asset.current_book_value - locked_asset.salvage_value:
+            raise ValidationError("مبلغ الإهلاك يتجاوز القيمة القابلة للإهلاك المتبقية للأصل.")
         if locked_asset.status == FixedAsset.Status.DISPOSED:
             raise ValidationError("لا يمكن إهلاك أصل مستبعد.")
         period = _get_active_fiscal_period(school, locked_entry.date)
@@ -752,12 +759,19 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
             credit=locked_entry.depreciation_amount,
         )
 
-        journal_entry.post()
-        locked_asset.accumulated_depreciation += locked_entry.depreciation_amount
-        locked_asset.save(update_fields=["accumulated_depreciation", "updated_at"])
+        journal_entry.post(user=user)
+        from django.db import models
+        models.QuerySet.update(
+            FixedAsset.objects.filter(pk=locked_asset.pk),
+            accumulated_depreciation=locked_asset.accumulated_depreciation + locked_entry.depreciation_amount,
+            updated_at=timezone.now(),
+        )
         locked_entry.journal_entry = journal_entry
         locked_entry.posted_at = timezone.now()
-        locked_entry.save(update_fields=["journal_entry", "posted_at", "updated_at"])
+        locked_entry.posted_by = user
+        locked_entry.save(update_fields=[
+            "journal_entry", "posted_at", "posted_by", "updated_at",
+        ])
         return journal_entry
 
 @transaction.atomic

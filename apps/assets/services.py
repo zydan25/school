@@ -51,6 +51,7 @@ def register_asset_from_vendor_invoice(
     code: str,
     name: str,
     purchase_date: date,
+    purchase_cost: Decimal | None = None,
     salvage_value: Decimal = Decimal("0.00"),
     location_room: str = "",
     custodian=None,
@@ -89,8 +90,13 @@ def register_asset_from_vendor_invoice(
         ).values_list("purchase_cost", flat=True),
         Decimal("0.00"),
     )
-    if current_assets_total + locked_invoice.total_amount > locked_invoice.total_amount and current_assets_total > 0:
-        raise ValidationError("لا يمكن تجاوز قيمة فاتورة المورد عند رسملة عدة أصول منها.")
+    amount = _money(
+        Decimal(purchase_cost)
+        if purchase_cost is not None
+        else locked_invoice.total_amount - current_assets_total
+    )
+    if amount <= 0 or current_assets_total + amount > locked_invoice.total_amount:
+        raise ValidationError("تكلفة الأصل تتجاوز المبلغ المتبقي من فاتورة المورد.")
 
     asset_account = category.asset_account or locked_invoice.expense_account
     _ensure_account(
@@ -101,7 +107,6 @@ def register_asset_from_vendor_invoice(
     )
     if locked_invoice.expense_account_id and locked_invoice.expense_account_id != asset_account.pk:
         raise ValidationError("حساب الأصل في التصنيف لا يطابق الحساب المستخدم في قيد فاتورة المورد.")
-    amount = _money(locked_invoice.total_amount)
     salvage = _money(Decimal(salvage_value))
     if salvage < 0 or salvage > amount:
         raise ValidationError("القيمة التخريدية يجب أن تكون بين صفر وتكلفة الاقتناء.")
