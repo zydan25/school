@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text } from "react-native-paper";
-import { Building2, LogOut, RefreshCw, Repeat2 } from "lucide-react-native";
+import { BookOpen, BriefcaseBusiness, Building2, CalendarDays, GraduationCap, RefreshCw, Repeat2, Users } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuthStore } from "@/core/auth/auth-store";
@@ -206,7 +206,7 @@ function GuardianDashboard({
         </>
       ) : (
         <AppEmptyState
-          icon={AppIcon as never}
+          icon={Users}
           title="لا يوجد أبناء مرتبطون بحسابك"
           description="لم يرجع الخادم ملفات أبناء مرتبطة بولي الأمر في المدرسة النشطة. لا يمكن إضافة ابن من التطبيق حالياً؛ يجب أن تنشئ المدرسة العلاقة وتتحقق منها."
         />
@@ -235,7 +235,7 @@ function StudentDashboard({ students, lessons }: { students: StudentSummary[]; l
           <DetailLine label="حالة القيد" value={statusLabels[student.status] ?? student.status} />
         </AppCard>
       ) : (
-        <AppEmptyState icon={AppAvatar as never} title="لا يوجد ملف طالب مرتبط" description="دور الطالب موجود، لكن الخادم لم يرجع ملف طالب مرتبطاً بالحساب في هذه المدرسة. تواصل مع شؤون الطلاب لربط الملف." />
+        <AppEmptyState icon={GraduationCap} title="لا يوجد ملف طالب مرتبط" description="دور الطالب موجود، لكن الخادم لم يرجع ملف طالب مرتبطاً بالحساب في هذه المدرسة. تواصل مع شؤون الطلاب لربط الملف." />
       )}
       <LessonsSection lessons={lessons} />
     </View>
@@ -274,7 +274,7 @@ function TeacherDashboard({
           </AppCard>
         );
       }) : (
-        <AppEmptyState icon={AppAvatar as never} title="لا توجد شعب مسندة" description="لم يرجع الخادم إسنادات دراسية لهذا المعلم في المدرسة النشطة. راجع الإدارة الأكاديمية للتأكد من إسناد الشعب والمواد." />
+        <AppEmptyState icon={BookOpen} title="لا توجد شعب مسندة" description="لم يرجع الخادم إسنادات دراسية لهذا المعلم في المدرسة النشطة. راجع الإدارة الأكاديمية للتأكد من إسناد الشعب والمواد." />
       )}
       <LessonsSection lessons={lessons} />
     </View>
@@ -292,7 +292,7 @@ function EmployeeDashboard({ staff }: { staff: { id: string; employee_number?: s
           <DetailLine label="المسمى/الدور" value={item.role || "غير محدد"} />
         </AppCard>
       )) : (
-        <AppEmptyState icon={AppAvatar as never} title="لا يوجد ملف وظيفي" description="لم يرجع الخادم ملف موظف مرتبطاً بهذه المدرسة لهذا الحساب." />
+        <AppEmptyState icon={BriefcaseBusiness} title="لا يوجد ملف وظيفي" description="لم يرجع الخادم ملف موظف مرتبطاً بهذه المدرسة لهذا الحساب." />
       )}
     </View>
   );
@@ -330,7 +330,7 @@ function LessonsSection({ lessons }: { lessons: Lesson[] }) {
           ))}
         </AppCard>
       ) : (
-        <AppEmptyState icon={AppAvatar as never} title="لا توجد حصص في الجدول" description="لم يرجع الخادم حصصاً لهذا الملف وفق الجدول الفعال. قد يكون الجدول غير منشور أو لا توجد حصص لليوم." />
+        <AppEmptyState icon={CalendarDays} title="لا توجد حصص في الجدول" description="لم يرجع الخادم حصصاً لهذا الملف وفق الجدول الفعال. قد يكون الجدول غير منشور أو لا توجد حصص لليوم." />
       )}
     </View>
   );
