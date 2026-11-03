@@ -68,7 +68,10 @@ class AssetCategoryListCreateAPIView(generics.ListCreateAPIView):
         return context
 
     def perform_create(self, serializer):
-        serializer.save(school=_school(self.request))
+        try:
+            serializer.save(school=_school(self.request))
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
 
 
 class AssetCategoryDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -88,10 +91,19 @@ class AssetCategoryDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         context["school"] = _school(self.request)
         return context
 
+    def perform_update(self, serializer):
+        try:
+            serializer.save()
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
+
     def perform_destroy(self, instance):
         if instance.assets.filter(is_archived=False).exists():
             raise ValidationError("لا يمكن أرشفة تصنيف مستخدم في أصول قائمة.")
-        instance.archive(actor=self.request.user, reason="أرشفة عبر API")
+        try:
+            instance.archive(actor=self.request.user, reason="أرشفة عبر API")
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
 
 
 class FixedAssetListAPIView(generics.ListAPIView):
