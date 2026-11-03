@@ -19,15 +19,17 @@ export async function authenticatedRequest<T>(
     if (!(error instanceof ApiError) || error.status !== 401) throw error;
 
     const latest = useAuthStore.getState().session;
-    let accessToken = latest?.accessToken;
-    if (!latest || !accessToken) throw error;
+    if (!latest?.accessToken) throw error;
+    let accessToken: string = latest.accessToken;
 
     if (accessToken === initial.accessToken) {
-      accessToken = await useAuthStore.getState().refreshAccessToken();
+      const rotatedToken = await useAuthStore.getState().refreshAccessToken();
+      if (!rotatedToken) throw error;
+      accessToken = rotatedToken;
     }
 
     const refreshed = useAuthStore.getState().session;
-    if (!accessToken || !refreshed) throw error;
+    if (!refreshed) throw error;
 
     return apiRequest<T>(path, init, {
       accessToken,
