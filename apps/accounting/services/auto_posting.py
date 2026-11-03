@@ -1091,6 +1091,7 @@ def disburse_vendor_payment(
         vendor_payable_acc = _get_account_or_seed(
             school, "2101", "ذمم الموردين والشركات الدائنة",
         )
+        already_posted = False
 
         if idempotency_key:
             existing = PaymentVoucher.objects.select_for_update(of=("self",)).filter(
@@ -1120,11 +1121,8 @@ def disburse_vendor_payment(
         else:
             payment_voucher = None
 
-        if "already_posted" not in locals():
-            already_posted = False
-
         if payment_voucher is None:
-            if amount > locked_invoice.remaining_amount:
+            if not already_posted and amount > locked_invoice.remaining_amount:
                 raise ValidationError(
                     f"المبلغ المراد سداده ({amount}) أكبر من المبلغ المتبقي على الفاتورة ({locked_invoice.remaining_amount})."
                 )
