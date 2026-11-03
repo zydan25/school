@@ -1257,7 +1257,7 @@ class SchoolPurchaseOrderAdmin(SchoolScopedAdmin):
 
 
 # -----------------------------------------------------------------------------
-# School Services (Buses, Library, Clinic) in School Admin
+# School Services (Buses, Library, Textbook Distribution) in School Admin
 # -----------------------------------------------------------------------------
 from apps.school_services.models import (
     BookLoan,

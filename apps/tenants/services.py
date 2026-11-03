@@ -188,7 +188,7 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     transport_mgr.permissions.set(transport_permissions.distinct())
 
-    # 7. أمين المستودع والمخزون (محدد بالأصناف والكتب دون الملفات الصحية والعيادة)
+    # 7. أمين المستودع والمخزون (الأصناف وأوامر التوزيع والصرف)
     store_permissions = (
         Permission.objects.filter(content_type__app_label="inventory").filter(
             Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
