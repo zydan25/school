@@ -13,7 +13,7 @@
         {
           "supportsRTL": true,
           "forcesRTL": true,
-          "supportedLocales": ["ar", "en"]
+          "supportedLocales": ["ar"]
         }
       ],
       "expo-secure-store",
