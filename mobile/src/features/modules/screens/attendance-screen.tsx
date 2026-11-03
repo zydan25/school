@@ -144,7 +144,7 @@ function GuardianAttendance() {
   });
   const excusesQuery = useQuery({
     queryKey: ["module", "attendance-excuses", ...queryScope],
-    queryFn: getAttendanceExcuses,
+    queryFn: () => getAttendanceExcuses(),
   });
   const createMutation = useMutation({
     mutationFn: createAttendanceExcuse,
