@@ -1,19 +1,13 @@
 import type { PropsWithChildren } from "react";
+import type { StyleProp, ViewStyle } from "react-native";
 import { StyleSheet, View } from "react-native";
 import { Card } from "react-native-paper";
-
 import { palette, radius } from "@/core/theme/tokens";
 
-type AppCardProps = PropsWithChildren<{
-  padding?: number;
-}>;
+type AppCardProps = PropsWithChildren<{ padding?: number; style?: StyleProp<ViewStyle> }>;
 
-export function AppCard({ children, padding = 16 }: AppCardProps) {
-  return (
-    <Card mode="contained" style={styles.card}>
-      <View style={{ padding }}>{children}</View>
-    </Card>
-  );
+export function AppCard({ children, padding = 16, style }: AppCardProps) {
+  return <Card mode="contained" style={[styles.card, style]}><View style={{ padding }}>{children}</View></Card>;
 }
 
 const styles = StyleSheet.create({
