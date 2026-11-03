@@ -50,10 +50,21 @@ class AssetCategory(TenantOwnedModel):
 
     def clean(self):
         super().clean()
-        for field in ("asset_account", "depreciation_expense_account", "accumulated_depreciation_account"):
+        expected_types = {
+            "asset_account": "asset",
+            "depreciation_expense_account": "expense",
+            "accumulated_depreciation_account": "asset",
+        }
+        for field, expected_type in expected_types.items():
             account = getattr(self, field)
             if account and account.school_id != self.school_id:
                 raise ValidationError({field: "الحساب المالي لا يتبع المدرسة نفسها."})
+            if account and (
+                account.account_type != expected_type
+                or not account.is_leaf
+                or account.is_archived
+            ):
+                raise ValidationError({field: "يجب اختيار حساب تفصيلي نشط من النوع المحاسبي الصحيح."})
         if not Decimal("0.00") <= self.annual_depreciation_rate <= Decimal("100.00"):
             raise ValidationError({"annual_depreciation_rate": "نسبة الإهلاك يجب أن تكون بين صفر و100 بالمئة."})
         if self.useful_life_years <= 0:
@@ -148,7 +159,7 @@ class FixedAsset(TenantOwnedModel):
                     "category_id", "purchase_date", "purchase_cost", "salvage_value",
                     "source_vendor_invoice_id", "accumulated_depreciation",
                     "acquisition_journal_entry_id", "disposal_journal_entry_id",
-                    "disposed_at",
+                    "disposed_at", "branch_id", "location_room", "custodian_id",
                 )
                 if any(getattr(original, field) != getattr(self, field) for field in protected):
                     raise ValidationError("بيانات اقتناء الأصل ومجمع إهلاكه وربطه المحاسبي لا تعدل مباشرة.")
