@@ -116,104 +116,268 @@ class InventoryItem(TenantOwnedModel):
         return self.current_stock <= self.reorder_level
 
 
+class WarehouseStock(TenantOwnedModel):
+    """الرصيد الحالي للصنف داخل مستودع واحد؛ دفتر الحركات هو مصدر الأثر."""
+    item = models.ForeignKey(
+        InventoryItem, on_delete=models.PROTECT, related_name="warehouse_balances",
+        verbose_name="الصنف",
+    )
+    warehouse = models.ForeignKey(
+        Warehouse, on_delete=models.PROTECT, related_name="stock_balances",
+        verbose_name="المستودع",
+    )
+    quantity = models.DecimalField("الرصيد المتاح", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    average_unit_cost = models.DecimalField("متوسط تكلفة الوحدة", max_digits=14, decimal_places=4, default=Decimal("0.0000"))
+
+    class Meta:
+        verbose_name = "رصيد صنف في مستودع"
+        verbose_name_plural = "أرصدة الأصناف بالمستودعات"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "item", "warehouse"],
+                condition=models.Q(is_archived=False),
+                name="inventory_warehouse_stock_uniq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(quantity__gte=0),
+                name="inventory_warehouse_stock_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(average_unit_cost__gte=0),
+                name="inventory_warehouse_cost_nonnegative",
+            ),
+        ]
+        indexes = [models.Index(fields=["school", "warehouse", "item"])]
+
+    def clean(self):
+        super().clean()
+        if self.item_id and self.item.school_id != self.school_id:
+            raise ValidationError({"item": "الصنف لا يتبع المدرسة نفسها."})
+        if self.warehouse_id and self.warehouse.school_id != self.school_id:
+            raise ValidationError({"warehouse": "المستودع لا يتبع المدرسة نفسها."})
+        if self.warehouse_id and self.branch_id != self.warehouse.branch_id:
+            raise ValidationError({"branch": "فرع الرصيد يجب أن يطابق فرع المستودع."})
+
+
+class StockMovementQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError("سجل حركة المخزون دفتر تاريخي غير قابل للتعديل؛ استخدم حركة عكسية موثقة.")
+
+    def delete(self):
+        raise ValidationError("لا يجوز حذف حركات المخزون؛ التصحيح يتم بحركة عكسية موثقة.")
+
+
 class StockMovement(TenantOwnedModel):
-    """سجل حركات المخزون (وارد، صرف، تسوية، تحويل)."""
+    """دفتر حركات المخزون غير القابل للتعديل بعد الإنشاء."""
+    objects = StockMovementQuerySet.as_manager()
+
     class MovementType(models.TextChoices):
         RECEIPT = "receipt", "توريد وارد (مشتريات)"
-        ISSUE = "issue", "صرف ونفقة (لقسم أو طالب)"
+        ISSUE = "issue", "صرف"
         ADJUSTMENT_ADD = "adj_add", "تسوية جردية بالزيادة"
-        ADJUSTMENT_SUB = "adj_sub", "تسوية جردية بالعجز أو التلف"
+        ADJUSTMENT_SUB = "adj_sub", "تسوية جردية بالنقص"
+        TRANSFER_IN = "transfer_in", "استلام تحويل من مستودع"
+        TRANSFER_OUT = "transfer_out", "إرسال تحويل إلى مستودع"
 
     item = models.ForeignKey(
-        InventoryItem,
-        verbose_name="الصنف",
-        on_delete=models.PROTECT,
+        InventoryItem, verbose_name="الصنف", on_delete=models.PROTECT,
         related_name="movements",
+    )
+    warehouse = models.ForeignKey(
+        Warehouse, verbose_name="المستودع", on_delete=models.PROTECT,
+        related_name="movements", null=True, blank=True,
     )
     movement_type = models.CharField("نوع الحركة", max_length=20, choices=MovementType.choices)
     quantity = models.DecimalField("الكمية", max_digits=12, decimal_places=2)
-    unit_cost = models.DecimalField("سعر / تكلفة الوحدة", max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    unit_cost = models.DecimalField("تكلفة الوحدة", max_digits=14, decimal_places=4, default=Decimal("0.0000"))
     date = models.DateField("تاريخ الحركة", default=timezone.localdate)
-    reference = models.CharField("رقم المستند المرجعي (سند صرف / فاتورة توريد)", max_length=100, blank=True)
+    reference = models.CharField("رقم المستند المرجعي", max_length=100, blank=True)
     recipient_name = models.CharField("المستلم / القسم المستفيد", max_length=150, blank=True)
-    notes = models.TextField("ملاحظات الحركة", blank=True)
+    notes = models.TextField("سبب الحركة وملاحظاتها")
+    idempotency_key = models.CharField("مفتاح منع التكرار", max_length=100, blank=True, default="")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="created_stock_movements", verbose_name="منشئ الحركة",
+    )
+    purchase_order_item = models.ForeignKey(
+        "inventory.PurchaseOrderItem", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="stock_movements", verbose_name="بند أمر الشراء",
+    )
+    purchase_receipt = models.ForeignKey(
+        "inventory.PurchaseReceipt", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="movements", verbose_name="محضر الاستلام",
+    )
+    transfer = models.ForeignKey(
+        "inventory.WarehouseTransfer", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="movements", verbose_name="مستند التحويل",
+    )
+    reversal_of = models.OneToOneField(
+        "self", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="reversal", verbose_name="الحركة الأصلية المعكوسة",
+    )
 
     class Meta:
         verbose_name = "حركة مخزنية"
-        verbose_name_plural = "سجل حركات المخزون"
+        verbose_name_plural = "دفتر حركات المخزون"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "idempotency_key"],
+                condition=models.Q(is_archived=False, idempotency_key__gt=""),
+                name="inventory_stock_movement_idem_uniq",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["school", "warehouse", "date"]),
+            models.Index(fields=["school", "item", "date"]),
+        ]
 
     def __str__(self) -> str:
         return f"{self.get_movement_type_display()} - {self.item.name}: {self.quantity}"
+
+    @property
+    def is_inbound(self) -> bool:
+        return self.movement_type in {
+            self.MovementType.RECEIPT,
+            self.MovementType.ADJUSTMENT_ADD,
+            self.MovementType.TRANSFER_IN,
+        }
 
     def clean(self):
         super().clean()
         if self.quantity <= Decimal("0.00"):
             raise ValidationError({"quantity": "يجب أن تكون كمية الحركة أكبر من الصفر."})
-        if self.movement_type in [self.MovementType.ISSUE, self.MovementType.ADJUSTMENT_SUB]:
-            if self._state.adding and self.item.current_stock < self.quantity:
-                raise ValidationError({
-                    "quantity": f"الكمية المطلوبة للصرف ({self.quantity}) تتجاوز الرصيد المتاح بالمستودع ({self.item.current_stock})."
-                })
+        if self.unit_cost < Decimal("0.00"):
+            raise ValidationError({"unit_cost": "تكلفة الوحدة لا يمكن أن تكون سالبة."})
+        if not self.notes.strip():
+            raise ValidationError({"notes": "سبب الحركة مطلوب لأغراض التدقيق."})
+        if self.item_id and self.item.school_id != self.school_id:
+            raise ValidationError({"item": "الصنف لا يتبع المدرسة نفسها."})
+        if self.warehouse_id and self.warehouse.school_id != self.school_id:
+            raise ValidationError({"warehouse": "المستودع لا يتبع المدرسة نفسها."})
+        if self.warehouse_id and self.item_id and self.warehouse.is_archived:
+            raise ValidationError({"warehouse": "لا يمكن استخدام مستودع مؤرشف."})
+        if self.purchase_order_item_id:
+            if self.purchase_order_item.school_id != self.school_id:
+                raise ValidationError({"purchase_order_item": "بند أمر الشراء لا يتبع المدرسة نفسها."})
+            if self.purchase_order_item.item_id != self.item_id:
+                raise ValidationError({"purchase_order_item": "الصنف لا يطابق بند أمر الشراء."})
+        if self.purchase_receipt_id and self.purchase_receipt.school_id != self.school_id:
+            raise ValidationError({"purchase_receipt": "محضر الاستلام لا يتبع المدرسة نفسها."})
+        if self.transfer_id and self.transfer.school_id != self.school_id:
+            raise ValidationError({"transfer": "مستند التحويل لا يتبع المدرسة نفسها."})
+        if self.reversal_of_id:
+            if self.reversal_of.school_id != self.school_id or self.reversal_of.item_id != self.item_id:
+                raise ValidationError({"reversal_of": "الحركة الأصلية لا تتطابق مع المدرسة والصنف."})
 
     def save(self, *args, **kwargs):
-        is_new = self._state.adding
         from django.db import transaction
+
+        if not self._state.adding:
+            raise ValidationError("حركة المخزون غير قابلة للتعديل بعد إنشائها؛ أنشئ حركة عكسية بدلاً من ذلك.")
         with transaction.atomic():
-            old = StockMovement.objects.filter(pk=self.pk).first() if (not is_new and self.pk) else None
+            item = InventoryItem.objects.select_for_update().get(pk=self.item_id, school_id=self.school_id)
+            if not self.warehouse_id:
+                self.warehouse_id = item.warehouse_id
+            warehouse = Warehouse.objects.select_for_update().get(
+                pk=self.warehouse_id, school_id=self.school_id, is_archived=False,
+            )
+            if item.branch_id and warehouse.branch_id and item.branch_id != warehouse.branch_id:
+                raise ValidationError("لا يمكن استخدام صنف مملوك لفرع في مستودع فرع آخر.")
+            if warehouse.branch_id:
+                self.branch_id = warehouse.branch_id
+            elif self.branch_id and item.branch_id and self.branch_id != item.branch_id:
+                raise ValidationError("فرع الحركة لا يطابق فرع الصنف.")
 
-            # إذا تغير الصنف، يتم إلغاء الحركة من الصنف القديم وتطبيقها على الصنف الجديد
-            if old and old.item_id != self.item_id:
-                old_item = InventoryItem.objects.select_for_update().get(pk=old.item_id)
-                new_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
+            balance, _ = WarehouseStock.objects.get_or_create(
+                school_id=self.school_id,
+                item=item,
+                warehouse=warehouse,
+                defaults={
+                    "branch_id": warehouse.branch_id,
+                    "quantity": Decimal("0.00"),
+                    "average_unit_cost": item.unit_cost,
+                },
+            )
+            balance = WarehouseStock.objects.select_for_update().get(pk=balance.pk)
+            inbound = self.is_inbound
+            if not inbound and balance.quantity < self.quantity:
+                raise ValidationError(
+                    f"الرصيد غير كافٍ في المستودع {warehouse.name}: المتاح {balance.quantity} والمطلوب {self.quantity}."
+                )
 
-                if old.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
-                    if old_item.current_stock < old.quantity:
-                        raise ValidationError(f"لا يمكن تغيير الصنف: رصيد الصنف السابق ({old_item.current_stock}) أقل من الكمية السابقة ({old.quantity}).")
-                    old_item.current_stock -= old.quantity
-                else:
-                    old_item.current_stock += old.quantity
-                old_item.save(update_fields=["current_stock"])
+            self.full_clean()
+            previous_quantity = balance.quantity
+            next_quantity = previous_quantity + self.quantity if inbound else previous_quantity - self.quantity
+            if inbound and self.movement_type == self.MovementType.RECEIPT:
+                old_value = previous_quantity * balance.average_unit_cost
+                new_value = self.quantity * self.unit_cost
+                average = (
+                    (old_value + new_value) / next_quantity
+                    if next_quantity > 0 else self.unit_cost
+                )
+                balance.average_unit_cost = average.quantize(Decimal("0.0001"))
+                if self.unit_cost > 0:
+                    current_total = item.current_stock
+                    aggregate_value = current_total * item.unit_cost + new_value
+                    aggregate_qty = current_total + self.quantity
+                    if aggregate_qty > 0:
+                        item.unit_cost = (aggregate_value / aggregate_qty).quantize(Decimal("0.0001"))
+            elif inbound and self.movement_type == self.MovementType.TRANSFER_IN:
+                if self.unit_cost > 0 and previous_quantity == 0:
+                    balance.average_unit_cost = self.unit_cost
 
-                if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
-                    new_item.current_stock += self.quantity
-                else:
-                    if new_item.current_stock < self.quantity:
-                        raise ValidationError(f"الكمية المطلوبة ({self.quantity}) تتجاوز الرصيد المتاح في الصنف الجديد ({new_item.current_stock}).")
-                    new_item.current_stock -= self.quantity
-                new_item.save(update_fields=["current_stock"])
-            else:
-                locked_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
-                if old:
-                    if old.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
-                        locked_item.current_stock -= old.quantity
-                    else:
-                        locked_item.current_stock += old.quantity
-
-                if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
-                    locked_item.current_stock += self.quantity
-                else:
-                    if locked_item.current_stock < self.quantity:
-                        raise ValidationError(f"الكمية المطلوبة ({self.quantity}) تتجاوز الرصيد المتاح بالمستودع ({locked_item.current_stock}).")
-                    locked_item.current_stock -= self.quantity
-                locked_item.save(update_fields=["current_stock"])
-
+            balance.quantity = next_quantity
+            balance.save(update_fields=["quantity", "average_unit_cost", "updated_at"])
+            aggregate_delta = self.quantity if inbound else -self.quantity
+            models.QuerySet.update(
+                InventoryItem.objects.filter(pk=item.pk),
+                current_stock=item.current_stock + aggregate_delta,
+                unit_cost=item.unit_cost,
+                updated_at=timezone.now(),
+            )
             super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        from django.db import transaction
-        with transaction.atomic():
-            locked_item = InventoryItem.objects.select_for_update().get(pk=self.item_id)
-            if self.movement_type in [self.MovementType.RECEIPT, self.MovementType.ADJUSTMENT_ADD]:
-                if locked_item.current_stock < self.quantity:
-                    raise ValidationError(
-                        f"لا يمكن حذف حركة التوريد: رصيد الصنف الحالي بالمستودع ({locked_item.current_stock}) "
-                        f"أقل من الكمية المراد حذفها ({self.quantity}) وسيؤدي ذلك إلى رصيد سالب غير مسموح."
-                    )
-                locked_item.current_stock -= self.quantity
-            else:
-                locked_item.current_stock += self.quantity
-            locked_item.save(update_fields=["current_stock"])
-            return super().delete(*args, **kwargs)
+        raise ValidationError("لا يجوز حذف حركة مخزنية؛ التصحيح يتم بحركة عكسية مرتبطة بالحركة الأصلية.")
+
+
+class PurchaseReceipt(TenantOwnedModel):
+    """محضر استلام مستقل قابل للتكرار الآمن لأوامر الشراء الجزئية."""
+    purchase_order = models.ForeignKey(
+        "inventory.PurchaseOrder", on_delete=models.PROTECT,
+        related_name="receipts", verbose_name="أمر الشراء",
+    )
+    receipt_number = models.CharField("رقم محضر الاستلام", max_length=60)
+    idempotency_key = models.CharField("مفتاح منع التكرار", max_length=100)
+    received_at = models.DateTimeField("تاريخ الاستلام", default=timezone.now)
+    received_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="inventory_receipts", verbose_name="مستلم التوريد",
+    )
+    notes = models.TextField("ملاحظات الاستلام", blank=True)
+
+    class Meta:
+        verbose_name = "محضر استلام مشتريات"
+        verbose_name_plural = "محاضر استلام المشتريات"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "idempotency_key"],
+                condition=models.Q(is_archived=False),
+                name="inventory_receipt_idem_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "receipt_number"],
+                condition=models.Q(is_archived=False),
+                name="inventory_receipt_number_uniq",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.purchase_order_id and self.purchase_order.school_id != self.school_id:
+            raise ValidationError({"purchase_order": "أمر الشراء لا يتبع المدرسة نفسها."})
+        if len(self.idempotency_key.strip()) < 8:
+            raise ValidationError({"idempotency_key": "مفتاح منع التكرار يجب ألا يقل عن 8 أحرف."})
 
 
 class PurchaseOrder(TenantOwnedModel):
@@ -221,6 +385,7 @@ class PurchaseOrder(TenantOwnedModel):
     class Status(models.TextChoices):
         DRAFT = "draft", "مسودة طلب"
         APPROVED = "approved", "أمر شراء معتمد"
+        PARTIALLY_RECEIVED = "partially_received", "مستلم جزئياً"
         RECEIVED = "received", "مستلم بالكامل في المخزن"
         CANCELLED = "cancelled", "ملغى"
 
@@ -239,7 +404,9 @@ class PurchaseOrder(TenantOwnedModel):
     )
     order_date = models.DateField("تاريخ الأمر", default=timezone.localdate)
     total_amount = models.DecimalField("إجمالي قيمة الطلب", max_digits=14, decimal_places=2, default=Decimal("0.00"))
-    status = models.CharField("حالة الطلب", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    status = models.CharField("حالة الطلب", max_length=24, choices=Status.choices, default=Status.DRAFT)
+    approved_at = models.DateTimeField("تاريخ الاعتماد", null=True, blank=True)
+    received_at = models.DateTimeField("تاريخ اكتمال الاستلام", null=True, blank=True)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name="المعتمد",
@@ -265,33 +432,25 @@ class PurchaseOrder(TenantOwnedModel):
         return f"أمر شراء #{self.order_number} - {self.supplier.name} ({self.total_amount})"
 
     def receive_into_warehouse(self, user=None):
-        """تحويل أمر الشراء إلى حركات توريد مخزنية فعلية وتحديث رصيد المستودع مع قفل تشاؤمي صارم لمنع التكرار المتزامن."""
-        from django.db import transaction
-        with transaction.atomic():
-            locked_po = PurchaseOrder.objects.select_for_update().get(pk=self.pk)
-            if locked_po.status == self.Status.RECEIVED:
-                return []
-            if locked_po.status != self.Status.APPROVED:
-                raise ValidationError("لا يمكن استلام أمر الشراء في المخزن إلا بعد اعتماده رسمياً (APPROVED).")
+        """التوافق مع المسار القديم؛ ينفذ استلاماً كاملاً بمفتاح ثابت وآمن."""
+        from apps.inventory.services import receive_purchase_order
 
-            created_movements = []
-            for po_item in locked_po.items.filter(is_archived=False).select_related("item"):
-                movement = StockMovement.objects.create(
-                    school=locked_po.school,
-                    item=po_item.item,
-                    movement_type=StockMovement.MovementType.RECEIPT,
-                    quantity=po_item.quantity,
-                    unit_cost=po_item.unit_price,
-                    reference=f"استلام أمر شراء #{locked_po.order_number}",
-                    recipient_name=locked_po.supplier.name,
-                )
-                created_movements.append(movement)
-            locked_po.status = self.Status.RECEIVED
-            if user and not locked_po.approved_by:
-                locked_po.approved_by = user
-            locked_po.save(update_fields=["status", "approved_by", "updated_at"])
-            self.status = locked_po.status
-        return created_movements
+        items = list(
+            self.items.filter(is_archived=False).values("id", "quantity", "quantity"),
+        )
+        payload = [
+            {"purchase_order_item_id": str(row["id"]), "quantity": str(row["quantity"])}
+            for row in items
+        ]
+        receipt, _created = receive_purchase_order(
+            purchase_order=self,
+            received_items=payload,
+            idempotency_key=f"legacy-full-receipt-{self.pk}",
+            received_by=user,
+            notes="استلام كامل عبر مسار التوافق القديم",
+        )
+        return list(receipt.movements.all())
+
 
 
 class PurchaseOrderItem(TenantOwnedModel):
@@ -311,17 +470,145 @@ class PurchaseOrderItem(TenantOwnedModel):
     quantity = models.DecimalField("الكمية المطلوبة", max_digits=12, decimal_places=2)
     unit_price = models.DecimalField("سعر الوحدة المتفق عليه", max_digits=12, decimal_places=2)
     total_price = models.DecimalField("إجمالي البند", max_digits=14, decimal_places=2)
+    received_quantity = models.DecimalField("الكمية المستلمة", max_digits=12, decimal_places=2, default=Decimal("0.00"))
 
     class Meta:
         verbose_name = "بند أمر شراء"
         verbose_name_plural = "بنود أوامر الشراء"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(quantity__gt=0),
+                name="inventory_po_item_qty_positive",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(unit_price__gte=0),
+                name="inventory_po_item_price_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(received_quantity__gte=0) & models.Q(received_quantity__lte=models.F("quantity")),
+                name="inventory_po_item_received_range",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.item.name} x {self.quantity} = {self.total_price}"
 
     def clean(self):
         super().clean()
+        if self.quantity <= 0:
+            raise ValidationError({"quantity": "كمية أمر الشراء يجب أن تكون أكبر من صفر."})
+        if self.unit_price < 0:
+            raise ValidationError({"unit_price": "سعر الوحدة لا يمكن أن يكون سالباً."})
+        if self.received_quantity < 0 or self.received_quantity > self.quantity:
+            raise ValidationError({"received_quantity": "الكمية المستلمة يجب أن تكون بين صفر والكمية المطلوبة."})
+        if self.purchase_order_id and self.purchase_order.school_id != self.school_id:
+            raise ValidationError({"purchase_order": "أمر الشراء لا يتبع المدرسة نفسها."})
+        if self.item_id and self.item.school_id != self.school_id:
+            raise ValidationError({"item": "الصنف لا يتبع المدرسة نفسها."})
+        if self.purchase_order_id and self.purchase_order.status != PurchaseOrder.Status.DRAFT and self._state.adding:
+            raise ValidationError("لا يمكن إضافة بنود إلى أمر شراء معتمد أو مستلم.")
+
+    def save(self, *args, **kwargs):
+        if self.purchase_order_id:
+            order = PurchaseOrder.objects.get(pk=self.purchase_order_id)
+            if order.status != PurchaseOrder.Status.DRAFT:
+                raise ValidationError("لا يمكن تعديل بنود أمر شراء بعد اعتماده.")
         self.total_price = self.quantity * self.unit_price
+        super().save(*args, **kwargs)
+        total = PurchaseOrderItem.objects.filter(
+            purchase_order_id=self.purchase_order_id, is_archived=False,
+        ).aggregate(total=models.Sum("total_price"))["total"] or Decimal("0.00")
+        models.QuerySet.update(
+            PurchaseOrder.objects.filter(pk=self.purchase_order_id),
+            total_amount=total,
+            updated_at=timezone.now(),
+        )
+
+    def delete(self, *args, **kwargs):
+        order = PurchaseOrder.objects.get(pk=self.purchase_order_id)
+        if order.status != PurchaseOrder.Status.DRAFT:
+            raise ValidationError("لا يمكن حذف بند من أمر شراء بعد اعتماده.")
+        result = super().delete(*args, **kwargs)
+        total = PurchaseOrderItem.objects.filter(
+            purchase_order_id=self.purchase_order_id, is_archived=False,
+        ).aggregate(total=models.Sum("total_price"))["total"] or Decimal("0.00")
+        models.QuerySet.update(
+            PurchaseOrder.objects.filter(pk=self.purchase_order_id),
+            total_amount=total,
+            updated_at=timezone.now(),
+        )
+        return result
+
+
+
+
+
+class WarehouseTransfer(TenantOwnedModel):
+    """مستند تحويل بين مستودعين ضمن المدرسة نفسها."""
+    class Status(models.TextChoices):
+        DRAFT = "draft", "مسودة"
+        POSTED = "posted", "مرحّل"
+        REVERSED = "reversed", "معكوس"
+
+    transfer_number = models.CharField("رقم التحويل", max_length=60)
+    item = models.ForeignKey(InventoryItem, on_delete=models.PROTECT, related_name="warehouse_transfers", verbose_name="الصنف")
+    source_warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="outgoing_transfers", verbose_name="من مستودع")
+    destination_warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="incoming_transfers", verbose_name="إلى مستودع")
+    quantity = models.DecimalField("الكمية المحولة", max_digits=12, decimal_places=2)
+    unit_cost = models.DecimalField("تكلفة الوحدة عند التحويل", max_digits=14, decimal_places=4, default=Decimal("0.0000"))
+    transfer_date = models.DateField("تاريخ التحويل", default=timezone.localdate)
+    idempotency_key = models.CharField("مفتاح منع التكرار", max_length=100)
+    status = models.CharField("الحالة", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    posted_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="posted_warehouse_transfers", verbose_name="مرحل التحويل")
+    posted_at = models.DateTimeField("تاريخ الترحيل", null=True, blank=True)
+    reversed_at = models.DateTimeField("تاريخ العكس", null=True, blank=True)
+    notes = models.TextField("سبب التحويل وملاحظاته")
+
+    class Meta:
+        verbose_name = "تحويل مخزني"
+        verbose_name_plural = "تحويلات المستودعات"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "transfer_number"],
+                condition=models.Q(is_archived=False),
+                name="inventory_transfer_number_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=["school", "idempotency_key"],
+                condition=models.Q(is_archived=False),
+                name="inventory_transfer_idem_uniq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(quantity__gt=0),
+                name="inventory_transfer_qty_positive",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.quantity <= 0:
+            raise ValidationError({"quantity": "كمية التحويل يجب أن تكون أكبر من صفر."})
+        if len(self.idempotency_key.strip()) < 8:
+            raise ValidationError({"idempotency_key": "مفتاح منع التكرار يجب ألا يقل عن 8 أحرف."})
+        if self.source_warehouse_id and self.destination_warehouse_id:
+            if self.source_warehouse_id == self.destination_warehouse_id:
+                raise ValidationError("لا يمكن التحويل من المستودع إلى نفسه.")
+            if self.source_warehouse.school_id != self.school_id or self.destination_warehouse.school_id != self.school_id:
+                raise ValidationError("يجب أن يتبع المستودعان المدرسة نفسها.")
+        if self.item_id and self.item.school_id != self.school_id:
+            raise ValidationError({"item": "الصنف لا يتبع المدرسة نفسها."})
+        if self.source_warehouse_id and self.item_id and self.item.branch_id and self.source_warehouse.branch_id and self.item.branch_id != self.source_warehouse.branch_id:
+            raise ValidationError({"source_warehouse": "المستودع المصدر لا يتوافق مع فرع الصنف."})
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("تعديل مستند التحويل بعد إنشائه يتم عبر خدمات التحويل فقط.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        if self.status != self.Status.DRAFT:
+            raise ValidationError("لا يمكن حذف تحويل مرحّل أو معكوس.")
+        return super().delete(*args, **kwargs)
 
 
 class VendorInvoice(TenantOwnedModel):
@@ -332,6 +619,11 @@ class VendorInvoice(TenantOwnedModel):
         PAID = "paid", "مسددة بالكامل"
         PARTIAL = "partial", "مسددة جزئياً"
         CANCELLED = "cancelled", "ملغاة"
+
+    class AccountingTreatment(models.TextChoices):
+        INVENTORY = "inventory", "مخزون"
+        FIXED_ASSET = "fixed_asset", "أصل ثابت"
+        EXPENSE = "expense", "مصروف مباشر"
 
     invoice_number = models.CharField("رقم فاتورة المورد", max_length=100)
     supplier = models.ForeignKey(
@@ -352,7 +644,21 @@ class VendorInvoice(TenantOwnedModel):
     due_date = models.DateField("تاريخ الاستحقاق", default=timezone.localdate)
     total_amount = models.DecimalField("إجمالي الفاتورة", max_digits=14, decimal_places=2)
     paid_amount = models.DecimalField("المبلغ المسدد", max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    accounting_treatment = models.CharField("المعالجة المحاسبية", max_length=20, choices=AccountingTreatment.choices, default=AccountingTreatment.INVENTORY)
+    expense_account = models.ForeignKey(
+        "accounting.Account", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="vendor_invoices", verbose_name="حساب المصروف أو الأصل",
+    )
+    cost_center = models.ForeignKey(
+        "accounting.CostCenter", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="vendor_invoices", verbose_name="مركز التكلفة",
+    )
     status = models.CharField("حالة الفاتورة", max_length=20, choices=Status.choices, default=Status.DRAFT)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="approved_vendor_invoices", verbose_name="معتمد الفاتورة",
+    )
+    approved_at = models.DateTimeField("تاريخ الاعتماد", null=True, blank=True)
     journal_entry = models.ForeignKey(
         "accounting.JournalEntry",
         verbose_name="قيد الاستحقاق اليومي",
@@ -388,9 +694,75 @@ class VendorInvoice(TenantOwnedModel):
                 raise ValidationError({"purchase_order": "أمر الشراء مرتبط بمورد مختلف عن مورد الفاتورة."})
         if self.total_amount <= Decimal("0.00"):
             raise ValidationError({"total_amount": "إجمالي الفاتورة يجب أن يكون أكبر من الصفر."})
+        if self.paid_amount < 0 or self.paid_amount > self.total_amount:
+            raise ValidationError({"paid_amount": "المبلغ المسدد يجب أن يكون بين صفر وإجمالي الفاتورة."})
+        if self.cost_center_id and self.cost_center.school_id != self.school_id:
+            raise ValidationError({"cost_center": "مركز التكلفة لا يتبع المدرسة نفسها."})
+        if self.expense_account_id and self.expense_account.school_id != self.school_id:
+            raise ValidationError({"expense_account": "حساب الفاتورة لا يتبع المدرسة نفسها."})
+        if self.accounting_treatment == self.AccountingTreatment.EXPENSE:
+            if not self.expense_account_id or self.expense_account.account_type != "expense" or not self.expense_account.is_leaf:
+                raise ValidationError({"expense_account": "اختر حساب مصروف تفصيلياً صالحاً."})
+        if self.accounting_treatment == self.AccountingTreatment.FIXED_ASSET:
+            if self.expense_account_id and (self.expense_account.account_type != "asset" or not self.expense_account.is_leaf):
+                raise ValidationError({"expense_account": "حساب الأصل يجب أن يكون حساب أصول تفصيلياً."})
         if self.due_date and self.invoice_date and self.due_date < self.invoice_date:
             raise ValidationError({"due_date": "تاريخ استحقاق الفاتورة يجب ألا يسبق تاريخ إصدارها."})
 
     @property
     def remaining_amount(self) -> Decimal:
         return max(Decimal("0.00"), self.total_amount - self.paid_amount)
+
+
+class VendorInvoicePayment(TenantOwnedModel):
+    """سجل ربط غير قابل للتكرار بين دفعة المورد والفاتورة وسند الصرف."""
+    invoice = models.ForeignKey(
+        VendorInvoice, on_delete=models.PROTECT, related_name="payments",
+        verbose_name="فاتورة المورد",
+    )
+    payment_voucher = models.OneToOneField(
+        "accounting.PaymentVoucher", on_delete=models.PROTECT,
+        related_name="vendor_invoice_payment", verbose_name="سند الصرف",
+    )
+    journal_entry = models.ForeignKey(
+        "accounting.JournalEntry", on_delete=models.PROTECT,
+        related_name="vendor_invoice_payments", verbose_name="القيد المحاسبي",
+    )
+    amount = models.DecimalField("مبلغ الدفعة", max_digits=14, decimal_places=2)
+    idempotency_key = models.CharField("مفتاح منع تكرار الدفعة", max_length=100)
+    payment_date = models.DateField("تاريخ السداد", default=timezone.localdate)
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="vendor_invoice_payments", verbose_name="مسجل الدفعة",
+    )
+
+    class Meta:
+        verbose_name = "دفعة فاتورة مورد"
+        verbose_name_plural = "دفعات فواتير الموردين"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "idempotency_key"],
+                condition=models.Q(is_archived=False),
+                name="inventory_vendor_payment_idem_uniq",
+            ),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="inventory_vendor_payment_positive"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.invoice_id and self.invoice.school_id != self.school_id:
+            raise ValidationError({"invoice": "الفاتورة لا تتبع المدرسة نفسها."})
+        if self.payment_voucher_id and self.payment_voucher.school_id != self.school_id:
+            raise ValidationError({"payment_voucher": "سند الصرف لا يتبع المدرسة نفسها."})
+        if self.journal_entry_id and self.journal_entry.school_id != self.school_id:
+            raise ValidationError({"journal_entry": "القيد المحاسبي لا يتبع المدرسة نفسها."})
+        if self.amount <= 0 or len(self.idempotency_key.strip()) < 8:
+            raise ValidationError("مبلغ الدفعة موجب ومفتاح منع التكرار بطول 8 أحرف على الأقل مطلوب.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("سجل دفعة المورد تاريخي وغير قابل للتعديل.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("لا يجوز حذف دفعة مورد؛ التصحيح عبر عكس سند الصرف والقيد المحاسبي.")
