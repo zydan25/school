@@ -4,7 +4,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import json
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -110,7 +109,7 @@ def _twilio_signature_is_valid(request, secret):
         for value in sorted(str(item) for item in items):
             signed += str(key) + value
     expected = base64.b64encode(
-        hmac.new(secret.encode("utf-8"), signed.encode("utf-8"), hashlib.sha1).digest()
+        hmac.new(secret.encode(), signed.encode("utf-8"), hashlib.sha1).digest()
     ).decode("ascii")
     return hmac.compare_digest(signature, expected)
 

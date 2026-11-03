@@ -11,6 +11,13 @@ def populate_push_token_fingerprints(apps, schema_editor):
         device.save(update_fields=["push_token_fingerprint"])
 
 
+def encrypt_existing_push_tokens(apps, schema_editor):
+    PushDevice = apps.get_model("notifications", "PushDevice")
+    for device in PushDevice.objects.all().iterator():
+        # Legacy tokens are read as plaintext by EncryptedTextField and encrypted on save.
+        device.save(update_fields=["push_token"])
+
+
 class Migration(migrations.Migration):
     dependencies = [("notifications", "0008_stage12_delivery_receipts_and_rate_limits")]
     operations = [
@@ -28,6 +35,7 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name="pushdevice",
             name="push_token",
-            field=apps.core.fields.EncryptedTextField(verbose_name="رمز Push مشفر"),
+            field=apps.core.fields.EncryptedTextField(verbose_name="رمز الإشعارات من المزود"),
         ),
+        migrations.RunPython(encrypt_existing_push_tokens, migrations.RunPython.noop),
     ]

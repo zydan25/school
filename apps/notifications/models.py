@@ -1,5 +1,6 @@
 """In-app messages, transactional outbox, and WhatsApp/SMS gateway integrations."""
 import os
+import hashlib
 import uuid
 
 from django.conf import settings
@@ -354,7 +355,10 @@ class PushDevice(UUIDTimestampedModel):
 
 
     def save(self, *args, **kwargs):
-        self.push_token_fingerprint = hashlib.sha256(self.push_token.encode("utf-8")).hexdigest()
+        self.push_token_fingerprint = hashlib.sha256(self.push_token.encode()).hexdigest()
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            kwargs["update_fields"] = set(update_fields) | {"push_token_fingerprint"}
         return super().save(*args, **kwargs)
 
 class SchoolConversation(TenantOwnedModel):
