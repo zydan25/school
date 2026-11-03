@@ -283,6 +283,9 @@ class PurchaseReceiptInputSerializer(serializers.Serializer):
 
 class VendorInvoiceSerializer(ScopedModelSerializer):
     remaining_amount = serializers.DecimalField(max_digits=14, decimal_places=2, read_only=True)
+    branch = serializers.PrimaryKeyRelatedField(
+        queryset=Branch.objects.none(), required=False, allow_null=True,
+    )
 
     class Meta:
         model = VendorInvoice
@@ -301,6 +304,9 @@ class VendorInvoiceSerializer(ScopedModelSerializer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         school = self.context.get("school")
+        self.fields["branch"].queryset = Branch.objects.filter(
+            school=school, is_archived=False,
+        ) if school else Branch.objects.none()
         self.fields["supplier"].queryset = Supplier.objects.filter(
             school=school, is_archived=False, is_active=True,
         ) if school else Supplier.objects.none()
@@ -320,6 +326,9 @@ class VendorInvoiceSerializer(ScopedModelSerializer):
         po = attrs.get("purchase_order", getattr(self.instance, "purchase_order", None))
         if supplier and supplier.school_id != school.pk:
             raise serializers.ValidationError({"supplier": "المورد لا يتبع المدرسة الحالية."})
+        branch = attrs.get("branch", getattr(self.instance, "branch", None))
+        if branch and branch.school_id != school.pk:
+            raise serializers.ValidationError({"branch": "الفرع لا يتبع المدرسة الحالية."})
         if po and (po.school_id != school.pk or (supplier and po.supplier_id != supplier.pk)):
             raise serializers.ValidationError({"purchase_order": "أمر الشراء غير مطابق للمورد أو المدرسة."})
         amount = attrs.get("total_amount", getattr(self.instance, "total_amount", None))
