@@ -1,22 +1,24 @@
 """Serializers for the school support-services API."""
+from datetime import timedelta
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 
 from apps.accounts.models import SchoolMembership
+from apps.tenants.models import SchoolSettings
 from apps.school_services.models import (
     BookLoan,
     BookRequisitionItem,
     BookRequisitionOrder,
     BusFinancialSettlement,
+    BusSubscriptionCharge,
     BusRoute,
-    ClinicVisit,
     LibraryBook,
     StudentBookDistribution,
     StudentBusSubscription,
-    StudentHealthProfile,
 )
 
 
@@ -66,6 +68,16 @@ class SchoolServiceSerializer(serializers.ModelSerializer):
                 "driver_user": "يجب أن يمتلك حساب السائق عضوية نشطة في المدرسة."
             })
         return attrs
+
+
+class BusSubscriptionChargeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BusSubscriptionCharge
+        fields = (
+            "id", "subscription", "invoice", "billing_year", "billing_month",
+            "amount", "issued_by", "created_at",
+        )
+        read_only_fields = fields
 
 
 class BusRouteSerializer(SchoolServiceSerializer):
@@ -132,17 +144,34 @@ class LibraryBookSerializer(SchoolServiceSerializer):
             raise serializers.ValidationError({
                 "total_copies": "لا يمكن خفض عدد النسخ عن عدد النسخ المعارة حالياً."
             })
-        validated_data["available_copies"] = new_total - outstanding
+        # LibraryBook.save recalculates available copies under a row lock.
+        validated_data.pop("available_copies", None)
         return super().update(instance, validated_data)
 
 
 class BookLoanSerializer(SchoolServiceSerializer):
+    due_date = serializers.DateField(required=False)
+    is_overdue = serializers.SerializerMethodField()
+    overdue_days = serializers.SerializerMethodField()
+
     class Meta(SchoolServiceSerializer.Meta):
         model = BookLoan
         fields = "__all__"
         read_only_fields = SchoolServiceSerializer.Meta.read_only_fields + (
-            "status", "return_date", "fine_amount",
+            "status", "return_date", "fine_amount", "fine_invoice",
+            "renewal_count", "is_overdue", "overdue_days",
         )
+
+    def get_overdue_days(self, obj):
+        if obj.status not in {
+            BookLoan.Status.BORROWED,
+            BookLoan.Status.OVERDUE,
+        }:
+            return 0
+        return max(0, (timezone.localdate() - obj.due_date).days)
+
+    def get_is_overdue(self, obj):
+        return self.get_overdue_days(obj) > 0
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -155,7 +184,17 @@ class BookLoanSerializer(SchoolServiceSerializer):
         borrow_date = attrs.get(
             "borrow_date", getattr(self.instance, "borrow_date", None)
         )
+        if self.instance is None and borrow_date is None:
+            borrow_date = timezone.localdate()
         due_date = attrs.get("due_date", getattr(self.instance, "due_date", None))
+        if self.instance is None and due_date is None and borrow_date:
+            school = self.context.get("school")
+            policy = SchoolSettings.objects.filter(school=school).only(
+                "library_default_loan_days"
+            ).first()
+            loan_days = policy.library_default_loan_days if policy else 14
+            due_date = borrow_date + timedelta(days=loan_days)
+            attrs["due_date"] = due_date
         if borrow_date and due_date and due_date < borrow_date:
             raise serializers.ValidationError({
                 "due_date": "يجب أن يكون موعد الإرجاع في تاريخ الاستعارة أو بعده."
@@ -242,6 +281,7 @@ class BookRequisitionOrderSerializer(SchoolServiceSerializer):
             "approved_at", "fulfilled_by", "fulfilled_at",
         )
 
+    @transaction.atomic
     def create(self, validated_data):
         items = validated_data.pop("items", [])
         order = BookRequisitionOrder.objects.create(**validated_data)
@@ -258,16 +298,3 @@ class BookRequisitionOrderSerializer(SchoolServiceSerializer):
         ).data
         return data
 
-
-class StudentHealthProfileSerializer(SchoolServiceSerializer):
-    class Meta(SchoolServiceSerializer.Meta):
-        model = StudentHealthProfile
-        fields = "__all__"
-        read_only_fields = SchoolServiceSerializer.Meta.read_only_fields
-
-
-class ClinicVisitSerializer(SchoolServiceSerializer):
-    class Meta(SchoolServiceSerializer.Meta):
-        model = ClinicVisit
-        fields = "__all__"
-        read_only_fields = SchoolServiceSerializer.Meta.read_only_fields

@@ -118,6 +118,7 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+PRIVATE_MEDIA_ROOT = Path(os.getenv("PRIVATE_MEDIA_ROOT", str(BASE_DIR / "private_media"))).resolve()
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
@@ -136,6 +137,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5 * 1024 * 1024
 
 API_SESSION_LIFETIME_DAYS = int(os.getenv("API_SESSION_LIFETIME_DAYS", "30"))
 PHONE_OTP_DELIVERY_BACKEND = os.getenv("PHONE_OTP_DELIVERY_BACKEND", "").strip()
+FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "").strip()
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@school.local")
 REDIS_URL = os.getenv("REDIS_URL", "").strip()
 if REDIS_URL:

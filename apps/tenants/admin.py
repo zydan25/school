@@ -28,7 +28,13 @@ class SchoolSettingsInline(TabularInline):
     extra = 0
     max_num = 1
     can_delete = False
-    fields = ("allow_guardian_multiple_children", "require_student_photo", "require_admission_approval", "attendance_lock_after_days", "default_lesson_minutes")
+    fields = (
+        "allow_guardian_multiple_children", "require_student_photo",
+        "require_admission_approval", "attendance_lock_after_days",
+        "default_lesson_minutes", "library_default_loan_days",
+        "library_max_renewals", "library_overdue_fine_per_day",
+        "library_max_overdue_fine", "library_lost_book_fine",
+    )
 
 
 @admin.register(School)

@@ -7,7 +7,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from apps.core.models import TenantOwnedModel
+from apps.core.models import UUIDTimestampedModel, TenantOwnedModel
 
 
 def curriculum_document_upload_path(instance: CurriculumDocument, filename: str) -> str:
@@ -117,3 +117,70 @@ class AIChatMessage(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.sender}: {self.content[:60]}"
+
+
+class SchoolAIUsagePolicy(UUIDTimestampedModel):
+    """حدود وميزانية الذكاء الاصطناعي، مع أسعار يضبطها مالك المدرسة وفق عقد المزود."""
+
+    school = models.OneToOneField(
+        "tenants.School", on_delete=models.CASCADE, related_name="ai_usage_policy",
+        verbose_name="المدرسة",
+    )
+    enabled = models.BooleanField("تفعيل الذكاء الاصطناعي", default=False)
+    daily_request_limit = models.PositiveIntegerField("الحد اليومي للطلبات", default=50)
+    daily_token_limit = models.PositiveIntegerField("الحد اليومي للتوكنز", default=50000)
+    monthly_budget_amount = models.DecimalField("الميزانية الشهرية", max_digits=14, decimal_places=4, default=0)
+    input_cost_per_1k_tokens = models.DecimalField("تكلفة 1000 توكن إدخال", max_digits=14, decimal_places=8, default=0)
+    output_cost_per_1k_tokens = models.DecimalField("تكلفة 1000 توكن إخراج", max_digits=14, decimal_places=8, default=0)
+    currency = models.CharField("العملة", max_length=3, default="USD")
+    max_output_tokens = models.PositiveIntegerField("أقصى توكنز إخراج للطلب", default=4000)
+
+    class Meta:
+        verbose_name = "سياسة استخدام الذكاء الاصطناعي"
+        verbose_name_plural = "سياسات استخدام الذكاء الاصطناعي"
+
+    def clean(self):
+        super().clean()
+        if self.enabled:
+            if self.monthly_budget_amount <= 0:
+                raise ValidationError({"monthly_budget_amount": "حدد ميزانية شهرية موجبة قبل تفعيل الذكاء الاصطناعي."})
+            if self.input_cost_per_1k_tokens <= 0 and self.output_cost_per_1k_tokens <= 0:
+                raise ValidationError("أدخل أسعار التوكنز المعتمدة من مزود النموذج قبل التفعيل.")
+            if self.daily_request_limit < 1 or self.daily_token_limit < 1 or self.max_output_tokens < 1:
+                raise ValidationError("يجب أن تكون حدود الاستخدام أعداداً موجبة.")
+
+    def __str__(self):
+        return f"{self.school} - {'مفعل' if self.enabled else 'معطل'}"
+
+
+class AIUsageRecord(UUIDTimestampedModel):
+    """سجل تكلفة واستهلاك AI بلا حفظ prompt أو محتوى إجابة الطالب."""
+
+    class Status(models.TextChoices):
+        STARTED = "started", "قيد التنفيذ"
+        SUCCEEDED = "succeeded", "ناجح"
+        FAILED = "failed", "فشل"
+
+    school = models.ForeignKey("tenants.School", on_delete=models.PROTECT, related_name="ai_usage_records")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="ai_usage_records")
+    tool = models.CharField("الأداة", max_length=80, db_index=True)
+    model_name = models.CharField("النموذج", max_length=100)
+    source_refs = models.JSONField("مراجع مصادر البيانات", default=dict, blank=True)
+    input_tokens = models.PositiveIntegerField("توكنز الإدخال المقدرة", default=0)
+    output_tokens = models.PositiveIntegerField("توكنز الإخراج المقدرة", default=0)
+    estimated_cost = models.DecimalField("التكلفة المقدرة", max_digits=16, decimal_places=8, default=0)
+    currency = models.CharField("العملة", max_length=3, default="USD")
+    status = models.CharField("الحالة", max_length=12, choices=Status.choices, default=Status.STARTED, db_index=True)
+    failure_code = models.CharField("رمز الفشل", max_length=80, blank=True)
+    completed_at = models.DateTimeField("وقت الاكتمال", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "سجل استهلاك الذكاء الاصطناعي"
+        verbose_name_plural = "سجلات استهلاك الذكاء الاصطناعي"
+        indexes = [
+            models.Index(fields=["school", "created_at"], name="copilot_ai_school_date"),
+            models.Index(fields=["school", "user", "created_at"], name="copilot_ai_user_date"),
+        ]
+
+    def __str__(self):
+        return f"{self.school} / {self.tool} / {self.estimated_cost} {self.currency}"

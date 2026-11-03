@@ -19,6 +19,7 @@ from apps.copilot.api.serializers import (
     StudentChatRequestSerializer,
 )
 from apps.copilot.models import AIChatSession
+from apps.copilot.usage import AIUsageLimitExceeded, run_budgeted_ai_call
 from apps.copilot.services.ai_student import (
     fetch_academic_grades,
     fetch_pending_homework,
@@ -100,6 +101,47 @@ def _require_teacher_access(request):
     return school, teacher
 
 
+
+def _validate_teacher_scope(*, school, teacher, subject_id=None, grade_level_id=None, student_id=None):
+    """Require explicit, school-local teaching assignment context for teacher AI tools."""
+    subject = None
+    grade_level = None
+    student = None
+    if subject_id:
+        subject = Subject.objects.filter(pk=subject_id, school=school, is_archived=False).first()
+        if subject is None:
+            raise NotFound("المادة المحددة غير موجودة في المدرسة النشطة.")
+    if grade_level_id:
+        grade_level = GradeLevel.objects.filter(pk=grade_level_id, school=school, is_archived=False).first()
+        if grade_level is None:
+            raise NotFound("الصف المحدد غير موجود في المدرسة النشطة.")
+    if student_id:
+        student = Student.objects.filter(pk=student_id, school=school, is_archived=False).select_related("section").first()
+        if student is None:
+            raise NotFound("ملف الطالب غير موجود في المدرسة النشطة.")
+    if teacher is None:
+        return subject, grade_level, student
+    if subject is None:
+        raise PermissionDenied("يجب تحديد مادة مسندة إليك قبل استخدام أداة الذكاء الاصطناعي.")
+    assignments = TeacherAssignment.objects.filter(
+        school=school, teacher=teacher, subject=subject,
+        is_archived=False, academic_year__status="active",
+    )
+    if student is not None:
+        if student.section_id is None or not assignments.filter(section_id=student.section_id).exists():
+            raise PermissionDenied("لا يمكنك استخدام الأداة على طالب خارج الشعب المسندة إليك.")
+    elif grade_level is not None:
+        if not assignments.filter(section__grade=grade_level).exists():
+            raise PermissionDenied("لا يمكنك استخدام الأداة على صف غير مسند إليك.")
+    else:
+        raise PermissionDenied("يجب تحديد الصف أو الطالب للتحقق من إسنادك التدريسي.")
+    return subject, grade_level, student
+
+
+def _ai_error_response(exc):
+    return Response({"error": str(exc), "code": exc.code}, status=exc.http_status)
+
+
 def _resolve_authorized_student(request) -> Student | None:
     """Resolve a student only inside the active school and the caller's actual relationship."""
     school = _resolve_school(request)
@@ -168,16 +210,26 @@ class GenerateLessonPlanView(APIView):
             if not assigned:
                 raise PermissionDenied("لا يمكنك إعداد درس لمادة أو صف غير مسند إليك.")
         try:
-            result = generate_lesson_plan(
-                subject_id=str(subject.pk),
-                topic=data["topic"],
-                grade_level_id=str(grade_level.pk),
-                duration_minutes=data["duration_minutes"],
-                additional_notes=data.get("additional_notes", ""),
+            result = run_budgeted_ai_call(
+                school=school,
+                user=request.user,
+                tool="teacher.lesson_plan",
+                input_text=data,
+                source_refs={"subject_id": subject.pk, "grade_level_id": grade_level.pk},
+                max_output_tokens=2500,
+                call=lambda: generate_lesson_plan(
+                    subject_id=str(subject.pk),
+                    topic=data["topic"],
+                    grade_level_id=str(grade_level.pk),
+                    duration_minutes=data["duration_minutes"],
+                    additional_notes=data.get("additional_notes", ""),
+                ),
             )
             return Response(result, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except AIUsageLimitExceeded as exc:
+            return _ai_error_response(exc)
+        except Exception:
+            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي."}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class GenerateQuizView(APIView):
@@ -185,20 +237,40 @@ class GenerateQuizView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        _require_teacher_access(request)
+        school, teacher = _require_teacher_access(request)
         serializer = QuizGenerationRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        subject, grade_level, _student = _validate_teacher_scope(
+            school=school, teacher=teacher,
+            subject_id=data.get("subject_id"), grade_level_id=data.get("grade_level_id"),
+        ) if teacher is not None else _validate_teacher_scope(
+            school=school, teacher=None,
+            subject_id=data.get("subject_id"), grade_level_id=data.get("grade_level_id"),
+        )
         try:
-            quiz = generate_quiz(
-                lesson_plan_or_topic=data["lesson_plan_or_topic"],
-                num_questions=data["num_questions"],
-                question_type=data["question_type"],
-                difficulty=data["difficulty"],
+            quiz = run_budgeted_ai_call(
+                school=school,
+                user=request.user,
+                tool="teacher.quiz",
+                input_text=data,
+                source_refs={
+                    "subject_id": subject.pk if subject else None,
+                    "grade_level_id": grade_level.pk if grade_level else None,
+                },
+                max_output_tokens=3500,
+                call=lambda: generate_quiz(
+                    lesson_plan_or_topic=data["lesson_plan_or_topic"],
+                    num_questions=data["num_questions"],
+                    question_type=data["question_type"],
+                    difficulty=data["difficulty"],
+                ),
             )
             return Response({"quiz": quiz}, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except AIUsageLimitExceeded as exc:
+            return _ai_error_response(exc)
+        except Exception:
+            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي."}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class AutoGradeEssayView(APIView):
@@ -206,20 +278,40 @@ class AutoGradeEssayView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, *args, **kwargs):
-        _require_teacher_access(request)
+        school, teacher = _require_teacher_access(request)
         serializer = EssayGradingRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        subject, _grade_level, student = _validate_teacher_scope(
+            school=school, teacher=teacher,
+            subject_id=data.get("subject_id"), student_id=data.get("student_id"),
+        ) if teacher is not None else _validate_teacher_scope(
+            school=school, teacher=None,
+            subject_id=data.get("subject_id"), student_id=data.get("student_id"),
+        )
         try:
-            evaluation = auto_grade_essay(
-                student_submission=data["student_submission"],
-                grading_rubric=data["grading_rubric"],
-                max_score=data["max_score"],
-                model_answer=data.get("model_answer", ""),
+            evaluation = run_budgeted_ai_call(
+                school=school,
+                user=request.user,
+                tool="teacher.essay_grading",
+                input_text=data,
+                source_refs={
+                    "subject_id": subject.pk if subject else None,
+                    "student_id": student.pk if student else None,
+                },
+                max_output_tokens=2500,
+                call=lambda: auto_grade_essay(
+                    student_submission=data["student_submission"],
+                    grading_rubric=data["grading_rubric"],
+                    max_score=data["max_score"],
+                    model_answer=data.get("model_answer", ""),
+                ),
             )
             return Response(evaluation, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except AIUsageLimitExceeded as exc:
+            return _ai_error_response(exc)
+        except Exception:
+            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي."}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class StudentChatView(APIView):
@@ -240,6 +332,7 @@ class StudentChatView(APIView):
             )
 
         session_id = data.get("session_id")
+        created_session = not bool(session_id)
         if session_id:
             session = AIChatSession.objects.filter(
                 pk=session_id, user=request.user, school=student.school,
@@ -256,17 +349,31 @@ class StudentChatView(APIView):
             )
 
         try:
-            reply = process_student_message(
-                session=session,
-                user_message_text=data["message"],
-                student_id=str(student.id),
+            reply = run_budgeted_ai_call(
+                school=student.school,
+                user=request.user,
+                tool="student.chat",
+                input_text=data["message"],
+                source_refs={"student_id": student.pk, "session_id": session.pk},
+                max_output_tokens=2500,
+                call=lambda: process_student_message(
+                    session=session,
+                    user_message_text=data["message"],
+                    student_id=str(student.id),
+                ),
             )
             return Response({
                 "session_id": str(session.id),
                 "reply": reply,
             }, status=status.HTTP_200_OK)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except AIUsageLimitExceeded as exc:
+            if created_session and not session.messages.exists():
+                session.delete()
+            return _ai_error_response(exc)
+        except Exception:
+            if created_session and not session.messages.exists():
+                session.delete()
+            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي."}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class StudentTodayLessonsView(APIView):

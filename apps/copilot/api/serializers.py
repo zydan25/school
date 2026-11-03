@@ -13,6 +13,8 @@ class LessonPlanRequestSerializer(serializers.Serializer):
 
 
 class QuizGenerationRequestSerializer(serializers.Serializer):
+    subject_id = serializers.UUIDField(required=True)
+    grade_level_id = serializers.UUIDField(required=True)
     lesson_plan_or_topic = serializers.CharField(required=True)
     num_questions = serializers.IntegerField(default=5, min_value=1, max_value=25)
     question_type = serializers.ChoiceField(choices=["mcq", "true_false", "essay"], default="mcq")
@@ -20,6 +22,8 @@ class QuizGenerationRequestSerializer(serializers.Serializer):
 
 
 class EssayGradingRequestSerializer(serializers.Serializer):
+    student_id = serializers.UUIDField(required=True)
+    subject_id = serializers.UUIDField(required=True)
     student_submission = serializers.CharField(required=True)
     grading_rubric = serializers.CharField(required=True)
     max_score = serializers.FloatField(default=10.0, min_value=1.0)

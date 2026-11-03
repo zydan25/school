@@ -95,8 +95,31 @@ jobs:
             apps/assessments/models.py \
             apps/assessments/admin.py \
             apps/assessments/migrations/0006_grade_and_exam_workflows.py \
+            apps/core/fields.py \
+            apps/core/storage.py \
             apps/notifications/models.py \
+            apps/notifications/services.py \
+            apps/notifications/admin.py \
+            apps/notifications/api/communication_views.py \
+            apps/notifications/api/webhooks.py \
+            apps/notifications/api/urls.py \
+            apps/notifications/management/commands/process_notification_outbox.py \
             apps/notifications/migrations/0004_pushdevice_schoolconversation.py \
+            apps/notifications/migrations/0005_stage12_delivery_worker.py \
+            apps/notifications/migrations/0006_stage12_school_email_gateway.py \
+            apps/notifications/migrations/0007_stage12_private_conversation_attachments.py \
+            apps/notifications/migrations/0008_stage12_delivery_receipts_and_rate_limits.py \
+            apps/notifications/migrations/0009_stage12_encrypt_push_tokens.py \
+            apps/copilot/models.py \
+            apps/copilot/admin.py \
+            apps/copilot/usage.py \
+            apps/copilot/api/views.py \
+            apps/copilot/api/serializers.py \
+            apps/copilot/api/usage_views.py \
+            apps/copilot/api/urls.py \
+            apps/copilot/migrations/0003_stage12_ai_usage_budget.py \
+            apps/attendance/services/notification_service.py \
+            tests/test_stage12_notifications_ai.py \
             apps/staff/api/urls.py \
             apps/staff/api/views.py \
             apps/accounts/services.py \
@@ -123,6 +146,18 @@ jobs:
             apps/api/urls.py \
             apps/tenants/school_admin.py \
             apps/school_services/models.py \
+            apps/school_services/services.py \
+            apps/school_services/admin.py \
+            apps/school_services/api/serializers.py \
+            apps/school_services/api/views.py \
+            apps/school_services/api/urls.py \
+            apps/school_services/migrations/0007_stage11_optional_school_services.py \
+            apps/tenants/models.py \
+            apps/tenants/migrations/0002_stage11_library_policy_settings.py \
+            apps/tenants/admin.py \
+            apps/tenants/school_admin.py \
+            tests/test_school_services_api.py \
+            tests/test_stage11_school_services.py \
             tests/test_stage10_procurement_assets.py \
             tests/test_report4_fixes.py \
             tests/test_report5_and_timetable.py \

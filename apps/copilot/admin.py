@@ -1,7 +1,7 @@
 from django.contrib import admin
 from unfold.admin import ModelAdmin, TabularInline
 
-from apps.copilot.models import AIChatMessage, AIChatSession, CurriculumDocument
+from apps.copilot.models import AIChatMessage, AIChatSession, AIUsageRecord, CurriculumDocument, SchoolAIUsagePolicy
 from apps.core.admin import AuditedAdminMixin
 
 
@@ -38,3 +38,22 @@ class AIChatMessageAdmin(AuditedAdminMixin, ModelAdmin):
     search_fields = ("content", "session__title", "school__name")
     autocomplete_fields = ("school", "branch", "session")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(SchoolAIUsagePolicy)
+class SchoolAIUsagePolicyAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("school", "enabled", "daily_request_limit", "daily_token_limit", "monthly_budget_amount", "currency")
+    list_filter = ("enabled", "currency")
+    search_fields = ("school__name", "school__code")
+    autocomplete_fields = ("school",)
+    readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(AIUsageRecord)
+class AIUsageRecordAdmin(ModelAdmin):
+    list_display = ("school", "user", "tool", "model_name", "input_tokens", "output_tokens", "estimated_cost", "currency", "status", "created_at")
+    list_filter = ("school", "tool", "status", "currency")
+    search_fields = ("user__phone", "tool", "model_name")
+    readonly_fields = tuple(field.name for field in AIUsageRecord._meta.fields)
+    def has_add_permission(self, request): return False
+    def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")

@@ -12,6 +12,7 @@ import logging
 import urllib.request
 
 from django.db.models import Q
+from apps.notifications.api.communication_views import _school_context
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status
@@ -381,12 +382,16 @@ class UserNotificationsAPIView(APIView):
 
     def get(self, request, *args, **kwargs):
         user = request.user
-        notifications_qs = Notification.objects.filter(recipient=user).order_by("-created_at")
+        school = _school_context(request)
+        scoped = Notification.objects.filter(recipient=user).filter(
+            Q(school=school) | Q(school__isnull=True)
+        )
+        notifications_qs = scoped.order_by("-created_at")
         unread_only = request.query_params.get("unread_only", "").lower() in ("true", "1")
         if unread_only:
             notifications_qs = notifications_qs.filter(is_read=False)
 
-        unread_count = Notification.objects.filter(recipient=user, is_read=False).count()
+        unread_count = scoped.filter(is_read=False).count()
         recent = notifications_qs[:50]
         data = [
             {
@@ -410,8 +415,11 @@ class UserNotificationsAPIView(APIView):
     def post(self, request, *args, **kwargs):
         """تحديد جميع إشعارات المستخدم كمقروءة دفعة واحدة."""
         user = request.user
+        school = _school_context(request)
         now = timezone.now()
-        updated = Notification.objects.filter(recipient=user, is_read=False).update(
+        updated = Notification.objects.filter(
+            recipient=user, is_read=False,
+        ).filter(Q(school=school) | Q(school__isnull=True)).update(
             is_read=True,
             read_at=now,
             status=Notification.Status.READ,
@@ -426,6 +434,12 @@ class MarkNotificationReadAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, notification_id, *args, **kwargs):
-        notification = get_object_or_404(Notification, id=notification_id, recipient=request.user)
+        school = _school_context(request)
+        notification = get_object_or_404(
+            Notification.objects.filter(recipient=request.user).filter(
+                Q(school=school) | Q(school__isnull=True)
+            ),
+            id=notification_id,
+        )
         notification.mark_read()
         return Response({"status": "success", "id": str(notification.id), "is_read": True})

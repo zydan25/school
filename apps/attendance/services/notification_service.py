@@ -1,9 +1,10 @@
 """Notification helpers for attendance and absence events."""
 from __future__ import annotations
 
+import hashlib
 import logging
-from django.utils import timezone
 from apps.notifications.models import Notification
+from apps.notifications.services import enqueue_notification
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +28,20 @@ def notify_guardian_attendance_event(
             user = rel.guardian.user
             if not user:
                 continue
-            notif = Notification.objects.create(
+            fingerprint = hashlib.sha256(
+                f"{school.pk}:{student.pk}:{user.pk}:{category}:{title}:{body}".encode()
+            ).hexdigest()
+            notif, was_created = enqueue_notification(
                 school=school,
                 recipient=user,
                 channel=Notification.Channel.IN_APP,
                 category=category,
                 title=title,
                 body=body,
-                status=Notification.Status.QUEUED,
+                idempotency_key=f"attendance:{fingerprint}",
             )
-            created.append(notif)
+            if was_created and notif is not None:
+                created.append(notif)
     except Exception as exc:
         logger.warning("فشل إرسال إشعار الحضور لولي الأمر: %s", exc)
     return created

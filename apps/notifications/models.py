@@ -1,13 +1,17 @@
 """In-app messages, transactional outbox, and WhatsApp/SMS gateway integrations."""
 import os
+import hashlib
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.models import UUIDTimestampedModel, TenantOwnedModel
+from apps.core.fields import EncryptedTextField
+from apps.core.storage import private_storage
 
 
 class NotificationTemplate(UUIDTimestampedModel):
@@ -53,6 +57,7 @@ class Notification(UUIDTimestampedModel):
         DELIVERED = "delivered", "تم التسليم"
         FAILED = "failed", "فشل الإرسال"
         READ = "read", "مقروءة"
+        CANCELLED = "cancelled", "ملغاة"
 
     school = models.ForeignKey("tenants.School", verbose_name="المدرسة", null=True, blank=True, on_delete=models.PROTECT, related_name="notifications")
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="المستلم", on_delete=models.CASCADE, related_name="notifications")
@@ -114,6 +119,7 @@ class OutboxEvent(UUIDTimestampedModel):
         PROCESSING = "processing", "قيد المعالجة"
         PROCESSED = "processed", "تمت المعالجة"
         FAILED = "failed", "فشلت"
+        CANCELLED = "cancelled", "ملغاة"
 
     school = models.ForeignKey("tenants.School", verbose_name="المدرسة", null=True, blank=True, on_delete=models.PROTECT, related_name="outbox_events")
     event_name = models.CharField("اسم الحدث", max_length=120, db_index=True)
@@ -127,6 +133,7 @@ class OutboxEvent(UUIDTimestampedModel):
     max_attempts = models.PositiveSmallIntegerField("الحد الأقصى للمحاولات", default=8)
     last_error = models.TextField("آخر خطأ", blank=True)
     processed_at = models.DateTimeField("وقت المعالجة", null=True, blank=True)
+    locked_at = models.DateTimeField("وقت قفل العامل", null=True, blank=True, db_index=True)
 
     class Meta:
         verbose_name = "حدث قائمة المعالجة"
@@ -138,6 +145,70 @@ class OutboxEvent(UUIDTimestampedModel):
         return f"{self.event_name} - {self.status}"
 
 
+
+class NotificationDeliveryAttempt(UUIDTimestampedModel):
+    """محاولة تسليم واحدة، دون تخزين نص الرسالة أو بيانات الاعتماد في سجل المزود."""
+
+    class Status(models.TextChoices):
+        SUCCEEDED = "succeeded", "قبلها المزود"
+        FAILED = "failed", "فشلت المحاولة"
+
+    notification = models.ForeignKey(
+        Notification, on_delete=models.CASCADE, related_name="delivery_attempts",
+        verbose_name="الإشعار",
+    )
+    attempt_number = models.PositiveSmallIntegerField("رقم المحاولة")
+    destination_fingerprint = models.CharField("بصمة الوجهة", max_length=64, blank=True)
+    provider = models.CharField("المزود", max_length=40, blank=True)
+    status = models.CharField("الحالة", max_length=12, choices=Status.choices)
+    provider_reference = models.CharField("مرجع المزود", max_length=160, blank=True)
+    response_code = models.PositiveSmallIntegerField("رمز استجابة HTTP", null=True, blank=True)
+    error_code = models.CharField("رمز الخطأ", max_length=80, blank=True)
+    error_message = models.CharField("وصف الخطأ", max_length=500, blank=True)
+    attempted_at = models.DateTimeField("وقت المحاولة", default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "محاولة تسليم إشعار"
+        verbose_name_plural = "محاولات تسليم الإشعارات"
+        ordering = ["-attempted_at"]
+        indexes = [models.Index(fields=["notification", "attempted_at"], name="ntf_attempt_notif_time")]
+
+    def __str__(self):
+        return f"{self.notification_id} / {self.attempt_number} / {self.status}"
+
+
+class NotificationDeliveryReceipt(UUIDTimestampedModel):
+    """Signed provider delivery/read/failure callback retained for audit."""
+
+    class Status(models.TextChoices):
+        SENT = "sent", "قبل المزود الإرسال"
+        DELIVERED = "delivered", "تم التسليم"
+        READ = "read", "قرأ المستلم الرسالة"
+        FAILED = "failed", "فشل التسليم"
+
+    notification = models.ForeignKey(
+        Notification, on_delete=models.CASCADE, related_name="delivery_receipts",
+        verbose_name="الإشعار",
+    )
+    provider = models.CharField("المزود", max_length=40)
+    provider_reference = models.CharField("مرجع المزود", max_length=160)
+    status = models.CharField("حالة التسليم", max_length=12, choices=Status.choices)
+    error_code = models.CharField("رمز فشل المزود", max_length=80, blank=True)
+    received_at = models.DateTimeField("وقت استلام الإيصال", default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "إيصال تسليم إشعار"
+        verbose_name_plural = "إيصالات تسليم الإشعارات"
+        ordering = ["-received_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["notification", "provider_reference", "status"],
+                name="ntf_receipt_status_uniq",
+            )
+        ]
+        indexes = [models.Index(fields=["provider_reference", "received_at"], name="ntf_receipt_provider_ref")]
+
+
 # -----------------------------------------------------------------------------
 # WhatsApp & SMS Gateway Integrations per School (ربط بوابات الرسائل والواتساب)
 # -----------------------------------------------------------------------------
@@ -147,6 +218,7 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
     class Channel(models.TextChoices):
         WHATSAPP = "whatsapp", "واتساب للأعمال (WhatsApp)"
         SMS = "sms", "رسائل نصية قصيرة (SMS)"
+        PUSH = "push", "إشعارات Push"
 
     class Provider(models.TextChoices):
         CUSTOM_WEBHOOK = "custom_webhook", "رابط ويب هوك مخصص (Custom API)"
@@ -154,6 +226,7 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
         TWILIO = "twilio", "Twilio"
         INFOBIP = "infobip", "Infobip"
         LOCAL_GATEWAY = "local_gateway", "بوابة محلية (Local Gateway)"
+        GENERIC_HTTP = "generic_http", "بوابة HTTP موحدة"
 
     school = models.ForeignKey(
         "tenants.School",
@@ -169,15 +242,15 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
     
     # Endpoint & Authentication
     api_endpoint_url = models.URLField("رابط واجهة الإرسال (API Endpoint URL)", max_length=500)
-    auth_token = models.CharField("مفتاح المصادقة والتوكن (API Key / Token)", max_length=255, blank=True)
+    auth_token = EncryptedTextField("مفتاح المصادقة والتوكن (API Key / Token)", blank=True)
     sender_id = models.CharField("معرف المرسل أو رقم الهاتف (Instance ID / Sender Phone)", max_length=100, blank=True)
-    webhook_verify_token = models.CharField("المفتاح السري للتحقق من الرسائل الواردة (Webhook Secret)", max_length=100, blank=True)
+    webhook_verify_token = EncryptedTextField("المفتاح السري للتحقق من الرسائل الواردة (Webhook Secret)", blank=True)
     
     # AI Auto-Reply Behavior
     auto_ai_reply = models.BooleanField(
         "تفعيل الرد الآلي الذكي (AI Auto-Responder)",
-        default=True,
-        help_text="عند استقبال رسالة من عميل أو ولي أمر أو طالب، يجيب الذكاء الاصطناعي للمدرسة آلياً استناداً لبيانات المدرسة.",
+        default=False,
+        help_text="يظل الرد الآلي معطلاً افتراضياً لحماية بيانات الطلاب، ولا يفعل إلا بقرار صريح من المدرسة.",
     )
     
     # Templates & Headers
@@ -189,6 +262,9 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
         help_text="مثال: {'to': '{phone}', 'body': '{message}'}",
     )
     is_active = models.BooleanField("بوابة نشطة ومفعلة", default=True)
+    rate_limit_per_minute = models.PositiveSmallIntegerField("حد الإرسال في الدقيقة", default=60)
+    rate_limit_window_started_at = models.DateTimeField("بداية نافذة الإرسال", null=True, blank=True)
+    rate_limit_window_count = models.PositiveIntegerField("عدد الرسائل في النافذة", default=0)
 
     class Meta:
         verbose_name = "بوابة ربط رسائل / واتساب"
@@ -219,7 +295,8 @@ class InboundWebhookMessage(UUIDTimestampedModel):
     provider_msg_id = models.CharField("معرف الرسالة من المزود", max_length=255, db_index=True)
     sender_phone = models.CharField("رقم المرسل", max_length=50)
     received_at = models.DateTimeField("تاريخ ووقت الاستقبال", default=timezone.now)
-    processed = models.BooleanField("تمت المعالجة", default=True)
+    processed = models.BooleanField("تمت المعالجة", default=False)
+    last_error = models.CharField("آخر خطأ معالجة", max_length=500, blank=True)
 
     class Meta:
         verbose_name = "رسالة ويب هوك واردة"
@@ -257,7 +334,8 @@ class PushDevice(UUIDTimestampedModel):
     )
     device_id = models.CharField("معرف الجهاز داخل التطبيق", max_length=160)
     platform = models.CharField("المنصة", max_length=12, choices=Platform.choices)
-    push_token = models.CharField("رمز الإشعارات من المزود", max_length=2048, unique=True)
+    push_token = EncryptedTextField("رمز الإشعارات من المزود")
+    push_token_fingerprint = models.CharField("بصمة رمز Push", max_length=64, unique=True, editable=False)
     app_version = models.CharField("إصدار التطبيق", max_length=40, blank=True)
     device_name = models.CharField("اسم الجهاز", max_length=120, blank=True)
     is_active = models.BooleanField("نشط", default=True, db_index=True)
@@ -274,6 +352,14 @@ class PushDevice(UUIDTimestampedModel):
     def __str__(self):
         return f"{self.user} / {self.platform} / {self.device_id}"
 
+
+
+    def save(self, *args, **kwargs):
+        self.push_token_fingerprint = hashlib.sha256(self.push_token.encode()).hexdigest()
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            kwargs["update_fields"] = set(update_fields) | {"push_token_fingerprint"}
+        return super().save(*args, **kwargs)
 
 class SchoolConversation(TenantOwnedModel):
     class Status(models.TextChoices):
@@ -374,7 +460,7 @@ class ConversationMessage(TenantOwnedModel):
     )
     message_type = models.CharField("نوع الرسالة", max_length=12, choices=MessageType.choices, default=MessageType.TEXT)
     body = models.TextField("محتوى الرسالة", blank=True)
-    attachment = models.FileField("المرفق الخاص", upload_to=conversation_attachment_path, blank=True)
+    attachment = models.FileField("المرفق الخاص", upload_to=conversation_attachment_path, storage=private_storage, blank=True)
     attachment_name = models.CharField("اسم الملف الأصلي", max_length=255, blank=True)
     attachment_size = models.PositiveBigIntegerField("حجم المرفق", default=0)
     reply_to = models.ForeignKey(
@@ -401,3 +487,39 @@ class ConversationMessage(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.sender or 'النظام'} - {self.created_at}"
+
+
+class SchoolEmailGateway(UUIDTimestampedModel):
+    """SMTP settings and an encrypted password scoped to one school."""
+
+    school = models.OneToOneField(
+        "tenants.School", on_delete=models.CASCADE,
+        related_name="email_gateway", verbose_name="المدرسة",
+    )
+    is_active = models.BooleanField("بوابة البريد مفعلة", default=False)
+    host = models.CharField("خادم SMTP", max_length=255, blank=True)
+    port = models.PositiveSmallIntegerField("منفذ SMTP", default=587)
+    username = models.CharField("اسم مستخدم SMTP", max_length=255, blank=True)
+    password = EncryptedTextField("كلمة مرور SMTP", blank=True)
+    from_email = models.EmailField("عنوان المرسل", blank=True)
+    use_tls = models.BooleanField("TLS", default=True)
+    use_ssl = models.BooleanField("SSL", default=False)
+    rate_limit_per_minute = models.PositiveSmallIntegerField("حد الإرسال في الدقيقة", default=60)
+    rate_limit_window_started_at = models.DateTimeField("بداية نافذة الإرسال", null=True, blank=True)
+    rate_limit_window_count = models.PositiveIntegerField("عدد الرسائل في النافذة", default=0)
+
+    class Meta:
+        verbose_name = "بوابة البريد الإلكتروني للمدرسة"
+        verbose_name_plural = "بوابات البريد الإلكتروني للمدارس"
+
+    def clean(self):
+        super().clean()
+        if self.use_tls and self.use_ssl:
+            raise ValidationError("اختر TLS أو SSL، ولا يمكن تفعيلهما معاً.")
+        if self.is_active and (not self.host or not self.from_email):
+            raise ValidationError("يجب تحديد خادم SMTP وعنوان المرسل قبل التفعيل.")
+        if self.port < 1 or self.port > 65535:
+            raise ValidationError({"port": "منفذ SMTP غير صالح."})
+
+    def __str__(self):
+        return f"{self.school} / SMTP"
