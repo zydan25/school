@@ -221,7 +221,7 @@ class StockMovement(TenantOwnedModel):
     quantity = models.DecimalField("الكمية", max_digits=12, decimal_places=2)
     unit_cost = models.DecimalField("تكلفة الوحدة", max_digits=14, decimal_places=4, default=Decimal("0.0000"))
     date = models.DateField("تاريخ الحركة", default=timezone.localdate)
-    reference = models.CharField("رقم المستند المرجعي", max_length=100, blank=True)
+    reference = models.CharField("رقم المستند المرجعي (سند صرف / فاتورة توريد)", max_length=100, blank=True)
     recipient_name = models.CharField("المستلم / القسم المستفيد", max_length=150, blank=True)
     notes = models.TextField("سبب الحركة وملاحظاتها", blank=True)
     idempotency_key = models.CharField("مفتاح منع التكرار", max_length=100, blank=True, default="")
