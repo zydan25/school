@@ -1013,7 +1013,7 @@ class SchoolPayslipAdmin(SchoolScopedAdmin):
 # -----------------------------------------------------------------------------
 # Fixed Assets in School Admin
 # -----------------------------------------------------------------------------
-from apps.assets.models import AssetCategory, AssetDepreciationEntry, FixedAsset
+from apps.assets.models import AssetCategory, AssetDepreciationEntry, AssetDisposal, AssetMovement, FixedAsset
 
 
 @admin.register(AssetCategory, site=school_admin_site)
@@ -1029,7 +1029,7 @@ class SchoolFixedAssetAdmin(SchoolScopedAdmin):
     list_filter = ("category", "status")
     search_fields = ("code", "name", "location_room")
     raw_id_fields = ("category", "custodian")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "purchase_cost", "salvage_value", "accumulated_depreciation", "current_book_value", "status", "source_vendor_invoice", "acquisition_journal_entry", "disposal_journal_entry", "disposed_at")
 
 
 @admin.register(AssetDepreciationEntry, site=school_admin_site)
@@ -1038,13 +1038,50 @@ class SchoolAssetDepreciationEntryAdmin(SchoolScopedAdmin):
     list_filter = ("fiscal_year",)
     search_fields = ("asset__name", "asset__code")
     raw_id_fields = ("asset", "fiscal_year")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "journal_entry", "posted_at", "posted_by")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AssetMovement, site=school_admin_site)
+class SchoolAssetMovementAdmin(SchoolScopedAdmin):
+    list_display = ("asset", "movement_type", "from_branch", "to_branch", "movement_date", "recorded_by")
+    list_filter = ("movement_type", "movement_date")
+    search_fields = ("asset__code", "asset__name", "reason")
+    readonly_fields = ("id", "created_at", "updated_at", "asset", "movement_type", "from_branch", "to_branch", "from_location", "to_location", "from_custodian", "to_custodian", "movement_date", "idempotency_key", "reason", "recorded_by")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AssetDisposal, site=school_admin_site)
+class SchoolAssetDisposalAdmin(SchoolScopedAdmin):
+    list_display = ("asset", "disposal_date", "proceeds", "journal_entry", "disposed_by")
+    list_filter = ("disposal_date",)
+    search_fields = ("asset__code", "asset__name", "reason")
+    readonly_fields = ("id", "created_at", "updated_at", "asset", "disposal_date", "proceeds", "payment_account", "journal_entry", "idempotency_key", "reason", "disposed_by")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 # -----------------------------------------------------------------------------
 # Procurement & Inventory in School Admin
 # -----------------------------------------------------------------------------
-from apps.inventory.models import InventoryItem, PurchaseOrder, StockMovement, Supplier, Warehouse
+from apps.inventory.models import (
+    InventoryItem, PurchaseOrder, PurchaseReceipt, StockMovement, Supplier,
+    VendorInvoice, VendorInvoicePayment, Warehouse, WarehouseStock, WarehouseTransfer,
+)
 
 
 @admin.register(Supplier, site=school_admin_site)
@@ -1069,16 +1106,86 @@ class SchoolInventoryItemAdmin(SchoolScopedAdmin):
     list_filter = ("category", "warehouse")
     search_fields = ("code", "name", "category")
     raw_id_fields = ("warehouse",)
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "current_stock", "unit_cost")
 
 
 @admin.register(StockMovement, site=school_admin_site)
 class SchoolStockMovementAdmin(SchoolScopedAdmin):
-    list_display = ("date", "movement_type", "item", "quantity", "unit_cost", "reference", "recipient_name")
-    list_filter = ("movement_type", "date")
+    list_display = ("date", "movement_type", "item", "warehouse", "quantity", "unit_cost", "reference", "recipient_name")
+    list_filter = ("movement_type", "date", "warehouse")
     search_fields = ("item__name", "item__code", "reference", "recipient_name")
-    raw_id_fields = ("item",)
-    readonly_fields = ("id", "created_at", "updated_at")
+    raw_id_fields = ("item", "warehouse")
+    readonly_fields = ("id", "created_at", "updated_at", "date", "movement_type", "item", "warehouse", "quantity", "unit_cost", "reference", "recipient_name", "notes", "idempotency_key", "created_by")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+
+
+@admin.register(WarehouseStock, site=school_admin_site)
+class SchoolWarehouseStockAdmin(SchoolScopedAdmin):
+    list_display = ("item", "warehouse", "quantity", "average_unit_cost")
+    list_filter = ("warehouse",)
+    search_fields = ("item__code", "item__name", "warehouse__name")
+    readonly_fields = ("id", "created_at", "updated_at", "item", "warehouse", "quantity", "average_unit_cost")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WarehouseTransfer, site=school_admin_site)
+class SchoolWarehouseTransferAdmin(SchoolScopedAdmin):
+    list_display = ("transfer_number", "item", "source_warehouse", "destination_warehouse", "quantity", "status", "transfer_date")
+    list_filter = ("status", "transfer_date")
+    search_fields = ("transfer_number", "item__code", "item__name")
+    readonly_fields = ("id", "created_at", "updated_at", "status", "unit_cost", "posted_at", "posted_by", "reversed_at")
+
+
+@admin.register(PurchaseReceipt, site=school_admin_site)
+class SchoolPurchaseReceiptAdmin(SchoolScopedAdmin):
+    list_display = ("receipt_number", "purchase_order", "received_at", "received_by")
+    search_fields = ("receipt_number", "purchase_order__order_number")
+    readonly_fields = ("id", "created_at", "updated_at", "receipt_number", "idempotency_key", "payload_hash", "purchase_order", "received_at", "received_by", "notes")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(VendorInvoicePayment, site=school_admin_site)
+class SchoolVendorInvoicePaymentAdmin(SchoolScopedAdmin):
+    list_display = ("invoice", "payment_voucher", "amount", "payment_date", "recorded_by")
+    list_filter = ("payment_date",)
+    search_fields = ("invoice__invoice_number", "payment_voucher__voucher_number")
+    readonly_fields = ("id", "created_at", "updated_at", "invoice", "payment_voucher", "journal_entry", "amount", "idempotency_key", "payment_date", "recorded_by")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(VendorInvoice, site=school_admin_site)
+class SchoolVendorInvoiceAdmin(SchoolScopedAdmin):
+    list_display = ("invoice_number", "supplier", "total_amount", "paid_amount", "remaining_amount_display", "status", "journal_entry")
+    list_filter = ("status", "invoice_date")
+    search_fields = ("invoice_number", "supplier__name", "supplier__code")
+    raw_id_fields = ("supplier", "purchase_order", "expense_account", "cost_center", "journal_entry")
+    readonly_fields = ("id", "created_at", "updated_at", "paid_amount", "status", "approved_by", "approved_at", "journal_entry")
+
+    @admin.display(description="المبلغ المتبقي")
+    def remaining_amount_display(self, obj):
+        return obj.remaining_amount
 
 
 @admin.register(PurchaseOrder, site=school_admin_site)
@@ -1087,7 +1194,7 @@ class SchoolPurchaseOrderAdmin(SchoolScopedAdmin):
     list_filter = ("status", "order_date")
     search_fields = ("order_number", "supplier__name")
     raw_id_fields = ("supplier", "warehouse", "approved_by")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "total_amount", "status", "approved_by", "approved_at", "received_at")
 
 
 # -----------------------------------------------------------------------------
