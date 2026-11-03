@@ -40,13 +40,14 @@ npx eas-cli build --profile development --platform android
 Expo Router، React Native Paper، Lucide React Native، TanStack Query، Zustand، React Hook Form، Zod، Expo SecureStore، Expo Notifications، Expo SQLite، Expo Font، Expo Localization، EAS Build وEAS Update.
 
 ## حالة التطبيق الحالية
-المسار الرئيسي يعرض Design Preview مؤقتاً لمراجعة اتجاه التصميم والبطاقات. لا يمثل بعد تسجيل دخول حقيقياً ولا لوحة عمل متصلة بالخادم.
+المسار الرئيسي يعرض معرض تصميم تفاعلياً لواجهات الطالب وولي الأمر والمعلم. يستطيع المستخدم تبديل الدور، اختيار ابن أو شعبة، ومعاينة حالات عدم وجود الأبناء أو الإسنادات. جميع البيانات في المعرض تجريبية ولا تتصل بالخادم، ولا تمثل بعد تسجيل دخول حقيقياً.
 
 ## الوثائق
 - معمارية الهاتف: ../docs/mobile/00-القرار-المعماري.md
 - مواصفات الشاشات: ../docs/mobile/01-مواصفات-الشاشات.md
 - النظام البصري: ../docs/mobile/02-نظام-التصميم-والمرجع-البصري.md
 - عقد التكامل: ../docs/mobile/03-عقد-التكامل.md
+- معرض التصميم: src/features/design-preview/README.md
 
 ## ضوابط
 - لا تضع أسراراً أو ملفات .env في المستودع.
