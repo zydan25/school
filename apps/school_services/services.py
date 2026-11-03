@@ -351,7 +351,7 @@ def renew_book_loan(*, school, loan_id, actor=None):
 def return_book_loan(*, school, loan_id, actor=None):
     from apps.school_services.models import BookLoan
 
-    loan = BookLoan.objects.select_for_update().select_related("book", "student", "teacher").get(
+    loan = BookLoan.objects.select_for_update(of=("self",)).select_related("book", "student", "teacher").get(
         pk=loan_id, school=school, is_archived=False
     )
     if loan.status == BookLoan.Status.RETURNED:
@@ -385,7 +385,7 @@ def return_book_loan(*, school, loan_id, actor=None):
 def mark_book_loan_lost(*, school, loan_id, actor=None):
     from apps.school_services.models import BookLoan
 
-    loan = BookLoan.objects.select_for_update().select_related("book", "student", "teacher").get(
+    loan = BookLoan.objects.select_for_update(of=("self",)).select_related("book", "student", "teacher").get(
         pk=loan_id, school=school, is_archived=False
     )
     if loan.status == BookLoan.Status.LOST:
