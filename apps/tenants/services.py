@@ -78,6 +78,16 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     ).filter(
         Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
     )
+    transport_finance_permissions = Permission.objects.filter(
+        content_type__app_label="school_services",
+        content_type__model__in=["busfinancialsettlement", "bussubscriptioncharge"],
+    ).filter(
+        Q(codename__startswith="view_")
+        | Q(codename__startswith="add_")
+        | Q(codename__startswith="change_")
+        | Q(codename__in=["calculate_busfinancialsettlement", "approve_busfinancialsettlement"])
+    )
+    acc_permissions = acc_permissions | transport_finance_permissions
     accountant, _ = SchoolRole.objects.get_or_create(
         school=school, code="accountant",
         defaults={
@@ -120,6 +130,32 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     student_affairs.permissions.set(student_affairs_permissions.distinct())
 
+    # 4.5 مسؤول المكتبة والإعارة
+    library_permissions = Permission.objects.filter(
+        content_type__app_label="school_services",
+        content_type__model__in=["librarybook", "bookloan"],
+    ).filter(
+        Q(codename__startswith="view_")
+        | Q(codename__startswith="add_")
+        | Q(codename__startswith="change_")
+        | Q(codename__in=[
+            "manage_library_policy",
+            "return_bookloan",
+            "renew_bookloan",
+            "marklost_bookloan",
+        ])
+    )
+    librarian, _ = SchoolRole.objects.get_or_create(
+        school=school,
+        code="librarian",
+        defaults={
+            "name": "أمين المكتبة المدرسية",
+            "description": "إدارة فهرس الكتب وإعارات الطلاب والمعلمين والتجديد والإرجاع والغرامات وفق سياسة المدرسة.",
+            "is_system": True,
+        },
+    )
+    librarian.permissions.set(library_permissions.distinct())
+
     # 5. المعلم / الكادر الأكاديمي
     teacher_permissions = Permission.objects.filter(
         content_type__app_label__in=["attendance", "assignments", "assessments", "timetable"]
@@ -159,7 +195,7 @@ def _create_default_roles(school: School, membership: SchoolMembership):
         ) |
         Permission.objects.filter(
             content_type__app_label="school_services",
-            content_type__model__in=["studentbookdistribution", "bookrequisitionorder", "bookrequisitionitem", "librarybook", "bookloan"],
+            content_type__model__in=["studentbookdistribution", "bookrequisitionorder", "bookrequisitionitem"],
         ).filter(
             Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
         )

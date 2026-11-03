@@ -10,7 +10,7 @@ from django.utils import timezone
 from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section
 from apps.accounting.models import FiscalPeriod, FiscalYear
 from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
-from apps.accounts.models import User
+from apps.accounts.models import SchoolRole, User
 from apps.accounts.services import is_school_permission_codename_allowed
 from apps.inventory.models import InventoryItem, StockMovement, Warehouse
 from apps.platform.models import Feature, Plan, PlanFeature, Subscription
@@ -437,6 +437,42 @@ class Stage11SchoolServicesTests(TestCase):
         self.assertEqual(
             StockMovement.objects.filter(school=self.school, reference__icontains="ST11-0001").count(),
             2,
+        )
+
+    def test_default_roles_match_transport_library_and_distribution_access(self):
+        librarian = SchoolRole.objects.get(school=self.school, code="librarian")
+        librarian_permissions = set(
+            librarian.permissions.values_list("codename", flat=True)
+        )
+        self.assertTrue({
+            "view_librarybook",
+            "add_librarybook",
+            "view_bookloan",
+            "return_bookloan",
+            "renew_bookloan",
+            "marklost_bookloan",
+            "manage_library_policy",
+        }.issubset(librarian_permissions))
+
+        store_keeper = SchoolRole.objects.get(
+            school=self.school, code="store-keeper"
+        )
+        store_permissions = set(
+            store_keeper.permissions.values_list("codename", flat=True)
+        )
+        self.assertIn("view_studentbookdistribution", store_permissions)
+        self.assertNotIn("view_librarybook", store_permissions)
+        self.assertNotIn("view_bookloan", store_permissions)
+
+        accountant = SchoolRole.objects.get(school=self.school, code="accountant")
+        accountant_permissions = set(
+            accountant.permissions.values_list("codename", flat=True)
+        )
+        self.assertIn("approve_busfinancialsettlement", accountant_permissions)
+        self.assertIn("calculate_busfinancialsettlement", accountant_permissions)
+
+        self.assertFalse(
+            SchoolRole.objects.filter(school=self.school, code="clinic-officer").exists()
         )
 
     def test_optional_features_require_subscription_entitlement_and_can_be_disabled_locally(self):

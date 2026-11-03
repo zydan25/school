@@ -591,7 +591,7 @@ class BusFinancialSettlementViewSet(SchoolServiceViewSet):
     def calculate(self, request, pk=None):
         with transaction.atomic():
             settlement = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+                self.get_queryset().select_for_update(of=("self",)), pk=pk
             )
             if settlement.status != BusFinancialSettlement.Status.DRAFT:
                 raise ValidationError("لا يعاد احتساب التسوية بعد اعتمادها.")
@@ -607,7 +607,7 @@ class BusFinancialSettlementViewSet(SchoolServiceViewSet):
     def approve(self, request, pk=None):
         with transaction.atomic():
             settlement = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+                self.get_queryset().select_for_update(of=("self",)), pk=pk
             )
             if settlement.status == BusFinancialSettlement.Status.PAID:
                 raise ValidationError("التسوية مصروفة بالفعل ولا يمكن إعادة اعتمادها.")
@@ -660,7 +660,7 @@ class StudentBookDistributionViewSet(SchoolServiceViewSet):
     def deliver(self, request, pk=None):
         with transaction.atomic():
             distribution = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+                self.get_queryset().select_for_update(of=("self",)), pk=pk
             )
             try:
                 distribution.deliver_book(user=request.user)
@@ -673,7 +673,7 @@ class StudentBookDistributionViewSet(SchoolServiceViewSet):
     def return_copy(self, request, pk=None):
         with transaction.atomic():
             distribution = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+                self.get_queryset().select_for_update(of=("self",)), pk=pk
             )
             if distribution.delivery_status != StudentBookDistribution.DeliveryStatus.DELIVERED:
                 raise ValidationError("لا يمكن استرجاع كتاب لم يتم تسليمه.")
@@ -767,7 +767,7 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
     def submit(self, request, pk=None):
         with transaction.atomic():
             order = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+                self.get_queryset().select_for_update(of=("self",)), pk=pk
             )
             if order.requested_by_id != request.user.id and not has_school_roles(
                 request.user, self.get_school(), ACADEMIC_ROLES
@@ -797,7 +797,7 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
             raise ValidationError({"items": "أرسل قائمة بنود غير فارغة."})
         with transaction.atomic():
             order = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+                self.get_queryset().select_for_update(of=("self",)), pk=pk
             )
             if order.requested_by_id != request.user.id and not has_school_roles(
                 request.user, self.get_school(), ACADEMIC_ROLES
@@ -822,7 +822,7 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
     def approve(self, request, pk=None):
         with transaction.atomic():
             order = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+                self.get_queryset().select_for_update(of=("self",)), pk=pk
             )
             if order.status != BookRequisitionOrder.Status.SUBMITTED:
                 raise ValidationError("لا يعتمد إلا الطلب المرفوع.")
@@ -867,7 +867,7 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
     def reject(self, request, pk=None):
         with transaction.atomic():
             order = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+                self.get_queryset().select_for_update(of=("self",)), pk=pk
             )
             if order.status != BookRequisitionOrder.Status.SUBMITTED:
                 raise ValidationError("لا يرفض إلا الطلب المرفوع.")
