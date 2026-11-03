@@ -284,12 +284,14 @@ function TeacherAttendance() {
   const [assignmentId, setAssignmentId] = useState("");
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   const date = todayIso();
+
   const assignmentsQuery = useQuery({
     queryKey: ["module", "teacher-attendance-assignments"],
     queryFn: getTeacherAssignmentsForAttendance,
   });
   const assignments = assignmentsQuery.data ?? [];
   const assignment = assignments.find((item) => item.id === assignmentId) ?? assignments[0];
+
   const statusQuery = useQuery({
     queryKey: ["module", "attendance-status-types"],
     queryFn: getAttendanceStatusTypes,
@@ -304,20 +306,41 @@ function TeacherAttendance() {
     queryFn: () => getAttendanceRegister(assignment!.section, date),
     enabled: Boolean(assignment?.section),
   });
+
+  const statusOptions = statusQuery.data ?? [];
+  const record = registerQuery.data;
+  const recordedStatusByStudent = useMemo(() => {
+    const map: Record<string, string> = {};
+    record?.student_records.forEach((item) => { map[item.student] = item.status_category; });
+    return map;
+  }, [record?.id, record?.student_records]);
+  const defaultStatus = statusOptions.find((item) => item.is_default);
+  const getStudentStatus = (studentId: string) =>
+    statuses[studentId] ?? recordedStatusByStudent[studentId] ?? defaultStatus?.category ?? "";
+
+  const isEditable = record?.status === "open";
+  const students = studentsQuery.data ?? [];
+  const allStudentsHaveStatus = students.length > 0 &&
+    students.every((student) => Boolean(getStudentStatus(student.id)));
+
   const openMutation = useMutation({
     mutationFn: () => openAttendanceRegister(assignment!.academic_year, assignment!.section, date),
     onSuccess: async () => {
+      setStatuses({});
       await queryClient.invalidateQueries({ queryKey: ["module", "attendance-register"] });
     },
   });
   const saveMutation = useMutation({
-    mutationFn: (registerId: string) => recordAttendanceBulk(
-      registerId,
-      (studentsQuery.data ?? []).map((student) => ({
+    mutationFn: (registerId: string) => {
+      const records = students.map((student) => ({
         student_id: student.id,
-        status_category: statuses[student.id] ?? "present",
-      })),
-    ),
+        status_category: getStudentStatus(student.id),
+      }));
+      if (records.some((item) => !item.status_category)) {
+        throw new Error("حدد حالة الحضور لكل طالب قبل حفظ السجل.");
+      }
+      return recordAttendanceBulk(registerId, records);
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["module", "attendance-register"] });
     },
@@ -328,31 +351,25 @@ function TeacherAttendance() {
       await queryClient.invalidateQueries({ queryKey: ["module", "attendance-register"] });
     },
   });
-  const statusOptions = statusQuery.data ?? [];
-  const record = registerQuery.data;
-  const isEditable = !record || ["draft", "open"].includes(record.status);
-  const quickOptions = useMemo(
-    () => ["present", "absent_unexcused", "late"].map((category) =>
-      statusOptions.find((item) => item.category === category),
-    ).filter((item): item is AttendanceStatusOption => Boolean(item)),
-    [statusOptions],
-  );
 
   useEffect(() => {
     if (!record) return;
     const initial: Record<string, string> = {};
-    record.student_records.forEach((item) => { initial[item.student] = item.status_category; });
+    record.student_records.forEach((item) => {
+      initial[item.student] = item.status_category;
+    });
     setStatuses(initial);
   }, [record?.id, record?.student_records.length]);
 
   return (
     <>
-      <ModuleHeader title="رصد الحضور" subtitle="افتح سجل الشعبة، حدّث الحالات ثم أرسله لدورة الاعتماد الرسمية." trailing={date} />
+      <ModuleHeader title="رصد الحضور" subtitle="افتح سجل الشعبة، راجع الحالات الافتراضية من الخادم، ثم احفظ وأرسل السجل للمراجعة." trailing={date} />
       {assignmentsQuery.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
       {assignmentsQuery.isError ? <AppNotice message={getApiErrorMessage(assignmentsQuery.error)} /> : null}
       {!assignmentsQuery.isLoading && !assignments.length ? (
         <ModuleEmpty title="لا توجد إسنادات تدريسية" body="لا يمكن رصد الحضور قبل أن تسند الإدارة إليك شعبة وسنة دراسية نشطة." />
       ) : null}
+
       {assignments.length ? (
         <>
           <ModuleCard>
@@ -371,69 +388,87 @@ function TeacherAttendance() {
               );
             })}
           </ModuleCard>
-          {statusQuery.isLoading || studentsQuery.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
+
+          {statusQuery.isLoading || studentsQuery.isLoading || registerQuery.isLoading ? (
+            <ActivityIndicator color={palette.secondary} />
+          ) : null}
           {statusQuery.isError ? <AppNotice message={getApiErrorMessage(statusQuery.error)} /> : null}
           {studentsQuery.isError ? <AppNotice message={getApiErrorMessage(studentsQuery.error)} /> : null}
+          {registerQuery.isError ? <AppNotice message={getApiErrorMessage(registerQuery.error)} /> : null}
+          {!statusQuery.isLoading && !statusOptions.length ? (
+            <AppNotice message="لا توجد حالات حضور نشطة معرفة لهذه المدرسة. اطلب من الإدارة تهيئة حالات الحضور قبل الرصد." />
+          ) : null}
 
           {record ? (
             <ModuleCard>
               <View style={styles.cardTop}>
                 <Text style={styles.cardTitle}>سجل {record.section_name}</Text>
-                <StatusPill value={record.status} labels={{ draft: "مسودة", submitted: "مرسل للمراجعة", approved: "معتمد", locked: "مغلق" }} />
+                <StatusPill value={record.status} labels={{ open: "مفتوح للرصد", submitted: "مرسل للمراجعة", approved: "معتمد", locked: "مقفل" }} />
               </View>
-              <Text style={styles.footnote}>تم فتح السجل في الخادم. التعديلات تخضع لحالة السجل والصلاحية.</Text>
+              <Text style={styles.footnote}>
+                الحالات الأولية مستمدة من السجل الرسمي في الخادم، بما فيها الأعذار المعتمدة. أي تغيير هنا يُحفظ كعملية رصد موثقة.
+              </Text>
             </ModuleCard>
           ) : (
             <ModuleCard>
               <Text style={styles.cardTitle}>سجل اليوم غير مفتوح</Text>
               <Button mode="contained" buttonColor={palette.primary} loading={openMutation.isPending}
-                disabled={openMutation.isPending || studentsQuery.isLoading || !studentsQuery.data?.length}
+                disabled={openMutation.isPending || studentsQuery.isLoading || !students.length || !statusOptions.length}
                 onPress={() => openMutation.mutate()}>
                 فتح سجل حضور اليوم
               </Button>
+              <Text style={styles.footnote}>عند فتح السجل يجهز الخادم سجلات الطلاب ويطبق الحالة الافتراضية أو العذر المعتمد إن وجد.</Text>
             </ModuleCard>
           )}
           {openMutation.isError ? <AppNotice message={getApiErrorMessage(openMutation.error)} /> : null}
 
-          {(studentsQuery.data ?? []).map((student) => (
-            <ModuleCard key={student.id}>
-              <View style={styles.cardTop}>
-                <View style={styles.studentDetails}>
-                  <Text style={styles.cardTitle}>{student.full_name}</Text>
-                  <Text style={styles.footnote}>{student.student_id_number}</Text>
+          {students.map((student) => {
+            const selectedStatus = getStudentStatus(student.id);
+            return (
+              <ModuleCard key={student.id}>
+                <View style={styles.cardTop}>
+                  <View style={styles.studentDetails}>
+                    <Text style={styles.cardTitle}>{student.full_name}</Text>
+                    <Text style={styles.footnote}>{student.student_id_number}</Text>
+                  </View>
+                  <StatusPill value={selectedStatus || "unselected"}
+                    labels={{ ...attendanceLabels, unselected: "لم تحدد" }} />
                 </View>
-                <StatusPill value={statuses[student.id] ?? "present"} labels={attendanceLabels} />
-              </View>
-              <View style={styles.requestTypes}>
-                {quickOptions.map((option) => (
-                  <Button key={option.category} compact
-                    mode={(statuses[student.id] ?? "present") === option.category ? "contained" : "outlined"}
-                    buttonColor={(statuses[student.id] ?? "present") === option.category ? palette.primary : undefined}
-                    textColor={(statuses[student.id] ?? "present") === option.category ? palette.white : palette.secondary}
-                    disabled={!record || !isEditable}
-                    onPress={() => setStatuses((current) => ({ ...current, [student.id]: option.category }))}>
-                    {option.name}
-                  </Button>
-                ))}
-              </View>
-            </ModuleCard>
-          ))}
+                <View style={styles.requestTypes}>
+                  {statusOptions.map((option) => (
+                    <Button key={option.id} compact
+                      mode={selectedStatus === option.category ? "contained" : "outlined"}
+                      buttonColor={selectedStatus === option.category ? palette.primary : undefined}
+                      textColor={selectedStatus === option.category ? palette.white : palette.secondary}
+                      disabled={!record || !isEditable}
+                      onPress={() => setStatuses((current) => ({ ...current, [student.id]: option.category }))}>
+                      {option.name}
+                    </Button>
+                  ))}
+                </View>
+              </ModuleCard>
+            );
+          })}
 
           {record ? (
             <ModuleCard>
               <Button mode="contained" buttonColor={palette.secondary} loading={saveMutation.isPending}
-                disabled={saveMutation.isPending || !isEditable || !studentsQuery.data?.length}
+                disabled={saveMutation.isPending || !isEditable || !allStudentsHaveStatus || !statusOptions.length}
                 onPress={() => saveMutation.mutate(record.id)}>
                 حفظ الرصد
               </Button>
               <Button mode="outlined" textColor={palette.primary} loading={submitMutation.isPending}
-                disabled={submitMutation.isPending || !isEditable}
+                disabled={submitMutation.isPending || !isEditable || !allStudentsHaveStatus}
                 onPress={() => submitMutation.mutate(record.id)}>
                 إرسال السجل للمراجعة
               </Button>
+              {!allStudentsHaveStatus && isEditable ? (
+                <Text style={styles.footnote}>اختر حالة صالحة لكل طالب قبل حفظ السجل أو إرساله.</Text>
+              ) : null}
               {saveMutation.isError ? <AppNotice message={getApiErrorMessage(saveMutation.error)} /> : null}
               {saveMutation.isSuccess ? <AppNotice tone="success" message="تم حفظ الرصد في الخادم." /> : null}
               {submitMutation.isError ? <AppNotice message={getApiErrorMessage(submitMutation.error)} /> : null}
+              {submitMutation.isSuccess ? <AppNotice tone="success" message="تم إرسال السجل إلى دورة المراجعة الرسمية." /> : null}
             </ModuleCard>
           ) : null}
         </>
