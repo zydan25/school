@@ -88,6 +88,9 @@ export function LoginScreen() {
           </Button>
 
           <View style={styles.links}>
+            <Button mode="text" compact onPress={() => router.push("/password-reset" as never)} textColor={palette.muted}>
+              نسيت كلمة المرور؟
+            </Button>
             <Button mode="text" compact onPress={() => router.push("/register" as never)} textColor={palette.secondary}>
               إنشاء حساب جديد
             </Button>
