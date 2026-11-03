@@ -14,6 +14,7 @@ import {
 import { getApiErrorMessage } from "@/core/api/api-client";
 import { AppNotice } from "@/shared/components/app-notice";
 import { AppScreen } from "@/shared/components/app-screen";
+import { useModuleQueryScope } from "@/features/modules/hooks/use-module-query-scope";
 import { palette, spacing } from "@/core/theme/tokens";
 import {
   ModuleCard,
@@ -34,18 +35,20 @@ function formatDateTime(value: string | null | undefined): string {
 
 export function ExamsScreen() {
   const workspace = useAuthStore((state) => state.session?.activeWorkspace);
+  const queryScope = useModuleQueryScope();
   const queryClient = useQueryClient();
+  const queryScope = useModuleQueryScope();
   const [activeExamId, setActiveExamId] = useState<string | null>(null);
   const [deadline, setDeadline] = useState<string | null>(null);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const examsQuery = useQuery({
-    queryKey: ["module", "online-exams"],
+    queryKey: ["module", "online-exams", ...queryScope],
     queryFn: getOnlineExams,
     enabled: workspace === "student",
   });
   const paperQuery = useQuery({
-    queryKey: ["module", "online-exam-paper", activeExamId],
+    queryKey: ["module", "online-exam-paper", activeExamId, ...queryScope],
     queryFn: () => getExamPaper(activeExamId!),
     enabled: Boolean(activeExamId && submissionId),
     retry: false,

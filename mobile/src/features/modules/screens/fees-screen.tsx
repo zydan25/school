@@ -10,6 +10,7 @@ import { getMyProfiles } from "@/features/profiles/api/profiles-api";
 import { getApiErrorMessage } from "@/core/api/api-client";
 import { AppNotice } from "@/shared/components/app-notice";
 import { AppScreen } from "@/shared/components/app-screen";
+import { useModuleQueryScope } from "@/features/modules/hooks/use-module-query-scope";
 import { palette, spacing } from "@/core/theme/tokens";
 import {
   formatAmount,
@@ -32,15 +33,16 @@ const invoiceLabels: Record<string, string> = {
 
 export function FeesScreen() {
   const workspace = useAuthStore((state) => state.session?.activeWorkspace);
+  const queryScope = useModuleQueryScope();
   const isGuardian = workspace === "guardian";
   const isStudent = workspace === "student";
   const childrenQuery = useQuery({
-    queryKey: ["module", "fees-children"],
+    queryKey: ["module", "fees-children", ...queryScope],
     queryFn: () => authenticatedRequest<{ results: Child[] }>("app/my/children/"),
     enabled: isGuardian,
   });
   const profilesQuery = useQuery({
-    queryKey: ["module", "fees-profiles"],
+    queryKey: ["module", "fees-profiles", ...queryScope],
     queryFn: getMyProfiles,
     enabled: isStudent,
   });
@@ -51,7 +53,7 @@ export function FeesScreen() {
     ? (children.find((item) => item.id === selectedChildId) ?? children[0])?.id
     : studentProfiles[0]?.id;
   const statementQuery = useQuery({
-    queryKey: ["module", "fee-statement", studentId],
+    queryKey: ["module", "fee-statement", studentId, ...queryScope],
     queryFn: () => getFeeStatement(studentId!),
     enabled: Boolean(studentId),
     staleTime: 30_000,

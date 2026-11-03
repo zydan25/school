@@ -9,6 +9,7 @@ import { authenticatedRequest } from "@/core/api/authenticated-request";
 import { getApiErrorMessage } from "@/core/api/api-client";
 import { AppNotice } from "@/shared/components/app-notice";
 import { AppScreen } from "@/shared/components/app-screen";
+import { useModuleQueryScope } from "@/features/modules/hooks/use-module-query-scope";
 import { AppIcon } from "@/shared/components/app-icon";
 import { palette, spacing } from "@/core/theme/tokens";
 import {
@@ -101,6 +102,7 @@ function isValidDateRange(start: string, end: string) {
 
 export function AttendanceScreen() {
   const workspace = useAuthStore((state) => state.session?.activeWorkspace);
+  const queryScope = useModuleQueryScope();
   return (
     <AppScreen>
       {workspace === "guardian" ? <GuardianAttendance /> :
@@ -115,29 +117,30 @@ export function AttendanceScreen() {
 
 function GuardianAttendance() {
   const queryClient = useQueryClient();
+  const queryScope = useModuleQueryScope();
   const [selectedChildId, setSelectedChildId] = useState("");
   const [requestType, setRequestType] = useState("post_absence_excuse");
   const [startDate, setStartDate] = useState(todayIso());
   const [endDate, setEndDate] = useState(todayIso());
   const [reason, setReason] = useState("");
   const childrenQuery = useQuery({
-    queryKey: ["module", "guardian-children"],
+    queryKey: ["module", "guardian-children", ...queryScope],
     queryFn: () => authenticatedRequest<{ results: GuardianChild[] }>("app/my/children/"),
   });
   const children = childrenQuery.data?.results ?? [];
   const activeChild = children.find((item) => item.id === selectedChildId) ?? children[0];
   const attendanceQuery = useQuery({
-    queryKey: ["module", "attendance", "guardian", activeChild?.id],
+    queryKey: ["module", "attendance", "guardian", activeChild?.id, ...queryScope],
     queryFn: () => getAttendanceRecords(activeChild?.id),
     enabled: Boolean(activeChild?.id),
   });
   const scoresQuery = useQuery({
-    queryKey: ["module", "attendance-scores", activeChild?.id],
+    queryKey: ["module", "attendance-scores", activeChild?.id, ...queryScope],
     queryFn: () => getAttendanceScores(activeChild?.id),
     enabled: Boolean(activeChild?.id),
   });
   const excusesQuery = useQuery({
-    queryKey: ["module", "attendance-excuses"],
+    queryKey: ["module", "attendance-excuses", ...queryScope],
     queryFn: getAttendanceExcuses,
   });
   const createMutation = useMutation({
@@ -302,23 +305,23 @@ function TeacherAttendance() {
   const date = todayIso();
 
   const assignmentsQuery = useQuery({
-    queryKey: ["module", "teacher-attendance-assignments"],
+    queryKey: ["module", "teacher-attendance-assignments", ...queryScope],
     queryFn: getTeacherAssignmentsForAttendance,
   });
   const assignments = assignmentsQuery.data ?? [];
   const assignment = assignments.find((item) => item.id === assignmentId) ?? assignments[0];
 
   const statusQuery = useQuery({
-    queryKey: ["module", "attendance-status-types"],
+    queryKey: ["module", "attendance-status-types", ...queryScope],
     queryFn: getAttendanceStatusTypes,
   });
   const studentsQuery = useQuery({
-    queryKey: ["module", "attendance-students", assignment?.section, assignment?.academic_year],
+    queryKey: ["module", "attendance-students", assignment?.section, assignment?.academic_year, ...queryScope],
     queryFn: () => getStudentsForAttendance(assignment!.section, assignment!.academic_year),
     enabled: Boolean(assignment?.section && assignment?.academic_year),
   });
   const registerQuery = useQuery({
-    queryKey: ["module", "attendance-register", assignment?.section, date],
+    queryKey: ["module", "attendance-register", assignment?.section, date, ...queryScope],
     queryFn: () => getAttendanceRegister(assignment!.section, date),
     enabled: Boolean(assignment?.section),
   });

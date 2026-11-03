@@ -16,6 +16,7 @@ import {
 import { getApiErrorMessage } from "@/core/api/api-client";
 import { AppNotice } from "@/shared/components/app-notice";
 import { AppScreen } from "@/shared/components/app-screen";
+import { useModuleQueryScope } from "@/features/modules/hooks/use-module-query-scope";
 import { AppIcon } from "@/shared/components/app-icon";
 import { palette, spacing } from "@/core/theme/tokens";
 import { useAuthStore } from "@/core/auth/auth-store";
@@ -28,18 +29,19 @@ import {
 
 export function MessagesScreen() {
   const client = useQueryClient();
+  const queryScope = useModuleQueryScope();
   const currentUserId = useAuthStore((state) => state.session?.user.id);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [body, setBody] = useState("");
   const conversationsQuery = useQuery({
-    queryKey: ["module", "conversations"],
+    queryKey: ["module", "conversations", ...queryScope],
     queryFn: getConversations,
     refetchInterval: 30_000,
   });
   const activeConversation = conversationsQuery.data?.find((item) => item.id === activeId);
   const activeParticipant = activeConversation?.participants.find((participant) => participant.user === currentUserId);
   const messagesQuery = useQuery({
-    queryKey: ["module", "conversation-messages", activeId],
+    queryKey: ["module", "conversation-messages", activeId, ...queryScope],
     queryFn: () => getConversationMessages(activeId!),
     enabled: Boolean(activeId),
     refetchInterval: activeId ? 15_000 : false,

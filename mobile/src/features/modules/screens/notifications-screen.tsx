@@ -15,6 +15,7 @@ import {
 import { getApiErrorMessage } from "@/core/api/api-client";
 import { AppNotice } from "@/shared/components/app-notice";
 import { AppScreen } from "@/shared/components/app-screen";
+import { useModuleQueryScope } from "@/features/modules/hooks/use-module-query-scope";
 import { AppIcon } from "@/shared/components/app-icon";
 import { palette, spacing } from "@/core/theme/tokens";
 import {
@@ -27,8 +28,9 @@ import {
 
 export function NotificationsScreen() {
   const client = useQueryClient();
+  const queryScope = useModuleQueryScope();
   const query = useQuery({
-    queryKey: ["module", "notifications"],
+    queryKey: ["module", "notifications", ...queryScope],
     queryFn: getUserNotifications,
     refetchInterval: 30_000,
   });
@@ -42,7 +44,7 @@ export function NotificationsScreen() {
   });
   const data = query.data;
   const preferencesQuery = useQuery({
-    queryKey: ["module", "notification-preferences"],
+    queryKey: ["module", "notification-preferences", ...queryScope],
     queryFn: getNotificationPreferences,
   });
   const preferenceMutation = useMutation({
