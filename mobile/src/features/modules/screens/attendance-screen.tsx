@@ -323,7 +323,7 @@ function ManagementAttendance() {
     mutationFn: approveAttendanceRegister,
     onSuccess: async () => {
       await queryClient.invalidateQueries({
-        queryKey: ["module", "attendance-management-registers", ...queryScope],
+        queryKey: ["module", "attendance-management-registers"],
       });
     },
   });
