@@ -333,7 +333,8 @@ class PushDevice(UUIDTimestampedModel):
     )
     device_id = models.CharField("معرف الجهاز داخل التطبيق", max_length=160)
     platform = models.CharField("المنصة", max_length=12, choices=Platform.choices)
-    push_token = models.CharField("رمز الإشعارات من المزود", max_length=2048, unique=True)
+    push_token = EncryptedTextField("رمز الإشعارات من المزود")
+    push_token_fingerprint = models.CharField("بصمة رمز Push", max_length=64, unique=True, editable=False)
     app_version = models.CharField("إصدار التطبيق", max_length=40, blank=True)
     device_name = models.CharField("اسم الجهاز", max_length=120, blank=True)
     is_active = models.BooleanField("نشط", default=True, db_index=True)
@@ -350,6 +351,11 @@ class PushDevice(UUIDTimestampedModel):
     def __str__(self):
         return f"{self.user} / {self.platform} / {self.device_id}"
 
+
+
+    def save(self, *args, **kwargs):
+        self.push_token_fingerprint = hashlib.sha256(self.push_token.encode("utf-8")).hexdigest()
+        return super().save(*args, **kwargs)
 
 class SchoolConversation(TenantOwnedModel):
     class Status(models.TextChoices):

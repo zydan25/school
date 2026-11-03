@@ -7,6 +7,10 @@ from apps.notifications.models import (
     InboundWebhookMessage, Notification, NotificationDeliveryAttempt, SchoolEmailGateway,
     NotificationPreference, NotificationTemplate, OutboxEvent, SchoolMessagingGateway,
     NotificationDeliveryReceipt,
+    ConversationMessage,
+    ConversationParticipant,
+    PushDevice,
+    SchoolConversation,
 )
 
 
@@ -127,3 +131,53 @@ class NotificationDeliveryReceiptAdmin(ModelAdmin):
     readonly_fields = tuple(field.name for field in NotificationDeliveryReceipt._meta.fields)
     def has_add_permission(self, request): return False
     def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")
+
+
+@admin.register(PushDevice)
+class PushDeviceAdmin(ModelAdmin):
+    list_display = ("user", "device_id", "platform", "device_name", "app_version", "token_suffix", "is_active", "last_seen_at")
+    list_filter = ("platform", "is_active", "last_seen_at")
+    search_fields = ("user__phone", "device_id", "device_name")
+    readonly_fields = tuple(field.name for field in PushDevice._meta.fields)
+    def token_suffix(self, obj):
+        return obj.push_token[-8:]
+    token_suffix.short_description = "آخر 8 أحرف من رمز Push"
+    def has_add_permission(self, request): return False
+    def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")
+    def has_delete_permission(self, request, obj=None): return False
+
+
+@admin.register(SchoolConversation)
+class SchoolConversationAdmin(ModelAdmin):
+    list_display = ("subject", "school", "conversation_type", "student", "status", "created_by", "last_message_at", "created_at")
+    list_filter = ("school", "conversation_type", "status", "created_at")
+    search_fields = ("subject", "school__name", "created_by__phone", "student__student_id")
+    autocomplete_fields = ("school", "student", "created_by")
+    readonly_fields = tuple(field.name for field in SchoolConversation._meta.fields)
+    def has_add_permission(self, request): return False
+    def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")
+    def has_delete_permission(self, request, obj=None): return False
+
+
+@admin.register(ConversationParticipant)
+class ConversationParticipantAdmin(ModelAdmin):
+    list_display = ("conversation", "school", "user", "role", "is_active", "is_muted", "last_read_at")
+    list_filter = ("school", "role", "is_active", "is_muted")
+    search_fields = ("conversation__subject", "user__phone", "school__name")
+    autocomplete_fields = ("school", "conversation", "user", "added_by")
+    readonly_fields = tuple(field.name for field in ConversationParticipant._meta.fields)
+    def has_add_permission(self, request): return False
+    def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")
+    def has_delete_permission(self, request, obj=None): return False
+
+
+@admin.register(ConversationMessage)
+class ConversationMessageAdmin(ModelAdmin):
+    list_display = ("conversation", "school", "sender", "message_type", "attachment_name", "attachment_size", "created_at")
+    list_filter = ("school", "message_type", "created_at")
+    search_fields = ("conversation__subject", "sender__phone")
+    autocomplete_fields = ("school", "conversation", "sender", "reply_to")
+    readonly_fields = tuple(field.name for field in ConversationMessage._meta.fields)
+    def has_add_permission(self, request): return False
+    def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")
+    def has_delete_permission(self, request, obj=None): return False
