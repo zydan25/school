@@ -332,6 +332,7 @@ class StudentChatView(APIView):
             )
 
         session_id = data.get("session_id")
+        created_session = not bool(session_id)
         if session_id:
             session = AIChatSession.objects.filter(
                 pk=session_id, user=request.user, school=student.school,
@@ -366,8 +367,12 @@ class StudentChatView(APIView):
                 "reply": reply,
             }, status=status.HTTP_200_OK)
         except AIUsageLimitExceeded as exc:
+            if created_session and not session.messages.exists():
+                session.delete()
             return _ai_error_response(exc)
         except Exception:
+            if created_session and not session.messages.exists():
+                session.delete()
             return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي."}, status=status.HTTP_502_BAD_GATEWAY)
 
 
