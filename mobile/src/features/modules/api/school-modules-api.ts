@@ -431,6 +431,117 @@ export async function setConversationMuted(conversationId: string, muted: boolea
   );
 }
 
+
+export type TeacherAttendanceAssignment = {
+  id: string;
+  section: string;
+  section_name: string;
+  subject: string;
+  subject_name: string;
+  academic_year: string;
+  academic_year_name: string;
+};
+
+export type AttendanceStatusOption = {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  color_code: string;
+  is_active: boolean;
+  display_order: number;
+};
+
+export type AttendanceRegister = {
+  id: string;
+  academic_year: string;
+  section: string;
+  section_name: string;
+  date: string;
+  session_type: string;
+  status: string;
+  student_records: {
+    id: string;
+    student: string;
+    student_name: string;
+    student_id_number: string;
+    status_category: string;
+    late_minutes: number;
+    notes: string;
+  }[];
+};
+
+export type AttendanceStudent = {
+  id: string;
+  student_id_number: string;
+  full_name: string;
+  section: string;
+  section_name: string;
+};
+
+export async function getTeacherAssignmentsForAttendance() {
+  const result = await authenticatedRequest<ListResult<TeacherAttendanceAssignment>>(
+    "app/teacher-assignments/",
+  );
+  return toResults(result);
+}
+
+export async function getAttendanceStatusTypes() {
+  const result = await authenticatedRequest<ListResult<AttendanceStatusOption>>(
+    "attendance/status-types/",
+  );
+  return toResults(result).filter((status) => status.is_active);
+}
+
+export async function getStudentsForAttendance(sectionId: string, academicYearId: string) {
+  const query =
+    "?section=" + encodeURIComponent(sectionId) +
+    "&academic_year=" + encodeURIComponent(academicYearId);
+  const result = await authenticatedRequest<ListResult<AttendanceStudent>>("students/" + query);
+  return toResults(result);
+}
+
+export async function getAttendanceRegister(sectionId: string, date: string) {
+  const query = "?section_id=" + encodeURIComponent(sectionId) + "&date=" + encodeURIComponent(date);
+  const result = await authenticatedRequest<ListResult<AttendanceRegister>>(
+    "attendance/registers/" + query,
+  );
+  return toResults(result)[0] ?? null;
+}
+
+export async function openAttendanceRegister(
+  academicYearId: string,
+  sectionId: string,
+  date: string,
+) {
+  return authenticatedRequest<AttendanceRegister>("attendance/registers/open/", {
+    method: "POST",
+    body: JSON.stringify({
+      academic_year_id: academicYearId,
+      section_id: sectionId,
+      date,
+      session_type: "daily_morning",
+    }),
+  });
+}
+
+export async function recordAttendanceBulk(
+  registerId: string,
+  records: { student_id: string; status_category: string; late_minutes?: number; notes?: string }[],
+) {
+  return authenticatedRequest<{ message: string; updated_records: number }>(
+    "attendance/registers/" + registerId + "/bulk-record/",
+    { method: "POST", body: JSON.stringify({ records }) },
+  );
+}
+
+export async function submitAttendanceRegister(registerId: string) {
+  return authenticatedRequest<AttendanceRegister>(
+    "attendance/registers/" + registerId + "/submit/",
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
 export function workspaceSupportsAcademicModules(workspace: WorkspaceType) {
   return ["student", "guardian", "teacher", "management"].includes(workspace);
 }
