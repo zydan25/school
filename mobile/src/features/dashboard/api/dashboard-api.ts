@@ -131,11 +131,20 @@ export async function loadDashboardData(workspace: WorkspaceType): Promise<Dashb
   }
 
   if (workspace === "student") {
-    const [students, lessons] = await Promise.all([
-      getList<StudentSummary>("students/"),
+    const [profiles, lessons] = await Promise.all([
+      getMyProfiles(),
       getLessons("student"),
     ]);
-    return { students, lessons };
+    const ownStudentProfile = profiles.students[0];
+    if (!ownStudentProfile) return { students: [], lessons };
+
+    // Fetch the exact student profile linked to this account. A user may also
+    // be a teacher or guardian in the same school, where the broad students
+    // list can legitimately contain other visible student records.
+    const student = await authenticatedRequest<StudentSummary>(
+      "students/" + encodeURIComponent(ownStudentProfile.id) + "/",
+    );
+    return { students: [student], lessons };
   }
 
   if (workspace === "teacher") {
