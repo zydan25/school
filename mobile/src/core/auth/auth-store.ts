@@ -122,9 +122,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isBusy: false,
 
   clearSession: async () => {
-    await clearStoredSession();
-    appQueryClient.clear();
-    set({ session: null, isBusy: false });
+    try {
+      await clearStoredSession();
+    } finally {
+      appQueryClient.clear();
+      set({ session: null, isBusy: false });
+    }
   },
 
   hydrate: async () => {
@@ -265,8 +268,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // The local session must still be removed when the network is unavailable.
     } finally {
       appQueryClient.clear();
-      await clearStoredSession();
-      set({ session: null, isBusy: false });
+      try {
+        await clearStoredSession();
+      } finally {
+        set({ session: null, isBusy: false });
+      }
     }
   },
 

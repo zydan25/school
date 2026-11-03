@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text } from "react-native-paper";
@@ -29,6 +29,7 @@ export function WorkspaceSelectionScreen() {
   const session = useAuthStore((state) => state.session);
   const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const chooseWorkspace = useAuthStore((state) => state.chooseWorkspace);
+  const [selectionError, setSelectionError] = useState("");
   const schoolId = session?.activeSchoolId;
   const profilesQuery = useQuery({
     queryKey: ["identity", "my-profiles", session?.user.id, session?.sessionId, schoolId],
@@ -48,8 +49,13 @@ export function WorkspaceSelectionScreen() {
   }, [hasHydrated, session, schoolId]);
 
   async function selectWorkspace(type: (typeof options)[number]["type"]) {
-    await chooseWorkspace(type);
-    router.replace("/home" as never);
+    setSelectionError("");
+    try {
+      await chooseWorkspace(type);
+      router.replace("/home" as never);
+    } catch (error) {
+      setSelectionError(error instanceof Error ? error.message : "تعذر فتح مساحة العمل.");
+    }
   }
 
   if (!session || !schoolId) return <AppScreen compact><ActivityIndicator /></AppScreen>;
@@ -64,6 +70,7 @@ export function WorkspaceSelectionScreen() {
       </View>
 
       <AppSectionHeader title="الأدوار والملفات المتاحة" />
+      {selectionError ? <AppNotice message={selectionError} /> : null}
       {profilesQuery.isLoading ? (
         <View style={styles.loading}><ActivityIndicator color={palette.secondary} /><Text style={styles.loadingText}>جارٍ تحميل ملفاتك من المدرسة...</Text></View>
       ) : profilesQuery.isError ? (

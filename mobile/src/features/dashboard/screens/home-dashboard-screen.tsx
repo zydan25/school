@@ -80,8 +80,11 @@ export function HomeDashboardScreen() {
   const currentWorkspace = workspaceLabels[workspace];
 
   async function doLogout() {
-    await logout();
-    router.replace("/login" as never);
+    try {
+      await logout();
+    } finally {
+      router.replace("/login" as never);
+    }
   }
 
   return (
