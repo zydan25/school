@@ -2,6 +2,7 @@
 from django.urls import path
 
 from apps.notifications.api.communication_views import (
+    CancelNotificationAPIView,
     ConversationAttachmentAPIView,
     ConversationMessagesAPIView,
     ConversationParticipantsAPIView,
@@ -18,6 +19,7 @@ app_name = "notifications_api"
 urlpatterns = [
     path("", UserNotificationsAPIView.as_view(), name="user-notifications"),
     path("<uuid:notification_id>/read/", MarkNotificationReadAPIView.as_view(), name="mark-notification-read"),
+    path("<uuid:notification_id>/cancel/", CancelNotificationAPIView.as_view(), name="cancel-notification"),
     path("preferences/", NotificationPreferencesAPIView.as_view(), name="notification-preferences"),
     path("devices/", PushDevicesAPIView.as_view(), name="push-devices"),
     path("conversations/", SchoolConversationsAPIView.as_view(), name="school-conversations"),

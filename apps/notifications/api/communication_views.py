@@ -20,6 +20,7 @@ from apps.notifications.models import (
     ConversationParticipant,
     Notification,
     NotificationPreference,
+    OutboxEvent,
     PushDevice,
     SchoolConversation,
 )
@@ -483,3 +484,44 @@ class ConversationAttachmentAPIView(APIView):
         response["X-Content-Type-Options"] = "nosniff"
         response["Cache-Control"] = "private, no-store"
         return response
+
+
+
+class CancelNotificationAPIView(APIView):
+    """Allow the owner of a still-pending notice to cancel it before delivery."""
+
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, notification_id):
+        school = _school_context(request)
+        notification = Notification.objects.select_for_update().filter(
+            pk=notification_id, recipient=request.user, school=school,
+        ).first()
+        if notification is None:
+            raise NotFound("الإشعار غير موجود في المدرسة النشطة.")
+        if notification.status == Notification.Status.CANCELLED:
+            return Response({"id": str(notification.pk), "status": notification.status})
+        if notification.status != Notification.Status.QUEUED:
+            return Response(
+                {"detail": "لا يمكن إلغاء إشعار بدأ إرساله أو انتهى تسليمه."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        event = OutboxEvent.objects.select_for_update().filter(
+            idempotency_key=f"notification:{notification.pk}",
+        ).first()
+        if event and event.status == OutboxEvent.Status.PROCESSING:
+            return Response(
+                {"detail": "بدأ عامل الإرسال معالجة الرسالة؛ لا يمكن ضمان إيقافها."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if event and event.status == OutboxEvent.Status.PENDING:
+            event.status = OutboxEvent.Status.CANCELLED
+            event.locked_at = None
+            event.processed_at = timezone.now()
+            event.last_error = "cancelled_by_recipient"
+            event.save(update_fields=["status", "locked_at", "processed_at", "last_error", "updated_at"])
+        notification.status = Notification.Status.CANCELLED
+        notification.failure_reason = ""
+        notification.save(update_fields=["status", "failure_reason", "updated_at"])
+        return Response({"id": str(notification.pk), "status": notification.status})
