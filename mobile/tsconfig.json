@@ -4,8 +4,8 @@
     "strict": true,
     "noEmit": true,
     "paths": {
-      "@/*": ["src/*"],
-      "@/assets/*": ["assets/*"]
+      "@/*": ["./src/*"],
+      "@/assets/*": ["./assets/*"]
     }
   },
   "include": [
