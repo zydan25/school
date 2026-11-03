@@ -1,0 +1,83 @@
+name: Android APK - Madrasati
+
+on:
+  push:
+    branches:
+      - feature/mobile-madrasati-android
+    paths:
+      - "mobile/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: madrasati-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    name: Build installable Android debug APK
+    runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_API_BASE_URL: https://school.alattab.site/api/v1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.16.0"
+          cache: npm
+          cache-dependency-path: mobile/package.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install JavaScript dependencies
+        working-directory: mobile
+        run: npm install
+
+      - name: Validate Expo dependencies and TypeScript
+        working-directory: mobile
+        run: |
+          npx expo install --check
+          npm run typecheck
+
+      - name: Generate native Android project
+        working-directory: mobile
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Verify network permissions and HTTPS-only policy
+        working-directory: mobile
+        shell: bash
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          test -f "$MANIFEST"
+          grep -q 'android.permission.INTERNET' "$MANIFEST"
+          grep -q 'android.permission.ACCESS_NETWORK_STATE' "$MANIFEST"
+          if grep -q 'usesCleartextTraffic="true"' "$MANIFEST"; then
+            echo "Cleartext HTTP must remain disabled."
+            exit 1
+          fi
+
+      - name: Assemble debug APK
+        working-directory: mobile/android
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Verify APK output
+        working-directory: mobile
+        run: test -s android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload Madrasati APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: madrasati-android-debug-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
