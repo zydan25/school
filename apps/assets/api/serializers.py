@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from apps.accounting.models import Account, FiscalYear, JournalEntry
+from apps.accounting.models import Account, FiscalYear
 from apps.assets.models import (
     AssetCategory,
     AssetDepreciationEntry,

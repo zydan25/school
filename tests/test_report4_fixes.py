@@ -445,7 +445,7 @@ class Report4FixesTestCase(TestCase):
             movement=mv,
             idempotency_key="legacy-movement-reverse-001",
             reason="عكس سند الصرف التجريبي",
-            reversed_by=self.user,
+            reversed_by=self.owner,
         )
         item.refresh_from_db()
         self.assertEqual(item.current_stock, Decimal("100.00"))

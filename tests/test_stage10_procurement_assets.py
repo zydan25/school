@@ -12,7 +12,6 @@ from apps.assets.services import (
     dispose_asset,
     generate_asset_depreciation,
     move_asset,
-    register_asset_from_vendor_invoice,
 )
 from apps.inventory.models import (
     InventoryItem,

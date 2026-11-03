@@ -10,7 +10,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.api_permissions import require_school_role_or_permission, resolve_active_school
-from apps.accounting.models import Account
 from apps.inventory.api.serializers import (
     InventoryItemSerializer,
     PurchaseOrderCreateSerializer,

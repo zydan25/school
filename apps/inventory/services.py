@@ -19,7 +19,6 @@ from apps.inventory.models import (
     PurchaseReceipt,
     StockMovement,
     VendorInvoice,
-    VendorInvoicePayment,
     Warehouse,
     WarehouseStock,
     WarehouseTransfer,

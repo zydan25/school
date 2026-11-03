@@ -29,43 +29,23 @@ from rest_framework.test import APIClient
 
 from apps.academics.models import AcademicYear, EducationalStage, GradeLevel, Section, Classroom
 from apps.accounting.models import Account, FiscalPeriod, FiscalYear, JournalEntry, JournalEntryLine
-from apps.accounting.services.auto_posting import (
-    disburse_vendor_payment,
-    post_vendor_invoice_to_journal,
-)
 from apps.accounting.services.chart_of_accounts import seed_default_chart_of_accounts
 from apps.accounts.models import MembershipRole, SchoolMembership, SchoolRole, User
-from apps.accounts.services import is_platform_operator
-from apps.inventory.models import InventoryItem, PurchaseOrder, PurchaseOrderItem, StockMovement, Supplier, VendorInvoice, Warehouse
-from apps.notifications.models import InboundWebhookMessage, SchoolMessagingGateway
-from apps.payroll.models import EmployeeContract, EmployeeLoanAdvance, EmployeeLoanRepayment, PayrollRun, Payslip
-from apps.payroll.services import (
-    approve_payroll_run,
-    disburse_payroll_run,
-    generate_monthly_payroll,
-    post_payroll_to_accounting,
-    reverse_payroll_run,
-)
+from apps.inventory.models import InventoryItem, StockMovement, Supplier, VendorInvoice, Warehouse
+from apps.notifications.models import SchoolMessagingGateway
 from apps.school_services.models import StudentBookDistribution
 from apps.staff.models import Teacher, TeacherAssignment
 from apps.student_fees.models import (
-    FeeCategory,
     PaymentReceipt,
-    StudentCreditTransaction,
     StudentInvoice,
-    StudentInvoiceItem,
     apply_credit_balance_to_invoice,
     reverse_credit_usage,
-    reverse_payment_receipt,
 )
-from apps.students.models import Student, StudentEnrollment
-from apps.students.services import (
-    promote_student,
-    retain_student,
-)
+from apps.students.models import Student
+from apps.students.services import promote_student
 from apps.tenants.models import School
 from apps.tenants.services import provision_school
-from apps.timetable.models import ClassSchedule, SchedulePeriodTemplate, SchoolBellSchedule, TimetablePlan, WeekDay
+from apps.timetable.models import ClassSchedule, SchedulePeriodTemplate, TimetablePlan, WeekDay
 from apps.timetable.services import (
     approve_timetable_plan, copy_timetable_plan, create_default_school_bell_schedule,
     get_effective_class_schedules, publish_timetable_plan, submit_timetable_plan,
@@ -138,7 +118,6 @@ class Report5AndTimetableSystemTests(TestCase):
 
         # Check strict overlap prevention: attempting to create a template overlapping with Period 1
         with self.assertRaises(ValidationError):
-            p1 = bell_sched.period_templates.filter(period_number=1).first()
             conflict_template = SchedulePeriodTemplate(
                 school=self.school,
                 schedule=bell_sched,
@@ -160,7 +139,7 @@ class Report5AndTimetableSystemTests(TestCase):
         )
 
         # Valid Period 1: 07:30 to 08:15
-        cs1 = ClassSchedule.objects.create(
+        ClassSchedule.objects.create(
             school=self.school,
             bell_schedule=bell_sched,
             academic_year=self.academic_year,
@@ -404,7 +383,7 @@ class Report5AndTimetableSystemTests(TestCase):
     # -------------------------------------------------------------------------
     def test_webhook_security_signature_and_mode(self):
         """اختبار إلزام التوقيع عند ضبط السر ورفض أوضاع GET غير الصالحة بحالة 400."""
-        gateway = SchoolMessagingGateway.objects.create(
+        SchoolMessagingGateway.objects.create(
             school=self.school,
             channel=SchoolMessagingGateway.Channel.WHATSAPP,
             webhook_verify_token="SECRET_TOKEN_123",
@@ -426,7 +405,7 @@ class Report5AndTimetableSystemTests(TestCase):
 
         # 3. POST with valid HMAC signature should succeed
         payload_bytes = json.dumps(post_data).encode("utf-8")
-        valid_sig = "sha256=" + hmac.new("SECRET_TOKEN_123".encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+        valid_sig = "sha256=" + hmac.new(b"SECRET_TOKEN_123", payload_bytes, hashlib.sha256).hexdigest()
         signed_res = self.client.post(
             f"/api/v1/notifications/webhook/whatsapp/{self.school.code}/",
             data=payload_bytes,
@@ -463,7 +442,7 @@ class Report5AndTimetableSystemTests(TestCase):
             movement=mov,
             idempotency_key="legacy-item-change-a-rev",
             reason="تصحيح الصنف بعد اكتشاف خطأ الإدخال",
-            reversed_by=self.user,
+            reversed_by=self.owner,
         )
         record_stock_movement(
             school=self.school,
@@ -474,7 +453,7 @@ class Report5AndTimetableSystemTests(TestCase):
             unit_cost=item_b.unit_cost,
             idempotency_key="legacy-item-change-b",
             notes="إعادة تسجيل الصرف على الصنف الصحيح",
-            created_by=self.user,
+            created_by=self.owner,
         )
         item_a.refresh_from_db()
         item_b.refresh_from_db()

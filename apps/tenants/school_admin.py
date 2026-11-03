@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 from apps.core.admin import AuditedAdminMixin
 
 """Dedicated per-school admin site with mandatory tenant scoping at queryset level."""
