@@ -20,6 +20,7 @@ export type StudentSummary = {
   full_name: string;
   grade_level_name: string;
   section_name: string;
+  section: string;
   academic_year_name: string;
   status: string;
 };
@@ -113,5 +114,5 @@ export function countStudentsForSection(
   sectionId: string | undefined,
 ): number | null {
   if (!students || !sectionId) return null;
-  return students.filter((student) => student.section_id === sectionId).length;
+  return students.filter((student) => student.section === sectionId).length;
 }
