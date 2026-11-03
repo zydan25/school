@@ -306,7 +306,7 @@ def _post_gateway_json(gateway, payload, idempotency_key):
     endpoint_path = urllib.parse.urlunsplit(("", "", parsed.path or "/", parsed.query, ""))
 
     if provider == SchoolMessagingGateway.Provider.TWILIO:
-        match = re.search(r"/Accounts/([A-Z0-9]+)/Messages(?:\\.json)?$", parsed.path, re.IGNORECASE)
+        match = re.search(r"/Accounts/([A-Z0-9]+)/Messages(?:\.json)?$", parsed.path, re.IGNORECASE)
         if not match or not gateway.auth_token or not gateway.sender_id:
             raise DeliveryError("إعداد Twilio يتطلب Account SID وAuth Token ورقم مرسل.", code="twilio_config", retryable=False)
         account_sid = match.group(1)
@@ -713,6 +713,8 @@ def _handle_outbox_event(event):
             provider_reference=reference,
             notification__school=event.school,
         ).exclude(provider_reference="").order_by("-attempted_at").first()
+        if attempt is not None and provider and attempt.provider and provider != attempt.provider:
+            raise DeliveryError("مرجع إيصال التسليم لا يطابق مزود الإرسال.", code="receipt_provider_mismatch", retryable=False)
         if attempt is None:
             raise DeliveryError(
                 "إيصال التسليم وصل قبل حفظ مرجع محاولة الإرسال؛ ستعاد معالجته.",
