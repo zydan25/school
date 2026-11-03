@@ -205,6 +205,8 @@ const styles = StyleSheet.create({
   summaryValue: { color: palette.primary, fontSize: 14, fontWeight: "900", textAlign: "right" },
   important: { color: palette.danger, fontSize: 16 },
   sectionTitle: { color: palette.primary, fontSize: 14, fontWeight: "900", textAlign: "right", marginTop: spacing.md },
+  agingTitle: { color: palette.primary, fontSize: 11, fontWeight: "800", textAlign: "right", marginTop: spacing.md },
+  agingGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
   cardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   invoiceNumber: { color: palette.primary, fontSize: 13, fontWeight: "900" },
   installment: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: palette.border, marginTop: spacing.sm, paddingTop: spacing.sm },

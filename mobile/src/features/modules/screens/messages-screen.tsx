@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import type { ReactNode } from "react";
 import { ActivityIndicator, Button, Text, TextInput } from "react-native-paper";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, MessageCircle, Send } from "lucide-react-native";
@@ -63,8 +62,10 @@ export function MessagesScreen() {
   });
 
   useEffect(() => {
-    if (activeId) readMutation.mutate(activeId);
-  }, [activeId]);
+    if (activeId && messagesQuery.data?.results.length) {
+      readMutation.mutate(activeId);
+    }
+  }, [activeId, messagesQuery.data?.results.length]);
 
   return (
     <AppScreen>

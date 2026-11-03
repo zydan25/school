@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text, TextInput } from "react-native-paper";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -22,6 +22,16 @@ import {
   ModuleHeader,
   ValueLine,
 } from "@/features/modules/components/module-primitives";
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("ar-YE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(parsed);
+}
 
 export function ExamsScreen() {
   const workspace = useAuthStore((state) => state.session?.activeWorkspace);
@@ -87,8 +97,8 @@ export function ExamsScreen() {
         <ModuleCard key={exam.id}>
           <Text style={styles.examTitle}>{exam.title}</Text>
           <Text style={styles.subject}>{exam.subject_name}</Text>
-          <ValueLine label="بداية الاختبار" value={formatDate(exam.start_time)} />
-          <ValueLine label="نهاية الاختبار" value={formatDate(exam.end_time)} />
+          <ValueLine label="بداية الاختبار" value={formatDateTime(exam.start_time)} />
+          <ValueLine label="نهاية الاختبار" value={formatDateTime(exam.end_time)} />
           <ValueLine label="المدة" value={exam.duration_minutes + " دقيقة"} />
           <ValueLine label="الدرجة الكلية" value={exam.total_marks} />
           {exam.instructions ? <Text style={styles.instructions}>{exam.instructions}</Text> : null}
@@ -102,11 +112,12 @@ export function ExamsScreen() {
         <ModuleCard>
           <View style={styles.activeHeader}>
             <Text style={styles.examTitle}>{paperQuery.data?.exam.title ?? activeExam?.title ?? "الاختبار"}</Text>
-            <Text style={styles.timerLabel}>آخر موعد: {formatDate(deadline)}</Text>
+            <Text style={styles.timerLabel}>آخر موعد: {formatDateTime(deadline)}</Text>
           </View>
           {paperQuery.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
           {paperQuery.isError ? <AppNotice message={getApiErrorMessage(paperQuery.error)} /> : null}
           {paperQuery.data?.exam.instructions ? <Text style={styles.instructions}>{paperQuery.data.exam.instructions}</Text> : null}
+          <AppNotice message="تُرسل الإجابات إلى الخادم عند التسليم النهائي فقط؛ لا تغلق الاختبار قبل التسليم، لأن المسودة غير المرسلة لا تحفظ في هذه النسخة." />
           {(paperQuery.data?.questions ?? []).map((question, index) => (
             <QuestionCard
               key={question.id}
