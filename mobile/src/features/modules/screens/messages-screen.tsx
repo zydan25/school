@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import type { ReactNode } from "react";
 import { ActivityIndicator, Button, Text, TextInput } from "react-native-paper";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, MessageCircle, Send } from "lucide-react-native";
@@ -18,9 +19,9 @@ import { AppNotice } from "@/shared/components/app-notice";
 import { AppScreen } from "@/shared/components/app-screen";
 import { AppIcon } from "@/shared/components/app-icon";
 import { palette, spacing } from "@/core/theme/tokens";
+import { useAuthStore } from "@/core/auth/auth-store";
 import {
   formatDate,
-  ModuleCard,
   ModuleEmpty,
   ModuleHeader,
   StatusPill,
@@ -28,6 +29,7 @@ import {
 
 export function MessagesScreen() {
   const client = useQueryClient();
+  const currentUserId = useAuthStore((state) => state.session?.user.id);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [body, setBody] = useState("");
   const conversationsQuery = useQuery({
@@ -36,6 +38,7 @@ export function MessagesScreen() {
     refetchInterval: 30_000,
   });
   const activeConversation = conversationsQuery.data?.find((item) => item.id === activeId);
+  const activeParticipant = activeConversation?.participants.find((participant) => participant.user === currentUserId);
   const messagesQuery = useQuery({
     queryKey: ["module", "conversation-messages", activeId],
     queryFn: () => getConversationMessages(activeId!),
@@ -75,7 +78,7 @@ export function MessagesScreen() {
             <StatusPill value={activeConversation?.status ?? "open"} labels={{ open: "مفتوحة", closed: "مغلقة" }} />
             {activeConversation?.status === "open" ? (
               <Button compact mode="text" textColor={palette.muted}
-                onPress={() => muteMutation.mutate({ id: activeId, muted: !activeConversation.participants.find((p) => p.is_active)?.is_muted })}>
+                onPress={() => muteMutation.mutate({ id: activeId, muted: !activeParticipant?.is_muted })}>
                 كتم / إلغاء الكتم
               </Button>
             ) : null}
@@ -122,7 +125,7 @@ export function MessagesScreen() {
 
 function ConversationCard({ conversation, onPress }: { conversation: Conversation; onPress: () => void }) {
   return (
-    <PressableConversation onPress={onPress}>
+    <Pressable onPress={onPress} style={styles.conversationSurface}>
       <View style={styles.conversationRow}>
         <View style={styles.avatar}><AppIcon icon={MessageCircle} color={palette.secondary} size={21} /></View>
         <View style={styles.conversationText}>
@@ -132,14 +135,11 @@ function ConversationCard({ conversation, onPress }: { conversation: Conversatio
         </View>
         {conversation.unread_count > 0 ? <View style={styles.unread}><Text style={styles.unreadText}>{conversation.unread_count}</Text></View> : null}
       </View>
-    </PressableConversation>
+    </Pressable>
   );
 }
 
-function PressableConversation({ children, onPress }: { children: React.ReactNode; onPress: () => void }) {
-  const { Pressable } = require("react-native") as typeof import("react-native");
-  return <Pressable onPress={onPress} style={styles.conversationSurface}>{children}</Pressable>;
-}
+
 
 function MessageBubble({ message }: { message: ConversationMessage }) {
   return (
