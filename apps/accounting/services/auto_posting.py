@@ -966,9 +966,13 @@ def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
                 raise ValidationError("فاتورة المورد مرتبطة بقيد مختلف عن قيد مصدرها.")
             if not locked_invoice.journal_entry_id:
                 locked_invoice.journal_entry = existing
-                if locked_invoice.status == VendorInvoice.Status.DRAFT:
-                    locked_invoice.status = VendorInvoice.Status.APPROVED
-                locked_invoice.save(update_fields=["journal_entry", "status", "updated_at"])
+            if locked_invoice.status == VendorInvoice.Status.DRAFT:
+                locked_invoice.status = VendorInvoice.Status.APPROVED
+            locked_invoice.approved_by = locked_invoice.approved_by or user
+            locked_invoice.approved_at = locked_invoice.approved_at or timezone.now()
+            locked_invoice.save(update_fields=[
+                "journal_entry", "status", "approved_by", "approved_at", "updated_at",
+            ])
             return existing
 
         if locked_invoice.journal_entry_id:
