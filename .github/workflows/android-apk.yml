@@ -12,13 +12,14 @@ on:
 permissions:
   contents: read
 
+# Queue another APK build instead of cancelling the build already in progress.
 concurrency:
   group: madrasati-apk-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-apk:
-    name: Build installable Android debug APK
+    name: Build Madrasati ARM64 debug APK
     runs-on: ubuntu-latest
     env:
       EXPO_PUBLIC_API_BASE_URL: https://school.alattab.site/api/v1
@@ -39,9 +40,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          # Allow this feature branch to populate its own Gradle cache.
+          cache-read-only: false
+
       - name: Install JavaScript dependencies
         working-directory: mobile
-        run: npm install
+        run: npm install --no-audit --no-fund --prefer-offline
 
       - name: Validate Expo dependencies and TypeScript
         working-directory: mobile
@@ -66,9 +73,21 @@ jobs:
             exit 1
           fi
 
-      - name: Assemble debug APK
+      - name: Assemble debug APK (ARM64 only)
+        id: gradle-build
         working-directory: mobile/android
-        run: ./gradlew :app:assembleDebug --no-daemon
+        shell: bash
+        run: |
+          set -o pipefail
+          echo "Building ARM64 APK for physical Android devices."
+          ./gradlew :app:assembleDebug \
+            -PreactNativeArchitectures=arm64-v8a \
+            --build-cache \
+            --max-workers=2 \
+            --no-daemon \
+            --console=plain \
+            --stacktrace \
+            --info
 
       - name: Verify APK output
         working-directory: mobile
@@ -77,7 +96,21 @@ jobs:
       - name: Upload Madrasati APK
         uses: actions/upload-artifact@v4
         with:
-          name: madrasati-android-debug-apk
+          name: madrasati-android-arm64-debug-apk
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Upload Android native build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: madrasati-android-build-diagnostics
+          path: |
+            mobile/android/app/.cxx/**
+            mobile/android/.gradle/**
+            mobile/android/build/reports/**
+            mobile/android/app/build/reports/**
+            mobile/android/app/build/outputs/logs/**
+          if-no-files-found: ignore
+          retention-days: 7
