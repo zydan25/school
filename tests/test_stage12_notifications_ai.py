@@ -179,7 +179,7 @@ class NotificationOutboxTests(Stage12BaseTestCase):
             content_type="application/json",
             HTTP_X_HUB_SIGNATURE_256=signature,
         )
-        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.status_code, 200)
         inbound = InboundWebhookMessage.objects.get(provider_msg_id="provider-event-001")
         self.assertFalse(inbound.processed)
         event = OutboxEvent.objects.get(

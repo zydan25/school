@@ -158,6 +158,10 @@ class WhatsAppWebhookAPIView(APIView):
         mode = request.query_params.get("hub.mode")
         challenge = request.query_params.get("hub.challenge", "")
         token = request.query_params.get("hub.verify_token", "")
+        # Lightweight provider health-check: no subscription challenge was requested.
+        # Explicit but unsupported modes remain rejected.
+        if not mode:
+            return Response({"status": "ok"}, status=status.HTTP_200_OK)
         if mode != "subscribe":
             return Response({"detail": "طلب تحقق غير صالح."}, status=status.HTTP_400_BAD_REQUEST)
         school_code = school_code or request.query_params.get("school_code")
@@ -220,30 +224,32 @@ class WhatsAppWebhookAPIView(APIView):
                 (sender + "\0" + message + "\0" + request.body.decode("utf-8", "ignore")).encode("utf-8")
             ).hexdigest()
 
-        try:
-            with transaction.atomic():
-                inbound = InboundWebhookMessage.objects.create(
-                    school=school,
-                    provider_msg_id=provider_id[:255],
-                    sender_phone=sender,
-                    processed=False,
-                )
-                enqueue_event(
-                    event_name="webhook.whatsapp.inbound",
-                    aggregate_type="inbound_webhook",
-                    aggregate_id=inbound.pk,
-                    payload={"inbound_id": str(inbound.pk), "message_text": message},
-                    idempotency_key=f"whatsapp-inbound:{school.pk}:{hashlib.sha256(provider_id.encode()).hexdigest()}",
-                    school=school,
-                )
-        except IntegrityError:
-            return Response({"status": "duplicate_ignored"}, status=status.HTTP_200_OK)
+        with transaction.atomic():
+            inbound, created = InboundWebhookMessage.objects.get_or_create(
+                school=school,
+                provider_msg_id=provider_id[:255],
+                defaults={
+                    "sender_phone": sender,
+                    "processed": False,
+                },
+            )
+            if not created:
+                return Response({"status": "duplicate_ignored"}, status=status.HTTP_200_OK)
+            enqueue_event(
+                event_name="webhook.whatsapp.inbound",
+                aggregate_type="inbound_webhook",
+                aggregate_id=inbound.pk,
+                payload={"inbound_id": str(inbound.pk), "message_text": message},
+                idempotency_key=f"whatsapp-inbound:{school.pk}:{hashlib.sha256(provider_id.encode()).hexdigest()}",
+                school=school,
+            )
 
         return Response({
-            "status": "accepted",
+            "status": "success",
+            "accepted": True,
             "message_id": str(inbound.pk),
             "queued_at": timezone.now().isoformat(),
-        }, status=status.HTTP_202_ACCEPTED)
+        }, status=status.HTTP_200_OK)
 
 
 class SchoolWhatsAppWebhookAPIView(WhatsAppWebhookAPIView):

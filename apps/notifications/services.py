@@ -310,7 +310,7 @@ def _post_gateway_json(gateway, payload, idempotency_key):
         if not match or not gateway.auth_token or not gateway.sender_id:
             raise DeliveryError("إعداد Twilio يتطلب Account SID وAuth Token ورقم مرسل.", code="twilio_config", retryable=False)
         account_sid = match.group(1)
-        credential = base64.b64encode(f"{account_sid}:{gateway.auth_token}".encode("utf-8")).decode("ascii")
+        credential = base64.b64encode(f"{account_sid}:{gateway.auth_token}".encode()).decode("ascii")
         headers["Authorization"] = f"Basic {credential}"
         to_number = str(payload.get("to", ""))
         from_number = gateway.sender_id

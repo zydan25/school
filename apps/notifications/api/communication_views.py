@@ -162,7 +162,7 @@ def _conversation_payload(conversation, participant):
 class NotificationPreferencesAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         school = _school_context(request)
         preferences = NotificationPreference.objects.filter(
             user=request.user, school=school,
@@ -172,7 +172,7 @@ class NotificationPreferencesAPIView(APIView):
             for item in preferences
         ]})
 
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         school = _school_context(request)
         category = str(request.data.get("category", "")).strip()
         channel = str(request.data.get("channel", "")).strip()
@@ -193,7 +193,7 @@ class NotificationPreferencesAPIView(APIView):
 class PushDevicesAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         devices = PushDevice.objects.filter(user=request.user, is_active=True).order_by("-last_seen_at")
         return Response({"devices": [
             {
@@ -203,7 +203,7 @@ class PushDevicesAPIView(APIView):
             } for item in devices
         ]})
 
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         device_id = str(request.data.get("device_id", "")).strip()
         platform = str(request.data.get("platform", "")).strip()
         token = str(request.data.get("push_token", "")).strip()
@@ -223,7 +223,7 @@ class PushDevicesAPIView(APIView):
             raise ValidationError("رمز Push مسجل مسبقاً على حساب آخر.") from exc
         return Response({"device_id": device.device_id, "platform": device.platform, "is_active": True}, status=status.HTTP_200_OK)
 
-    def delete(self, request):
+    def delete(self, request, *args, **kwargs):
         device_id = str(request.query_params.get("device_id", "")).strip()
         if not device_id:
             raise ValidationError("معرف الجهاز مطلوب.")
@@ -238,7 +238,7 @@ class PushDevicesAPIView(APIView):
 class SchoolConversationsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         school = _school_context(request)
         participation = ConversationParticipant.objects.filter(
             school=school, user=request.user, is_active=True, is_archived=False,
@@ -249,7 +249,7 @@ class SchoolConversationsAPIView(APIView):
         ]})
 
     @transaction.atomic
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         school = _school_context(request)
         if not _user_linked_to_school(request.user, school):
             raise PermissionDenied("لا يمكن إنشاء محادثة خارج نطاق مدرستك.")
@@ -309,7 +309,7 @@ def _school_user(school, user_id):
 class ConversationMessagesAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, conversation_id):
+    def get(self, request, conversation_id, *args, **kwargs):
         school = _school_context(request)
         conversation, participant = _conversation_for_participant(request, school, conversation_id)
         messages = conversation.messages.filter(
@@ -333,7 +333,7 @@ class ConversationMessagesAPIView(APIView):
         ], "last_read_at": participant.last_read_at.isoformat()})
 
     @transaction.atomic
-    def post(self, request, conversation_id):
+    def post(self, request, conversation_id, *args, **kwargs):
         school = _school_context(request)
         conversation, participant = _conversation_for_participant(request, school, conversation_id)
         if conversation.status != SchoolConversation.Status.OPEN:
@@ -389,7 +389,7 @@ class ConversationMessagesAPIView(APIView):
 class ConversationParticipantsAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, conversation_id):
+    def get(self, request, conversation_id, *args, **kwargs):
         school = _school_context(request)
         conversation, _ = _conversation_for_participant(request, school, conversation_id)
         participants = conversation.participants.filter(
@@ -403,7 +403,7 @@ class ConversationParticipantsAPIView(APIView):
         ]})
 
     @transaction.atomic
-    def post(self, request, conversation_id):
+    def post(self, request, conversation_id, *args, **kwargs):
         school = _school_context(request)
         conversation, _ = _conversation_for_participant(request, school, conversation_id)
         if conversation.created_by_id != request.user.pk and not (
@@ -427,7 +427,7 @@ class ConversationParticipantsAPIView(APIView):
             participant.save(update_fields=["is_active", "added_by", "updated_at"])
         return Response({"user_id": str(user.pk), "role": role, "is_active": True}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
-    def delete(self, request, conversation_id):
+    def delete(self, request, conversation_id, *args, **kwargs):
         school = _school_context(request)
         conversation, _ = _conversation_for_participant(request, school, conversation_id)
         if conversation.created_by_id != request.user.pk and not (
@@ -449,7 +449,7 @@ class ConversationParticipantsAPIView(APIView):
 class ConversationStatusAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, conversation_id):
+    def post(self, request, conversation_id, *args, **kwargs):
         school = _school_context(request)
         conversation, _ = _conversation_for_participant(request, school, conversation_id)
         if conversation.created_by_id != request.user.pk and not (
@@ -467,7 +467,7 @@ class ConversationStatusAPIView(APIView):
 class ConversationAttachmentAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, conversation_id, message_id):
+    def get(self, request, conversation_id, message_id, *args, **kwargs):
         school = _school_context(request)
         conversation, _ = _conversation_for_participant(request, school, conversation_id)
         message = ConversationMessage.objects.filter(
@@ -493,7 +493,7 @@ class CancelNotificationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     @transaction.atomic
-    def post(self, request, notification_id):
+    def post(self, request, notification_id, *args, **kwargs):
         school = _school_context(request)
         notification = Notification.objects.select_for_update().filter(
             pk=notification_id, recipient=request.user, school=school,
