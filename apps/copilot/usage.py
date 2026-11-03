@@ -86,7 +86,6 @@ def run_budgeted_ai_call(
     """
     estimated_input_tokens = _estimate_tokens(input_text)
     model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    now = timezone.now()
 
     with transaction.atomic():
         try:

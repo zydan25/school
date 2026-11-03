@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone

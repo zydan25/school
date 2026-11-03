@@ -29,7 +29,7 @@ def notify_guardian_attendance_event(
             if not user:
                 continue
             fingerprint = hashlib.sha256(
-                f"{school.pk}:{student.pk}:{user.pk}:{category}:{title}:{body}".encode("utf-8")
+                f"{school.pk}:{student.pk}:{user.pk}:{category}:{title}:{body}".encode()
             ).hexdigest()
             notif, was_created = enqueue_notification(
                 school=school,

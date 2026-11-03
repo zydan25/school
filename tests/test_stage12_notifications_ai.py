@@ -18,7 +18,6 @@ from apps.notifications.models import (
     ConversationParticipant,
     InboundWebhookMessage,
     Notification,
-    NotificationDeliveryAttempt,
     NotificationPreference,
     OutboxEvent,
     SchoolConversation,

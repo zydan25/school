@@ -3,7 +3,6 @@ from decimal import Decimal, InvalidOperation
 
 from django.db.models import Sum
 from django.utils import timezone
-from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response

@@ -6,7 +6,6 @@ import http.client
 import ipaddress
 import json
 import logging
-import math
 import socket
 import urllib.error
 import urllib.parse
