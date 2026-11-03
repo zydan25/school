@@ -54,7 +54,7 @@ export function AcceptInvitationScreen() {
           mode="outlined"
           label="رمز الدعوة"
           value={token}
-          onChangeText={setToken}
+          onChangeText={(value) => setToken(value.replace(/\s/g, ""))}
           autoCapitalize="none"
           autoCorrect={false}
           multiline

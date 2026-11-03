@@ -184,6 +184,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           // On temporary network failures, retain the encrypted session and let
           // the destination screen show its normal connection error.
         }
+      } catch {
+        appQueryClient.clear();
+        try {
+          await clearStoredSession();
+        } catch {
+          // A failed secure-storage cleanup must not block the login route.
+        }
+        set({ session: null });
       } finally {
         set({ hasHydrated: true });
         hydrationTask = null;
@@ -274,11 +282,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   acceptInvitation: async (token) => {
-    const current = get().session;
+    let current = get().session;
     if (!current?.accessToken) {
       throw new ApiError("سجل الدخول أولاً لقبول دعوة المدرسة.", 401, null);
     }
-    const result = await apiRequest<{
+    const invitationRequest = () => apiRequest<{
       membership_id: string;
       school: { id: string; code: string; name: string };
       roles: string[];
@@ -286,7 +294,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }>("app/account/invitations/accept/", {
       method: "POST",
       body: JSON.stringify({ token: token.trim() }),
-    }, { accessToken: current.accessToken });
+    }, { accessToken: current!.accessToken });
+
+    let result: Awaited<ReturnType<typeof invitationRequest>>;
+    try {
+      result = await invitationRequest();
+    } catch (error) {
+      if (!(error instanceof ApiError) || error.status !== 401) throw error;
+      const refreshedToken = await get().refreshAccessToken();
+      current = get().session;
+      if (!refreshedToken || !current) throw error;
+      result = await invitationRequest();
+    }
 
     const invitedSchool: SchoolOption = {
       id: result.school.id,
@@ -302,10 +321,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     let schools = merged;
     try {
+      const latestSession = get().session ?? current;
       const remote = await apiRequest<SchoolListResponse>(
         "schools/",
         {},
-        { accessToken: current.accessToken },
+        { accessToken: latestSession.accessToken },
       );
       schools = mergeAvailableSchools(remote, merged);
     } catch {
@@ -313,8 +333,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     appQueryClient.clear();
+    const latestSession = get().session ?? current;
     const session: AuthSession = {
-      ...current,
+      ...latestSession,
       schools,
       activeSchoolId: invitedSchool.id,
       activeWorkspace: null,
