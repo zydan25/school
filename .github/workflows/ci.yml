@@ -111,6 +111,7 @@ jobs:
             apps/inventory/migrations/0005_stage10_integrity_and_permissions.py \
             apps/inventory/migrations/0006_stage10_stock_ledger_indexes.py \
             apps/inventory/migrations/0007_stage10_opening_stock_movement.py \
+            apps/inventory/migrations/0008_stage10_warehouse_stocktakes.py \
             apps/assets/models.py \
             apps/assets/services.py \
             apps/assets/admin.py \
