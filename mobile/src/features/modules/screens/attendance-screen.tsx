@@ -102,7 +102,6 @@ function isValidDateRange(start: string, end: string) {
 
 export function AttendanceScreen() {
   const workspace = useAuthStore((state) => state.session?.activeWorkspace);
-  const queryScope = useModuleQueryScope();
   return (
     <AppScreen>
       {workspace === "guardian" ? <GuardianAttendance /> :
@@ -300,6 +299,7 @@ function ExcuseCard({ item }: { item: AttendanceExcuse }) {
 
 function TeacherAttendance() {
   const queryClient = useQueryClient();
+  const queryScope = useModuleQueryScope();
   const [assignmentId, setAssignmentId] = useState("");
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   const date = todayIso();

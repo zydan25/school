@@ -35,7 +35,6 @@ function formatDateTime(value: string | null | undefined): string {
 
 export function ExamsScreen() {
   const workspace = useAuthStore((state) => state.session?.activeWorkspace);
-  const queryScope = useModuleQueryScope();
   const queryClient = useQueryClient();
   const queryScope = useModuleQueryScope();
   const [activeExamId, setActiveExamId] = useState<string | null>(null);
