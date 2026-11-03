@@ -16,6 +16,35 @@ class Migration(migrations.Migration):
     dependencies = [("notifications", "0004_pushdevice_schoolconversation")]
     operations = [
         migrations.AlterField(
+            model_name="schoolmessaginggateway", name="channel",
+            field=models.CharField(
+                choices=[("whatsapp", "واتساب للأعمال (WhatsApp)"), ("sms", "رسائل نصية قصيرة (SMS)"), ("push", "إشعارات Push")],
+                default="whatsapp", max_length=12, verbose_name="القناة",
+            ),
+        ),
+        migrations.AlterField(
+            model_name="schoolmessaginggateway", name="provider",
+            field=models.CharField(
+                choices=[
+                    ("custom_webhook", "رابط ويب هوك مخصص (Custom API)"),
+                    ("ultramsg", "UltraMsg WhatsApp API"),
+                    ("twilio", "Twilio"),
+                    ("infobip", "Infobip"),
+                    ("local_gateway", "بوابة محلية (Local Gateway)"),
+                    ("generic_http", "بوابة HTTP موحدة"),
+                ],
+                default="custom_webhook", max_length=20, verbose_name="المزود التقني",
+            ),
+        ),
+        migrations.AlterField(
+            model_name="schoolmessaginggateway", name="auto_ai_reply",
+            field=models.BooleanField(
+                default=False,
+                help_text="يظل الرد الآلي معطلاً افتراضياً لحماية بيانات الطلاب، ولا يفعل إلا بقرار صريح من المدرسة.",
+                verbose_name="تفعيل الرد الآلي الذكي (AI Auto-Responder)",
+            ),
+        ),
+        migrations.AlterField(
             model_name="schoolmessaginggateway", name="auth_token",
             field=apps.core.fields.EncryptedTextField(blank=True, verbose_name="مفتاح المصادقة والتوكن (API Key / Token)"),
         ),
