@@ -333,7 +333,7 @@ class Stage11SchoolServicesTests(TestCase):
             grade_level=self.grade,
             section=self.section,
             requested_by=self.owner,
-            status=BookRequisitionOrder.Status.APPROVED,
+            status=BookRequisitionOrder.Status.DRAFT,
             order_number="REQ-ST11-001",
         )
         line = BookRequisitionItem.objects.create(
@@ -341,8 +341,13 @@ class Stage11SchoolServicesTests(TestCase):
             requisition=order,
             book_title="كتاب العلوم",
             quantity_requested=5,
-            quantity_approved=5,
         )
+        line.quantity_approved = 5
+        line._allow_requisition_approval_update = True
+        line.save(update_fields=["quantity_approved", "updated_at"])
+        order.status = BookRequisitionOrder.Status.APPROVED
+        order._allow_requisition_workflow_update = True
+        order.save(update_fields=["status", "updated_at"])
         allocation = [{
             "requisition_item_id": str(line.pk),
             "inventory_item_id": str(item.pk),

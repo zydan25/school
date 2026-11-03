@@ -3,7 +3,7 @@
 - Payroll Management & Payslip Calculation
 - Fixed Assets & Depreciation
 - Procurement & Inventory Movements
-- School Support Services (Buses, Library, Clinic)
+- Optional School Services (Buses, Library, Textbook Distribution)
 - Fee Installment Plans & Exam Control
 - Comprehensive Reporting Engine
 """
@@ -30,7 +30,7 @@ from apps.accounting.services.financial_reports import (
     get_balance_sheet,
     get_income_statement,
 )
-from apps.accounts.models import User
+from apps.accounts.models import SchoolMembership, User
 from apps.assessments.models import ExamCommittee, ExamSeating, GradeBook
 from apps.assets.models import AssetCategory, FixedAsset
 from apps.inventory.models import InventoryItem, StockMovement, Supplier, Warehouse
@@ -50,10 +50,8 @@ from apps.reports.selectors.hr_reports import (
 from apps.school_services.models import (
     BookLoan,
     BusRoute,
-    ClinicVisit,
     LibraryBook,
     StudentBusSubscription,
-    StudentHealthProfile,
 )
 from apps.staff.models import Teacher
 from apps.student_fees.models import (
@@ -273,8 +271,8 @@ class ExtendedModulesTests(TestCase):
         item.refresh_from_db()
         self.assertEqual(item.current_stock, Decimal("70.00"))
 
-    def test_school_services_buses_library_clinic(self):
-        """التحقق من خدمات النقل، المكتبة، والعيادة المدرسية."""
+    def test_school_services_buses_and_library(self):
+        """التحقق من خدمات النقل والمكتبة المدرسية دون خدمة العيادة المستبعدة."""
         # 1. Bus Transport
         bus = BusRoute.objects.create(
             school=self.school,
@@ -313,23 +311,6 @@ class ExtendedModulesTests(TestCase):
         book.refresh_from_db()
         self.assertEqual(book.available_copies, 4)
 
-        # 3. Clinic
-        health = StudentHealthProfile.objects.create(
-            school=self.school,
-            student=self.student,
-            blood_type="O+",
-            allergies="حساسية من البنسلين",
-            emergency_contact_name="والد الطالب",
-            emergency_contact_phone="771111222",
-        )
-        visit = ClinicVisit.objects.create(
-            school=self.school,
-            student=self.student,
-            symptoms="صداع وارتفاع خفيف في الحرارة",
-            temperature=Decimal("37.8"),
-            treatment_given="إسعافات أولية وخافض حرارة",
-        )
-        self.assertFalse(visit.sent_home)
 
     def test_fee_installment_plans_and_exam_control(self):
         """التحقق من خطط تقسيط الرسوم ولجان الامتحانات وأرقام الجلوس."""
@@ -746,6 +727,11 @@ class ExtendedModulesTests(TestCase):
         """التحقق من دورة أوامر صرف الكتب من المشرف للمخزن والاعتماد."""
         from apps.school_services.models import BookRequisitionItem, BookRequisitionOrder
 
+        SchoolMembership.objects.get_or_create(
+            school=self.school,
+            user=self.user,
+            defaults={"status": SchoolMembership.Status.ACTIVE},
+        )
         req_order = BookRequisitionOrder.objects.create(
             school=self.school,
             academic_year=self.academic_year,
@@ -754,7 +740,7 @@ class ExtendedModulesTests(TestCase):
             notes="طلب كتب الرياضيات للصف العاشر",
         )
         self.assertEqual(req_order.order_number, "REQ-2026-001")
-        self.assertEqual(req_order.status, BookRequisitionOrder.Status.SUBMITTED)
+        self.assertEqual(req_order.status, BookRequisitionOrder.Status.DRAFT)
 
         item = BookRequisitionItem.objects.create(
             school=self.school,
@@ -764,9 +750,13 @@ class ExtendedModulesTests(TestCase):
         )
         self.assertEqual(item.quantity_requested, 30)
 
+        req_order.status = BookRequisitionOrder.Status.SUBMITTED
+        req_order._allow_requisition_workflow_update = True
+        req_order.save(update_fields=["status", "updated_at"])
         req_order.status = BookRequisitionOrder.Status.APPROVED
         req_order.approved_by = self.user
-        req_order.save()
+        req_order._allow_requisition_workflow_update = True
+        req_order.save(update_fields=["status", "approved_by", "updated_at"])
         self.assertEqual(req_order.status, "approved")
 
     def test_question_bank_and_online_exam_auto_grading(self):

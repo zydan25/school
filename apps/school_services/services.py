@@ -141,7 +141,7 @@ def issue_bus_subscription_monthly_invoice(*, school, subscription_id, year: int
         raise ValidationError({"year": "السنة المالية غير صالحة."})
     if not isinstance(month, int) or isinstance(month, bool) or not 1 <= month <= 12:
         raise ValidationError({"month": "يجب أن يكون الشهر بين 1 و12."})
-    subscription = StudentBusSubscription.objects.select_for_update().select_related(
+    subscription = StudentBusSubscription.objects.select_for_update(of=("self",)).select_related(
         "student", "student__branch", "academic_year", "bus_route", "branch"
     ).get(pk=subscription_id, school=school, is_archived=False)
     existing_charge = BusSubscriptionCharge.objects.select_for_update().filter(
@@ -242,7 +242,7 @@ def issue_bus_route_monthly_invoices(*, school, route_id, year: int, month: int,
     )
     if not route.is_active:
         raise ValidationError("لا يمكن فوترة خط نقل غير نشط.")
-    subscriptions = StudentBusSubscription.objects.select_for_update().filter(
+    subscriptions = StudentBusSubscription.objects.select_for_update(of=("self",)).filter(
         school=school,
         bus_route=route,
         academic_year__school=school,
@@ -322,7 +322,7 @@ def _create_library_fine_invoice(*, loan, amount: Decimal, reason: str):
 def renew_book_loan(*, school, loan_id, actor=None):
     from apps.school_services.models import BookLoan
 
-    loan = BookLoan.objects.select_for_update().select_related("book", "student", "teacher").get(
+    loan = BookLoan.objects.select_for_update(of=("self",)).select_related("book", "student", "teacher").get(
         pk=loan_id, school=school, is_archived=False
     )
     if loan.status != BookLoan.Status.BORROWED:

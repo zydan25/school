@@ -487,7 +487,7 @@ class AuditFixesVerificationTests(TestCase):
         )
         pv = settlement.approve_and_create_payment_voucher(approved_by_user=self.user)
         self.assertIsNotNone(pv)
-        self.assertEqual(settlement.status, BusFinancialSettlement.Status.APPROVED)
+        self.assertEqual(settlement.status, BusFinancialSettlement.Status.PAID)
         self.assertEqual(settlement.payment_voucher, pv)
         # 120000 - 20000 = 100000 net payable
         self.assertEqual(pv.amount, Decimal("100000.00"))
@@ -539,25 +539,26 @@ class AuditFixesVerificationTests(TestCase):
         rep = get_daily_cash_register_report(school=self.school, target_date=today)
         self.assertEqual(rep["total_outflow"], 100.0)
 
-    def test_clinic_role_isolation_and_permissions(self):
-        """9. التحقق من عزل صلاحيات السجلات الصحية والعيادة عن أمين المخزن والمراجع وتخصيص دور مسؤول العيادة."""
-        clinic_role = SchoolRole.objects.get(school=self.school, code="clinic-officer")
+    def test_clinic_service_is_disabled_and_permissions_are_not_assignable(self):
+        from apps.accounts.services import is_school_permission_codename_allowed
+
+        self.assertFalse(
+            SchoolRole.objects.filter(school=self.school, code="clinic-officer").exists()
+        )
+        for model_name in ("studenthealthprofile", "clinicvisit"):
+            for action in ("view", "add", "change", "delete"):
+                with self.subTest(model=model_name, action=action):
+                    self.assertFalse(
+                        is_school_permission_codename_allowed(
+                            "school_services", f"{action}_{model_name}"
+                        )
+                    )
         store_role = SchoolRole.objects.get(school=self.school, code="store-keeper")
         auditor_role = SchoolRole.objects.get(school=self.school, code="school-auditor")
-
-        clinic_codenames = [p.codename for p in clinic_role.permissions.all()]
-        store_codenames = [p.codename for p in store_role.permissions.all()]
-        auditor_codenames = [p.codename for p in auditor_role.permissions.all()]
-
-        # Clinic role has health and clinic permissions
-        self.assertTrue(any("studenthealthprofile" in cn for cn in clinic_codenames))
-        self.assertTrue(any("clinicvisit" in cn for cn in clinic_codenames))
-
-        # Store keeper and auditor must NOT have health or clinic permissions
-        self.assertFalse(any("studenthealthprofile" in cn for cn in store_codenames))
-        self.assertFalse(any("clinicvisit" in cn for cn in store_codenames))
-        self.assertFalse(any("studenthealthprofile" in cn for cn in auditor_codenames))
-        self.assertFalse(any("clinicvisit" in cn for cn in auditor_codenames))
+        for role in (store_role, auditor_role):
+            codes = set(role.permissions.values_list("codename", flat=True))
+            self.assertFalse(any("studenthealthprofile" in code for code in codes))
+            self.assertFalse(any("clinicvisit" in code for code in codes))
 
     def test_api_token_login_and_logout(self):
         """10. التحقق من مسارات مصادقة الرموز (Token Auth) لتطبيقات الموبايل وإبطالها عند الخروج."""

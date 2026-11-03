@@ -117,6 +117,22 @@ class Migration(migrations.Migration):
                 ],
             },
         ),
+        migrations.AlterField(
+            model_name="bookrequisitionorder",
+            name="status",
+            field=models.CharField(
+                choices=[
+                    ("draft", "مسودة طلب"),
+                    ("submitted", "مرفوع للاعتماد الإداري"),
+                    ("approved", "معتمد - موجه لأمين المستودع"),
+                    ("fulfilled", "تم الصرف والتسليم من المخزن"),
+                    ("rejected", "مرفوض"),
+                ],
+                default="draft",
+                max_length=20,
+                verbose_name="حالة أمر الصرف",
+            ),
+        ),
         migrations.AlterModelOptions(
             name="librarybook",
             options={

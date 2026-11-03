@@ -52,6 +52,8 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     # 1. دور مدير المدرسة (صلاحيات شاملة لكافة وحدات المدرسة)
     director_permissions = Permission.objects.filter(
         content_type__app_label__in=all_school_apps
+    ).exclude(
+        content_type__model__in=["studenthealthprofile", "clinicvisit"]
     ).filter(
         Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
     )
@@ -172,22 +174,19 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     )
     store_keeper.permissions.set(store_permissions.distinct())
 
-    # مسؤول العيادة والصحة المدرسية (دور طبي مستقل معزول الخصوصية)
-    clinic_permissions = Permission.objects.filter(
-        content_type__app_label="school_services",
-        content_type__model__in=["studenthealthprofile", "clinicvisit"],
-    ).filter(
-        Q(codename__startswith="view_") | Q(codename__startswith="add_") | Q(codename__startswith="change_")
-    )
-    clinic_officer, _ = SchoolRole.objects.get_or_create(
-        school=school, code="clinic-officer",
-        defaults={
-            "name": "مسؤول العيادة والصحة المدرسية",
-            "description": "إدارة الملفات الصحية الوقائية للطلاب والزيارات الطبية مع أعلى درجات الخصوصية.",
-            "is_system": True,
-        },
-    )
-    clinic_officer.permissions.set(clinic_permissions.distinct())
+    # Legacy clinic role is disabled and stripped of permissions; clinic features are not provided.
+    clinic_officer = SchoolRole.objects.filter(
+        school=school, code="clinic-officer"
+    ).first()
+    if clinic_officer:
+        clinic_officer.permissions.clear()
+        clinic_officer.is_active = False
+        clinic_officer.is_archived = True
+        clinic_officer.archived_at = timezone.now()
+        clinic_officer.archive_reason = "إيقاف خدمة العيادة المدرسية خارج نطاق المنتج."
+        clinic_officer.save(update_fields=[
+            "is_active", "is_archived", "archived_at", "archive_reason", "updated_at"
+        ])
 
     # 8. منسق أكاديمي
     academic_permissions = Permission.objects.filter(content_type__app_label="academics").filter(
@@ -202,7 +201,9 @@ def _create_default_roles(school: School, membership: SchoolMembership):
     # 9. مراجع مدرسي (اطلاع فقط باستثناء السجلات الصحية والعيادة الخاصة)
     auditor_permissions = Permission.objects.filter(
         content_type__app_label__in=all_school_apps
-    ).filter(codename__startswith="view_").exclude(content_type__model__in=["studenthealthprofile", "clinicvisit"])
+    ).filter(codename__startswith="view_").exclude(
+        content_type__model__in=["studenthealthprofile", "clinicvisit"]
+    )
     auditor, _ = SchoolRole.objects.get_or_create(
         school=school, code="school-auditor",
         defaults={"name": "مراجع مدرسي", "description": "اطلاع وتدقيق لكافة السجلات والتقارير دون تعديل.", "is_system": True},

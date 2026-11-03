@@ -1055,7 +1055,7 @@ class BookRequisitionOrder(TenantOwnedModel):
         on_delete=models.PROTECT,
         related_name="requested_book_orders",
     )
-    status = models.CharField("حالة أمر الصرف", max_length=20, choices=Status.choices, default=Status.SUBMITTED)
+    status = models.CharField("حالة أمر الصرف", max_length=20, choices=Status.choices, default=Status.DRAFT)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name="المسؤول المعتمد",
@@ -1196,7 +1196,13 @@ class BookRequisitionItem(TenantOwnedModel):
         from django.db import transaction
 
         with transaction.atomic():
-            if not self._state.adding:
+            if self._state.adding:
+                requisition = BookRequisitionOrder.objects.select_for_update().get(
+                    pk=self.requisition_id, school_id=self.school_id
+                )
+                if requisition.status != BookRequisitionOrder.Status.DRAFT:
+                    raise ValidationError("لا تضاف بنود إلا إلى أمر صرف في حالة المسودة.")
+            else:
                 previous = type(self).objects.select_for_update().filter(
                     pk=self.pk
                 ).values(
