@@ -8,9 +8,11 @@ import { AppNotice } from "@/shared/components/app-notice";
 import { AppScreen } from "@/shared/components/app-screen";
 import { confirmPasswordReset, requestPasswordReset } from "@/features/auth/api/auth-api";
 import { getApiErrorMessage } from "@/core/api/api-client";
+import { useAuthStore } from "@/core/auth/auth-store";
 import { palette, spacing } from "@/core/theme/tokens";
 
 export function PasswordResetScreen() {
+  const clearSession = useAuthStore((state) => state.clearSession);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -54,6 +56,7 @@ export function PasswordResetScreen() {
     try {
       const result = await confirmPasswordReset(phone.trim(), code.trim(), password, confirm);
       setMessage(result.message);
+      await clearSession();
       router.replace("/login" as never);
     } catch (reason) {
       setError(getApiErrorMessage(reason));
