@@ -1,6 +1,6 @@
 import { ApiError } from "@/core/api/api-client";
 import { authenticatedRequest } from "@/core/api/authenticated-request";
-import { toResults, type ApiPage } from "@/core/api/api-response";
+import type { ApiPage } from "@/core/api/api-response";
 import { getMyProfiles } from "@/features/profiles/api/profiles-api";
 import type { ProfileCollection, WorkspaceType } from "@/core/auth/types";
 
@@ -64,9 +64,46 @@ export type DashboardData = {
 type GuardianChildrenResponse = { guardian_id: string; results: GuardianChild[] };
 type ListResponse<T> = T[] | ApiPage<T>;
 
+const MAX_LIST_PAGES = 50;
+
 async function getList<T>(path: string): Promise<T[]> {
-  const response = await authenticatedRequest<ListResponse<T>>(path);
-  return toResults(response);
+  const configuredBase = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+  if (!configuredBase) {
+    throw new Error("عنوان الخادم غير مضبوط.");
+  }
+
+  const normalizedBase = configuredBase.endsWith("/")
+    ? configuredBase
+    : configuredBase + "/";
+  const baseUrl = new URL(normalizedBase);
+  let pageUrl = new URL(path.replace(/^\/+/, ""), normalizedBase);
+  const results: T[] = [];
+
+  for (let page = 0; page < MAX_LIST_PAGES && pageUrl; page += 1) {
+    if (
+      pageUrl.origin !== baseUrl.origin ||
+      !pageUrl.pathname.startsWith(baseUrl.pathname)
+    ) {
+      throw new Error("رفض التطبيق رابط صفحة خارج نطاق API المدرسة.");
+    }
+
+    const response = await authenticatedRequest<ListResponse<T>>(pageUrl.toString());
+    if (Array.isArray(response)) {
+      results.push(...response);
+      return results;
+    }
+
+    results.push(...response.results);
+    if (!response.next) return results;
+
+    pageUrl = new URL(response.next, pageUrl);
+  }
+
+  if (pageUrl) {
+    throw new Error("قائمة الخادم تحتوي على صفحات أكثر من الحد المسموح للتحميل.");
+  }
+
+  return results;
 }
 
 async function getLessons(profileType: "student" | "teacher" | "guardian") {
