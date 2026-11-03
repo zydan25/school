@@ -21,6 +21,8 @@ from apps.inventory.models import (
     VendorInvoice,
     Warehouse,
     WarehouseStock,
+    WarehouseStocktake,
+    WarehouseStocktakeLine,
     WarehouseTransfer,
 )
 
@@ -464,3 +466,212 @@ def pay_vendor_invoice(
         user=user,
         idempotency_key=key,
     )
+
+
+@transaction.atomic
+def start_stocktake(
+    *,
+    school,
+    warehouse: Warehouse,
+    stocktake_number: str,
+    idempotency_key: str,
+    count_date=None,
+    notes: str = "",
+    created_by=None,
+) -> tuple[WarehouseStocktake, bool]:
+    """Open one warehouse count, snapshot every relevant item and freeze movements."""
+    key = (idempotency_key or "").strip()
+    number = (stocktake_number or "").strip()
+    if not 8 <= len(key) <= 100:
+        raise ValidationError("مفتاح منع تكرار الجرد يجب أن يكون بين 8 و100 حرف.")
+    if not number:
+        raise ValidationError("رقم محضر الجرد مطلوب.")
+    if warehouse.school_id != school.pk or warehouse.is_archived:
+        raise ValidationError("المستودع غير نشط أو لا يتبع المدرسة المحددة.")
+
+    locked_warehouse = Warehouse.objects.select_for_update().get(
+        pk=warehouse.pk, school=school, is_archived=False,
+    )
+    existing = WarehouseStocktake.objects.filter(
+        school=school, idempotency_key=key, is_archived=False,
+    ).first()
+    if existing:
+        if existing.warehouse_id != locked_warehouse.pk or existing.stocktake_number != number:
+            raise ValidationError("مفتاح منع التكرار مستخدم لمحضر جرد مختلف.")
+        return existing, False
+    if WarehouseStocktake.objects.filter(
+        school=school, warehouse=locked_warehouse,
+        status=WarehouseStocktake.Status.COUNTING, is_archived=False,
+    ).exists():
+        raise ValidationError("يوجد محضر جرد مفتوح لهذا المستودع؛ أكمله أو ألغِه أولاً.")
+
+    stocktake = WarehouseStocktake.objects.create(
+        school=school,
+        branch=locked_warehouse.branch,
+        warehouse=locked_warehouse,
+        stocktake_number=number,
+        count_date=count_date or timezone.localdate(),
+        idempotency_key=key,
+        notes=(notes or "").strip(),
+        created_by=created_by,
+    )
+    items = InventoryItem.objects.filter(
+        school=school,
+        is_archived=False,
+    ).filter(
+        models.Q(warehouse=locked_warehouse)
+        | models.Q(warehouse_balances__warehouse=locked_warehouse, warehouse_balances__is_archived=False)
+    ).distinct().order_by("code")
+    balances = {
+        row.item_id: row
+        for row in WarehouseStock.objects.filter(
+            school=school, warehouse=locked_warehouse, is_archived=False,
+        )
+    }
+    item_count = 0
+    for item in items:
+        balance = balances.get(item.pk)
+        WarehouseStocktakeLine.objects.create(
+            school=school,
+            branch=locked_warehouse.branch,
+            stocktake=stocktake,
+            item=item,
+            system_quantity=balance.quantity if balance else Decimal("0.00"),
+            counted_quantity=None,
+            unit_cost=balance.average_unit_cost if balance else item.unit_cost,
+        )
+        item_count += 1
+    if item_count == 0:
+        raise ValidationError("لا توجد أصناف مرتبطة بالمستودع لإنشاء محضر جرد.")
+    return stocktake, True
+
+
+@transaction.atomic
+def record_stocktake_counts(
+    *,
+    stocktake: WarehouseStocktake,
+    counts: list[dict],
+) -> WarehouseStocktake:
+    """Record physical quantities while the warehouse remains frozen."""
+    locked = WarehouseStocktake.objects.select_for_update().get(pk=stocktake.pk)
+    if locked.status != WarehouseStocktake.Status.COUNTING:
+        raise ValidationError("لا يمكن تعديل العد بعد اعتماد محضر الجرد أو إلغائه.")
+    if not counts:
+        raise ValidationError("أرسل بنداً واحداً على الأقل لتسجيل نتيجة العد.")
+    normalized = []
+    for row in counts:
+        line_id = str(row.get("line_id") or "").strip()
+        quantity = Decimal(str(row.get("counted_quantity", "-1")))
+        if not line_id or quantity < 0:
+            raise ValidationError("كل بند يتطلب معرفاً صحيحاً وكمية معدودة غير سالبة.")
+        normalized.append((line_id, quantity))
+    if len({line_id for line_id, _ in normalized}) != len(normalized):
+        raise ValidationError("لا تكرر بند الجرد نفسه في طلب واحد.")
+
+    lines = {
+        str(line.pk): line
+        for line in WarehouseStocktakeLine.objects.select_for_update().filter(
+            stocktake=locked, school=locked.school,
+            pk__in=[line_id for line_id, _ in normalized],
+            is_archived=False,
+        )
+    }
+    if len(lines) != len(normalized):
+        raise ValidationError("يوجد بند لا يتبع محضر الجرد المحدد.")
+    for line_id, quantity in normalized:
+        models.QuerySet.update(
+            WarehouseStocktakeLine.objects.filter(pk=lines[line_id].pk),
+            counted_quantity=quantity,
+            updated_at=timezone.now(),
+        )
+    locked.refresh_from_db()
+    return locked
+
+
+@transaction.atomic
+def post_stocktake(
+    *,
+    stocktake: WarehouseStocktake,
+    posted_by=None,
+) -> WarehouseStocktake:
+    """Post only fully counted rows as immutable adjustment movements, once."""
+    locked = WarehouseStocktake.objects.select_for_update().get(pk=stocktake.pk)
+    if locked.status == WarehouseStocktake.Status.POSTED:
+        return locked
+    if locked.status != WarehouseStocktake.Status.COUNTING:
+        raise ValidationError("لا يمكن ترحيل محضر جرد ملغى أو غير مفتوح.")
+    Warehouse.objects.select_for_update().get(
+        pk=locked.warehouse_id, school=locked.school, is_archived=False,
+    )
+    lines = list(
+        WarehouseStocktakeLine.objects.select_for_update().filter(
+            stocktake=locked, school=locked.school, is_archived=False,
+        ).select_related("item").order_by("item_id")
+    )
+    if not lines:
+        raise ValidationError("محضر الجرد لا يحتوي على أصناف.")
+    missing = [line.item.code for line in lines if line.counted_quantity is None]
+    if missing:
+        raise ValidationError(
+            "لا يمكن ترحيل الجرد قبل إدخال الكميات لكل الأصناف: " + ", ".join(missing[:20])
+        )
+
+    for line in lines:
+        variance = line.counted_quantity - line.system_quantity
+        if variance == 0:
+            continue
+        movement_type = (
+            StockMovement.MovementType.ADJUSTMENT_ADD
+            if variance > 0
+            else StockMovement.MovementType.ADJUSTMENT_SUB
+        )
+        StockMovement.objects.create(
+            school=locked.school,
+            branch=locked.warehouse.branch,
+            item=line.item,
+            warehouse=locked.warehouse,
+            movement_type=movement_type,
+            quantity=abs(variance),
+            unit_cost=line.unit_cost,
+            date=locked.count_date,
+            reference=f"جرد {locked.stocktake_number}",
+            notes=f"تسوية فرق الجرد للصنف {line.item.code}: {variance:+.2f}. {locked.notes}".strip(),
+            idempotency_key=_stock_movement_key("stocktake", locked.idempotency_key, line.pk),
+            created_by=posted_by,
+            stocktake_line=line,
+        )
+
+    models.QuerySet.update(
+        WarehouseStocktake.objects.filter(pk=locked.pk),
+        status=WarehouseStocktake.Status.POSTED,
+        posted_by=posted_by,
+        posted_at=timezone.now(),
+        updated_at=timezone.now(),
+    )
+    locked.refresh_from_db()
+    return locked
+
+
+@transaction.atomic
+def cancel_stocktake(
+    *,
+    stocktake: WarehouseStocktake,
+    cancelled_by=None,
+    reason: str = "",
+) -> WarehouseStocktake:
+    locked = WarehouseStocktake.objects.select_for_update().get(pk=stocktake.pk)
+    if locked.status == WarehouseStocktake.Status.CANCELLED:
+        return locked
+    if locked.status != WarehouseStocktake.Status.COUNTING:
+        raise ValidationError("لا يمكن إلغاء محضر جرد مرحّل؛ يجب تصحيح أثره بحركات معاكسة.")
+    note = (reason or "").strip()
+    models.QuerySet.update(
+        WarehouseStocktake.objects.filter(pk=locked.pk),
+        status=WarehouseStocktake.Status.CANCELLED,
+        cancelled_by=cancelled_by,
+        cancelled_at=timezone.now(),
+        notes=(f"{locked.notes}\nسبب الإلغاء: {note}").strip()[:5000],
+        updated_at=timezone.now(),
+    )
+    locked.refresh_from_db()
+    return locked
