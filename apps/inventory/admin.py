@@ -101,10 +101,18 @@ class VendorInvoiceAdmin(ModelAdmin):
 
     @admin.action(description="ترحيل الفواتير المحددة إلى قيود استحقاق محاسبية")
     def post_selected_invoices_to_journal(self, request, queryset):
-        from apps.accounting.services.auto_posting import post_vendor_invoice_to_journal
+        from django.core.exceptions import ValidationError
+        from apps.inventory.services import approve_vendor_invoice
+
         posted_count = 0
-        for inv in queryset:
-            if not inv.journal_entry:
-                post_vendor_invoice_to_journal(inv, user=request.user)
+        errors = []
+        for invoice in queryset:
+            try:
+                approve_vendor_invoice(invoice=invoice, approved_by=request.user)
                 posted_count += 1
-        self.message_user(request, f"تم ترحيل {posted_count} فاتورة مورد بنجاح.")
+            except ValidationError as exc:
+                errors.append(f"{invoice.invoice_number}: {'; '.join(exc.messages)}")
+        if posted_count:
+            self.message_user(request, f"تم اعتماد وترحيل {posted_count} فاتورة مورد بنجاح.")
+        for error in errors[:10]:
+            self.message_user(request, error, level="ERROR")
