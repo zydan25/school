@@ -306,8 +306,9 @@ export async function getAttendanceScores(studentId?: string) {
   );
 }
 
-export async function getAttendanceExcuses() {
-  return authenticatedListRequest<AttendanceExcuse>("attendance/excuses/");
+export async function getAttendanceExcuses(status?: string) {
+  const query = status ? "?status=" + encodeURIComponent(status) : "";
+  return authenticatedListRequest<AttendanceExcuse>("attendance/excuses/" + query);
 }
 
 export async function createAttendanceExcuse(input: {
