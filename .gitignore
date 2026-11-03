@@ -12,3 +12,12 @@ media/
 .DS_Store
 .idea/
 .vscode/
+
+# Expo / React Native mobile client
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/.env
+mobile/.env.*
+!mobile/.env.example
+mobile/coverage/

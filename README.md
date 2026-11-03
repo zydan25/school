@@ -1,6 +1,6 @@
 # School — منصة إدارة المدارس والمؤسسات التعليمية
 
-منصة SaaS عربية متعددة المدارس (Multi-Tenant School ERP) بهندسة Modular Monolith باستخدام Django، مع واجهات React وتطبيق Flutter ضمن خارطة الطريق.
+منصة SaaS عربية متعددة المدارس (Multi-Tenant School ERP) بهندسة Modular Monolith باستخدام Django، مع واجهات React للويب وتطبيق موحد للهاتف باستخدام Expo + React Native.
 
 ## حالة المشروع
 المواصفات الهندسية العربية في docs/00-المواصفات-الهندسية-الشاملة.md.
