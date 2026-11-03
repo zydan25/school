@@ -30,7 +30,10 @@ from apps.inventory.services import (
     pay_vendor_invoice,
     receive_purchase_order,
     record_stock_movement,
+    record_stocktake_counts,
     reverse_stock_movement,
+    post_stocktake,
+    start_stocktake,
 )
 from apps.accounts.models import User
 from apps.tenants.models import Branch, School
@@ -377,3 +380,79 @@ class Stage10ProcurementAssetTests(TestCase):
             disposed_by=self.owner,
         )
         self.assertEqual(replay_disposal.pk, disposal.pk)
+
+
+    def test_warehouse_stocktake_freezes_movements_and_posts_variance_once(self):
+        opening, created = record_stock_movement(
+            school=self.school,
+            item=self.item,
+            warehouse=self.warehouse,
+            movement_type=StockMovement.MovementType.RECEIPT,
+            quantity=Decimal("10.00"),
+            unit_cost=Decimal("8.00"),
+            idempotency_key="stage10-count-receipt",
+            notes="توريد قبل الجرد",
+            created_by=self.owner,
+        )
+        self.assertTrue(created)
+        stocktake, created = start_stocktake(
+            school=self.school,
+            warehouse=self.warehouse,
+            stocktake_number="STK-ST10-001",
+            idempotency_key="stage10-count-open-001",
+            count_date=timezone.localdate(),
+            notes="جرد نهاية اليوم",
+            created_by=self.owner,
+        )
+        self.assertTrue(created)
+        line = stocktake.lines.get(item=self.item)
+        self.assertEqual(line.system_quantity, Decimal("10.00"))
+        self.assertIsNone(line.counted_quantity)
+
+        with self.assertRaises(ValidationError):
+            record_stock_movement(
+                school=self.school,
+                item=self.item,
+                warehouse=self.warehouse,
+                movement_type=StockMovement.MovementType.RECEIPT,
+                quantity=Decimal("1.00"),
+                unit_cost=Decimal("8.00"),
+                idempotency_key="stage10-count-blocked-move",
+                notes="يجب إيقاف الحركات أثناء الجرد",
+                created_by=self.owner,
+            )
+
+        record_stocktake_counts(
+            stocktake=stocktake,
+            counts=[{
+                "line_id": str(line.pk),
+                "counted_quantity": "7.00",
+            }],
+        )
+        posted = post_stocktake(stocktake=stocktake, posted_by=self.owner)
+        self.assertEqual(posted.status, "posted")
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.current_stock, Decimal("7.00"))
+        self.assertEqual(
+            StockMovement.objects.filter(
+                stocktake_line=line,
+                movement_type=StockMovement.MovementType.ADJUSTMENT_SUB,
+                quantity=Decimal("3.00"),
+            ).count(),
+            1,
+        )
+
+        replay = post_stocktake(stocktake=stocktake, posted_by=self.owner)
+        self.assertEqual(replay.pk, posted.pk)
+        self.assertEqual(
+            StockMovement.objects.filter(stocktake_line=line).count(),
+            1,
+        )
+        with self.assertRaises(ValidationError):
+            record_stocktake_counts(
+                stocktake=stocktake,
+                counts=[{
+                    "line_id": str(line.pk),
+                    "counted_quantity": "8.00",
+                }],
+            )
