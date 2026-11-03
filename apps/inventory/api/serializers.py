@@ -352,3 +352,45 @@ class VendorPaymentInputSerializer(serializers.Serializer):
             school=school, is_archived=False, is_leaf=True,
             account_type=Account.AccountType.ASSET,
         ) if school else Account.objects.none()
+
+
+class WarehouseTransferCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WarehouseTransfer
+        fields = [
+            "id", "transfer_number", "item", "source_warehouse",
+            "destination_warehouse", "quantity", "unit_cost", "transfer_date",
+            "idempotency_key", "notes",
+        ]
+        read_only_fields = ["id"]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        school = self.context.get("school")
+        for field, model in (
+            ("item", InventoryItem),
+            ("source_warehouse", Warehouse),
+            ("destination_warehouse", Warehouse),
+        ):
+            self.fields[field].queryset = model.objects.filter(
+                school=school, is_archived=False,
+            ) if school else model.objects.none()
+
+    def validate(self, attrs):
+        school = self.context["school"]
+        if attrs["source_warehouse"].school_id != school.pk or attrs["destination_warehouse"].school_id != school.pk:
+            raise serializers.ValidationError("المستودعان يجب أن يتبعا المدرسة الحالية.")
+        if attrs["source_warehouse"].pk == attrs["destination_warehouse"].pk:
+            raise serializers.ValidationError("لا يمكن التحويل من المستودع إلى نفسه.")
+        if attrs["item"].school_id != school.pk:
+            raise serializers.ValidationError({"item": "الصنف لا يتبع المدرسة الحالية."})
+        if attrs["quantity"] <= 0 or attrs["unit_cost"] < 0:
+            raise serializers.ValidationError("الكمية موجبة والتكلفة غير سالبة مطلوبة.")
+        return attrs
+
+    def create(self, validated_data):
+        return WarehouseTransfer.objects.create(
+            school=self.context["school"],
+            branch=validated_data["source_warehouse"].branch,
+            **validated_data,
+        )
