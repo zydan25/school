@@ -29,13 +29,13 @@ export function TeacherDashboardPreview({ selectedClassId, onSelectClass, empty,
           <Text style={styles.title}>صباح الخير، أستاذ خالد</Text>
           <Text style={styles.subtitle}>تابع حصصك وشعبك المسندة لهذا العام</Text>
         </View>
-        <AppAvatar name="خالد" size={52} backgroundColor="#E6F5EE" color={palette.success} />
+        <AppAvatar name="خالد" size={52} backgroundColor={palette.successTint} color={palette.success} />
       </View>
 
       <View style={styles.statsRow}>
-        <AppStatCard icon={Users} value={String(totalStudents)} label="الطلاب" color={palette.info} tint="#EAF1FB" />
+        <AppStatCard icon={Users} value={String(totalStudents)} label="الطلاب" color={palette.info} tint={palette.infoTint} />
         <AppStatCard icon={BookOpen} value={String(previewClasses.length)} label="الشعب" />
-        <AppStatCard icon={CalendarDays} value="5" label="حصص اليوم" color={palette.success} tint="#EAF6EF" />
+        <AppStatCard icon={CalendarDays} value="5" label="حصص اليوم" color={palette.success} tint={palette.successTint} />
       </View>
 
       <AppSectionHeader title="شُعبي الدراسية" trailing={empty ? "لا توجد إسنادات" : previewClasses.length + " شعب"} />
@@ -95,9 +95,9 @@ export function TeacherDashboardPreview({ selectedClassId, onSelectClass, empty,
 
           <AppSectionHeader title="إجراءات سريعة" />
           <View style={styles.actionsGrid}>
-            <AppActionTile icon={CheckCircle2} label="رصد الحضور" color={palette.success} tint="#EAF6EF" onPress={() => onAction("رصد حضور " + selectedClass.section)} />
+            <AppActionTile icon={CheckCircle2} label="رصد الحضور" color={palette.success} tint={palette.successTint} onPress={() => onAction("رصد حضور " + selectedClass.section)} />
             <AppActionTile icon={BookOpen} label="إضافة واجب" onPress={() => onAction("إضافة واجب إلى " + selectedClass.section)} />
-            <AppActionTile icon={ClipboardCheck} label="إدخال الدرجات" color={palette.info} tint="#EAF1FB" onPress={() => onAction("دفتر درجات " + selectedClass.section)} />
+            <AppActionTile icon={ClipboardCheck} label="إدخال الدرجات" color={palette.info} tint={palette.infoTint} onPress={() => onAction("دفتر درجات " + selectedClass.section)} />
             <AppActionTile icon={CalendarDays} label="جدول الحصص" onPress={() => onAction("جدول " + selectedClass.section)} />
           </View>
         </>
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
   subtitle: { color: palette.muted, fontSize: 12, lineHeight: 19, textAlign: "right" },
   statsRow: { flexDirection: "row", gap: spacing.sm },
   classList: { gap: spacing.sm },
-  selectedClass: { borderColor: palette.secondary, borderWidth: 1.5, backgroundColor: "#FBFEFD" },
+  selectedClass: { borderColor: palette.secondary, borderWidth: 1.5, backgroundColor: palette.surfaceSoft },
   classRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   classMark: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   classInitial: { color: palette.primary, fontWeight: "800", fontSize: 17 },

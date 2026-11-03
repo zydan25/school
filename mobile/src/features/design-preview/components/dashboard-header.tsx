@@ -23,7 +23,7 @@ export function DashboardHeader({ schoolName = "مدرستي", userName, onNotif
           <AppIcon icon={Bell} color={palette.primary} size={21} />
           <View style={styles.notificationDot} />
         </Pressable>
-        <AppAvatar name={userName} size={42} backgroundColor="#E7EEF8" />
+        <AppAvatar name={userName} size={42} backgroundColor={palette.infoTint} />
       </View>
     </View>
   );

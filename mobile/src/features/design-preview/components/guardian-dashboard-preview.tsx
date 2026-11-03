@@ -34,7 +34,7 @@ export function GuardianDashboardPreview({ selectedChildId, onSelectChild, empty
           <Text style={styles.title}>مرحباً بك 👋</Text>
           <Text style={styles.subtitle}>تابع أبناءك واطمئن على يومهم الدراسي</Text>
         </View>
-        <AppAvatar name="ولي الأمر" size={52} backgroundColor="#E8F0FF" />
+        <AppAvatar name="ولي الأمر" size={52} backgroundColor={palette.primaryTint} />
       </View>
 
       <AppSectionHeader title="أبنائي" trailing={empty ? "لا توجد ملفات" : previewChildren.length + " طلاب"} />
@@ -75,16 +75,16 @@ export function GuardianDashboardPreview({ selectedChildId, onSelectChild, empty
 
           <AppSectionHeader title={"ملخص " + selectedChild.name} trailing={selectedChild.grade + " · " + selectedChild.section} />
           <View style={styles.statsRow}>
-            <AppStatCard icon={CheckCircle2} value={selectedChild.attendance} label="الحضور" color={palette.success} tint="#EAF6EF" />
-            <AppStatCard icon={ClipboardCheck} value={selectedChild.homeworkCount} label="واجبات معلقة" color={palette.info} tint="#EAF1FB" />
+            <AppStatCard icon={CheckCircle2} value={selectedChild.attendance} label="الحضور" color={palette.success} tint={palette.successTint} />
+            <AppStatCard icon={ClipboardCheck} value={selectedChild.homeworkCount} label="واجبات معلقة" color={palette.info} tint={palette.infoTint} />
             <AppStatCard icon={Wallet} value={selectedChild.feesLabel} label="الرسوم" color={palette.secondary} tint="#E8F5F2" />
           </View>
 
           <AppSectionHeader title="الوصول السريع" />
           <View style={styles.actionsGrid}>
             <AppActionTile icon={CalendarDays} label="الجدول" onPress={() => onAction("جدول " + selectedChild.name)} />
-            <AppActionTile icon={ClipboardCheck} label="الحضور" tint="#EAF6EF" color={palette.success} onPress={() => onAction("حضور " + selectedChild.name)} />
-            <AppActionTile icon={GraduationCap} label="الدرجات" tint="#EAF1FB" color={palette.info} onPress={() => onAction("درجات " + selectedChild.name)} />
+            <AppActionTile icon={ClipboardCheck} label="الحضور" tint={palette.successTint} color={palette.success} onPress={() => onAction("حضور " + selectedChild.name)} />
+            <AppActionTile icon={GraduationCap} label="الدرجات" tint={palette.infoTint} color={palette.info} onPress={() => onAction("درجات " + selectedChild.name)} />
             <AppActionTile icon={Wallet} label="كشف الحساب" onPress={() => onAction("كشف حساب " + selectedChild.name)} />
           </View>
         </>
@@ -109,13 +109,13 @@ const styles = StyleSheet.create({
   subtitle: { color: palette.muted, fontSize: 12, lineHeight: 19, textAlign: "right" },
   childrenGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   childCard: { width: "30%", minWidth: 88, flexGrow: 1, alignItems: "center", gap: 5, paddingVertical: 12, paddingHorizontal: 4, backgroundColor: palette.surface, borderRadius: radius.md, borderWidth: 1, borderColor: palette.border },
-  childCardSelected: { borderColor: palette.secondary, borderWidth: 1.5, backgroundColor: "#FBFEFD" },
+  childCardSelected: { borderColor: palette.secondary, borderWidth: 1.5, backgroundColor: palette.surfaceSoft },
   childName: { color: palette.primary, fontSize: 13, fontWeight: "800" },
   childGrade: { color: palette.muted, fontSize: 10, textAlign: "center" },
   childSelected: { color: palette.secondary, fontSize: 9, fontWeight: "800", textAlign: "center" },
   childNotSelected: { color: palette.muted, fontWeight: "500" },
-  addChildCard: { width: "30%", minWidth: 88, flexGrow: 1, alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 12, paddingHorizontal: 4, backgroundColor: "#F8FBFA", borderRadius: radius.md, borderWidth: 1, borderColor: "#B9DED7", borderStyle: "dashed" },
-  addIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#E8F5F2", alignItems: "center", justifyContent: "center" },
+  addChildCard: { width: "30%", minWidth: 88, flexGrow: 1, alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 12, paddingHorizontal: 4, backgroundColor: palette.secondarySurface, borderRadius: radius.md, borderWidth: 1, borderColor: palette.secondaryBorder, borderStyle: "dashed" },
+  addIcon: { width: 48, height: 48, borderRadius: 24, backgroundColor: palette.secondaryTint, alignItems: "center", justifyContent: "center" },
   addChildText: { color: palette.primary, fontSize: 12, fontWeight: "800" },
   statsRow: { flexDirection: "row", gap: spacing.sm },
   actionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },

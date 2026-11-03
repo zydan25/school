@@ -1,3 +1,5 @@
+import { palette } from "@/core/theme/tokens";
+
 export type PreviewChild = {
   id: string;
   name: string;
@@ -23,38 +25,38 @@ export type PreviewClass = {
 };
 
 export const previewChildren: PreviewChild[] = [
-  { id: "child-ahmed", name: "أحمد", grade: "الصف السادس", section: "الشعبة أ", initials: "أ", tint: "#E8F0FF", attendance: "96%", homeworkCount: "2", feesLabel: "متابعة" },
-  { id: "child-mohammed", name: "محمد", grade: "الصف الرابع", section: "الشعبة ب", initials: "م", tint: "#E6F5EE", attendance: "98%", homeworkCount: "1", feesLabel: "منتظمة" },
-  { id: "child-omar", name: "عمر", grade: "الصف الثاني", section: "الشعبة أ", initials: "ع", tint: "#FFF1E2", attendance: "94%", homeworkCount: "3", feesLabel: "متابعة" },
+  { id: "child-ahmed", name: "أحمد", grade: "الصف السادس", section: "الشعبة أ", initials: "أ", tint: palette.primaryTint, attendance: "96%", homeworkCount: "2", feesLabel: "متابعة" },
+  { id: "child-mohammed", name: "محمد", grade: "الصف الرابع", section: "الشعبة ب", initials: "م", tint: palette.successTint, attendance: "98%", homeworkCount: "1", feesLabel: "منتظمة" },
+  { id: "child-omar", name: "عمر", grade: "الصف الثاني", section: "الشعبة أ", initials: "ع", tint: palette.warningTint, attendance: "94%", homeworkCount: "3", feesLabel: "متابعة" },
 ];
 
 export const previewClasses: PreviewClass[] = [
   {
-    id: "class-grade-six-a", grade: "الصف السادس", section: "الشعبة أ", subject: "الرياضيات", studentCount: 18, tint: "#E8F0FF",
+    id: "class-grade-six-a", grade: "الصف السادس", section: "الشعبة أ", subject: "الرياضيات", studentCount: 18, tint: palette.primaryTint,
     students: [
-      { id: "st-1", name: "أحمد", initials: "أ", tint: "#E8F0FF" },
-      { id: "st-2", name: "محمد", initials: "م", tint: "#E6F5EE" },
-      { id: "st-3", name: "علي", initials: "ع", tint: "#FCE8F0" },
-      { id: "st-4", name: "عمر", initials: "ع", tint: "#FFF1E2" },
-      { id: "st-5", name: "خالد", initials: "خ", tint: "#EEE9FF" },
-      { id: "st-6", name: "سعيد", initials: "س", tint: "#E4F1F5" },
+      { id: "st-1", name: "أحمد", initials: "أ", tint: palette.primaryTint },
+      { id: "st-2", name: "محمد", initials: "م", tint: palette.successTint },
+      { id: "st-3", name: "علي", initials: "ع", tint: palette.roseTint },
+      { id: "st-4", name: "عمر", initials: "ع", tint: palette.warningTint },
+      { id: "st-5", name: "خالد", initials: "خ", tint: palette.violetTint },
+      { id: "st-6", name: "سعيد", initials: "س", tint: palette.skyTint },
     ],
   },
   {
-    id: "class-grade-five-b", grade: "الصف الخامس", section: "الشعبة ب", subject: "الرياضيات", studentCount: 14, tint: "#E6F5EE",
+    id: "class-grade-five-b", grade: "الصف الخامس", section: "الشعبة ب", subject: "الرياضيات", studentCount: 14, tint: palette.successTint,
     students: [
-      { id: "st-7", name: "حسن", initials: "ح", tint: "#E6F5EE" },
-      { id: "st-8", name: "ياسر", initials: "ي", tint: "#E8F0FF" },
-      { id: "st-9", name: "أنس", initials: "أ", tint: "#FFF1E2" },
-      { id: "st-10", name: "مازن", initials: "م", tint: "#FCE8F0" },
+      { id: "st-7", name: "حسن", initials: "ح", tint: palette.successTint },
+      { id: "st-8", name: "ياسر", initials: "ي", tint: palette.primaryTint },
+      { id: "st-9", name: "أنس", initials: "أ", tint: palette.warningTint },
+      { id: "st-10", name: "مازن", initials: "م", tint: palette.roseTint },
     ],
   },
   {
-    id: "class-grade-four-a", grade: "الصف الرابع", section: "الشعبة أ", subject: "العلوم", studentCount: 10, tint: "#FFF1E2",
+    id: "class-grade-four-a", grade: "الصف الرابع", section: "الشعبة أ", subject: "العلوم", studentCount: 10, tint: palette.warningTint,
     students: [
-      { id: "st-11", name: "زياد", initials: "ز", tint: "#E8F0FF" },
-      { id: "st-12", name: "رامي", initials: "ر", tint: "#E6F5EE" },
-      { id: "st-13", name: "فارس", initials: "ف", tint: "#FFF1E2" },
+      { id: "st-11", name: "زياد", initials: "ز", tint: palette.primaryTint },
+      { id: "st-12", name: "رامي", initials: "ر", tint: palette.successTint },
+      { id: "st-13", name: "فارس", initials: "ف", tint: palette.warningTint },
     ],
   },
 ];

@@ -21,7 +21,7 @@ export function StudentDashboardPreview({ onAction }: Props) {
             <Text style={styles.heroTitle}>نتمنى لك يوماً دراسياً ممتعاً</Text>
             <Text style={styles.heroMeta}>الصف السادس — الشعبة أ</Text>
           </View>
-          <AppAvatar name="أحمد" size={58} backgroundColor="#DCEBDD" color={palette.primary} />
+          <AppAvatar name="أحمد" size={58} backgroundColor={palette.successTint} color={palette.primary} />
         </View>
         <View style={styles.heroStats}>
           <HeroStat value="5" label="حصص اليوم" />
@@ -76,24 +76,24 @@ const styles = StyleSheet.create({
   hero: { backgroundColor: palette.primary, padding: spacing.lg, borderRadius: radius.xl, gap: spacing.lg },
   heroTop: { flexDirection: "row", alignItems: "center", gap: spacing.md },
   heroText: { flex: 1, alignItems: "flex-start", gap: 5 },
-  heroEyebrow: { color: "#C7D7EA", fontSize: 12, fontWeight: "700", textAlign: "right" },
+  heroEyebrow: { color: palette.onPrimarySoft, fontSize: 12, fontWeight: "700", textAlign: "right" },
   heroTitle: { color: palette.white, fontWeight: "800", fontSize: 17, lineHeight: 25, textAlign: "right" },
-  heroMeta: { color: "#DAE5F2", fontSize: 11, textAlign: "right" },
+  heroMeta: { color: palette.onPrimaryText, fontSize: 11, textAlign: "right" },
   heroStats: { flexDirection: "row", alignItems: "center" },
   heroStat: { flex: 1, alignItems: "center", gap: 3 },
   heroStatValue: { color: palette.white, fontWeight: "800", fontSize: 19 },
-  heroStatLabel: { color: "#D7E2EF", fontSize: 10, textAlign: "center" },
-  heroDivider: { width: 1, height: 34, backgroundColor: "#506986" },
+  heroStatLabel: { color: palette.onPrimaryMuted, fontSize: 10, textAlign: "center" },
+  heroDivider: { width: 1, height: 34, backgroundColor: palette.onPrimaryDivider },
   actionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   lessonRow: { minHeight: 67, flexDirection: "row", alignItems: "center", gap: spacing.md, paddingHorizontal: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.border },
   lastLesson: { borderBottomWidth: 0 },
-  lessonTime: { backgroundColor: "#E8F0FF", paddingVertical: 7, paddingHorizontal: 9, borderRadius: 9 },
+  lessonTime: { backgroundColor: palette.primaryTint, paddingVertical: 7, paddingHorizontal: 9, borderRadius: 9 },
   lessonTimeText: { color: palette.info, fontWeight: "800", fontSize: 11 },
   lessonInfo: { flex: 1, alignItems: "flex-start", gap: 3 },
   lessonSubject: { color: palette.primary, fontSize: 13, fontWeight: "800", textAlign: "right" },
   lessonMeta: { color: palette.muted, fontSize: 10, textAlign: "right" },
   encouragement: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  encouragementIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: "#E8F5F2", alignItems: "center", justifyContent: "center" },
+  encouragementIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: palette.secondaryTint, alignItems: "center", justifyContent: "center" },
   encouragementText: { flex: 1, alignItems: "flex-start", gap: 4 },
   encouragementTitle: { color: palette.primary, fontWeight: "800", fontSize: 12, textAlign: "right" },
   encouragementDescription: { color: palette.muted, fontSize: 11, lineHeight: 17, textAlign: "right" },
