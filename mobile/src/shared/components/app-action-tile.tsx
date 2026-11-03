@@ -6,7 +6,7 @@ import { AppIcon } from "@/shared/components/app-icon";
 
 type Props = { icon: LucideIcon; label: string; onPress: () => void; tint?: string; color?: string; accessibilityHint?: string };
 
-export function AppActionTile({ icon, label, onPress, tint = "#E8F5F2", color = palette.secondary, accessibilityHint }: Props) {
+export function AppActionTile({ icon, label, onPress, tint = palette.secondaryTint, color = palette.secondary, accessibilityHint }: Props) {
   return (
     <Pressable onPress={onPress} accessibilityRole="button" accessibilityLabel={label} accessibilityHint={accessibilityHint}
       style={({ pressed }) => [styles.tile, pressed && styles.pressed]}>

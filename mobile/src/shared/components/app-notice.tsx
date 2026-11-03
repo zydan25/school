@@ -9,7 +9,7 @@ type Props = { message: string; tone?: "info" | "success"; onDismiss?: () => voi
 export function AppNotice({ message, tone = "info", onDismiss }: Props) {
   const icon = tone === "success" ? CheckCircle2 : Info;
   const color = tone === "success" ? palette.success : palette.info;
-  const background = tone === "success" ? "#EAF6EF" : "#EAF1FB";
+  const background = tone === "success" ? palette.successTint : palette.infoTint;
   return (
     <View style={[styles.container, { backgroundColor: background, borderColor: color }]}>
       <AppIcon icon={icon} color={color} size={19} />

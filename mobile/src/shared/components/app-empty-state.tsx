@@ -19,7 +19,7 @@ export function AppEmptyState({ icon, title, description, actionLabel, onAction 
 
 const styles = StyleSheet.create({
   container: { alignItems: "center", justifyContent: "center", paddingHorizontal: spacing.lg, paddingVertical: spacing.xl, backgroundColor: palette.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: palette.border, gap: spacing.sm },
-  iconWrap: { width: 58, height: 58, borderRadius: 20, backgroundColor: "#E8F5F2", alignItems: "center", justifyContent: "center" },
+  iconWrap: { width: 58, height: 58, borderRadius: 20, backgroundColor: palette.secondaryTint, alignItems: "center", justifyContent: "center" },
   title: { color: palette.primary, fontSize: 15, fontWeight: "800", textAlign: "center" },
   description: { color: palette.muted, fontSize: 12, lineHeight: 19, textAlign: "center" },
   button: { marginTop: spacing.xs, borderColor: palette.secondary },

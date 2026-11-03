@@ -6,7 +6,7 @@ import { AppIcon } from "@/shared/components/app-icon";
 
 type Props = { icon: LucideIcon; value: string; label: string; color?: string; tint?: string };
 
-export function AppStatCard({ icon, value, label, color = palette.secondary, tint = "#E8F5F2" }: Props) {
+export function AppStatCard({ icon, value, label, color = palette.secondary, tint = palette.secondaryTint }: Props) {
   return (
     <View style={styles.card}>
       <View style={[styles.iconWrap, { backgroundColor: tint }]}><AppIcon icon={icon} size={19} color={color} /></View>

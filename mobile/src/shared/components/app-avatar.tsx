@@ -4,7 +4,7 @@ import { palette } from "@/core/theme/tokens";
 
 type AppAvatarProps = { name: string; size?: number; backgroundColor?: string; color?: string };
 
-export function AppAvatar({ name, size = 48, backgroundColor = "#E8F0FF", color = palette.primary }: AppAvatarProps) {
+export function AppAvatar({ name, size = 48, backgroundColor = palette.primaryTint, color = palette.primary }: AppAvatarProps) {
   const initial = Array.from(name.trim())[0] || "؟";
   return (
     <View accessible accessibilityLabel={"الصورة الشخصية: " + name}
