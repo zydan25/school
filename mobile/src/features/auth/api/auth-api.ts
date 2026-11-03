@@ -37,3 +37,31 @@ export async function resendPhoneCode(phone: string) {
     { method: "POST", body: JSON.stringify({ phone }) },
   );
 }
+
+
+export async function requestPasswordReset(phone: string) {
+  return apiRequest<{ message: string; expires_in_seconds?: number }>(
+    "auth/password/reset/request/",
+    { method: "POST", body: JSON.stringify({ phone }) },
+  );
+}
+
+export async function confirmPasswordReset(
+  phone: string,
+  code: string,
+  newPassword: string,
+  passwordConfirm: string,
+) {
+  return apiRequest<{ message: string }>(
+    "auth/password/reset/confirm/",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        phone,
+        code,
+        new_password: newPassword,
+        password_confirm: passwordConfirm,
+      }),
+    },
+  );
+}
