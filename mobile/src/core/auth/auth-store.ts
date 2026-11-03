@@ -122,17 +122,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     hydrationTask = (async () => {
       try {
-        let session = await readStoredSession();
-        if (!session) {
+        const storedSession = await readStoredSession();
+        if (!storedSession) {
           set({ session: null });
           return;
         }
+        let session: AuthSession = storedSession;
         set({ session });
 
         if (session.expiresAt && Date.parse(session.expiresAt) <= Date.now() + 60_000) {
           const token = await get().refreshAccessToken();
-          session = get().session;
-          if (!token || !session) return;
+          const refreshedSession = get().session;
+          if (!token || !refreshedSession) return;
+          session = refreshedSession;
         }
 
         try {
