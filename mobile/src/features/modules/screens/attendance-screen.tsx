@@ -20,6 +20,10 @@ import {
   getAttendanceRegister,
   getAttendanceRegisters,
   approveAttendanceRegister,
+  lockAttendanceRegister,
+  getAttendanceReopenRequests,
+  requestAttendanceRegisterReopen,
+  reviewAttendanceRegisterReopen,
   reviewAttendanceExcuse,
   getAttendanceStatusTypes,
   getStudentsForAttendance,
@@ -306,6 +310,7 @@ function ManagementAttendance() {
   const queryScope = useModuleQueryScope();
   const [date, setDate] = useState(todayIso());
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [reopenReviewNotes, setReopenReviewNotes] = useState<Record<string, string>>({});
 
   const registersQuery = useQuery({
     queryKey: ["module", "attendance-management-registers", date, ...queryScope],
@@ -318,6 +323,11 @@ function ManagementAttendance() {
     queryFn: () => getAttendanceExcuses("submitted"),
     refetchInterval: 30_000,
   });
+  const reopenRequestsQuery = useQuery({
+    queryKey: ["module", "attendance-reopen-requests", ...queryScope],
+    queryFn: () => getAttendanceReopenRequests("pending"),
+    refetchInterval: 30_000,
+  });
 
   const approveRegisterMutation = useMutation({
     mutationFn: approveAttendanceRegister,
@@ -325,6 +335,25 @@ function ManagementAttendance() {
       await queryClient.invalidateQueries({
         queryKey: ["module", "attendance-management-registers"],
       });
+    },
+  });
+  const lockRegisterMutation = useMutation({
+    mutationFn: lockAttendanceRegister,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["module", "attendance-management-registers"] });
+    },
+  });
+  const reviewReopenMutation = useMutation({
+    mutationFn: ({ registerId, approved, notes }: { registerId: string; approved: boolean; notes: string }) =>
+      reviewAttendanceRegisterReopen(registerId, approved, notes),
+    onSuccess: async (_, variables) => {
+      setReopenReviewNotes((current) => {
+        const next = { ...current };
+        delete next[variables.registerId];
+        return next;
+      });
+      await queryClient.invalidateQueries({ queryKey: ["module", "attendance-reopen-requests", ...queryScope] });
+      await queryClient.invalidateQueries({ queryKey: ["module", "attendance-management-registers"] });
     },
   });
   const reviewExcuseMutation = useMutation({
@@ -347,6 +376,8 @@ function ManagementAttendance() {
 
   const registers = registersQuery.data ?? [];
   const submittedRegisters = registers.filter((item) => item.status === "submitted");
+  const approvedRegisters = registers.filter((item) => item.status === "approved");
+  const reopenRequests = reopenRequestsQuery.data ?? [];
   const excuses = excusesQuery.data ?? [];
 
   return (
@@ -438,6 +469,66 @@ function ManagementAttendance() {
       ) : null}
 
       <View style={styles.sectionTitle}>
+        <AppIcon icon={CalendarCheck2} color={palette.secondary} size={19} />
+        <Text style={styles.sectionHeading}>السجلات المعتمدة وإقفالها</Text>
+      </View>
+      {approvedRegisters.map((register) => (
+        <ModuleCard key={register.id}>
+          <View style={styles.cardTop}>
+            <Text style={styles.cardTitle}>{register.section_name}</Text>
+            <StatusPill value={register.status} labels={{ approved: "معتمد" }} />
+          </View>
+          <ValueLine label="التاريخ" value={formatDate(register.date)} />
+          <ValueLine label="عدد الطلاب" value={String(register.student_records.length)} />
+          <Button mode="contained" buttonColor={palette.secondary}
+            loading={lockRegisterMutation.isPending}
+            disabled={lockRegisterMutation.isPending}
+            onPress={() => lockRegisterMutation.mutate(register.id)}>
+            إقفال السجل المعتمد
+          </Button>
+        </ModuleCard>
+      ))}
+      {lockRegisterMutation.isError ? <AppNotice message={getApiErrorMessage(lockRegisterMutation.error)} /> : null}
+
+      <View style={styles.sectionTitle}>
+        <AppIcon icon={CalendarCheck2} color={palette.secondary} size={19} />
+        <Text style={styles.sectionHeading}>طلبات إعادة فتح السجلات</Text>
+      </View>
+      {reopenRequestsQuery.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
+      {reopenRequestsQuery.isError ? <AppNotice message={getApiErrorMessage(reopenRequestsQuery.error)} /> : null}
+      {!reopenRequestsQuery.isLoading && !reopenRequestsQuery.isError && !reopenRequests.length ? (
+        <ModuleEmpty title="لا توجد طلبات إعادة فتح" body="ستظهر هنا الطلبات المعلقة التي يرسلها المعلمون مع سبب إعادة الفتح." />
+      ) : null}
+      {reopenRequests.map((request) => (
+        <ModuleCard key={request.id}>
+          <View style={styles.cardTop}>
+            <Text style={styles.cardTitle}>{request.section_name}</Text>
+            <StatusPill value={request.status} labels={{ pending: "بانتظار المراجعة" }} />
+          </View>
+          <ValueLine label="المعلم" value={request.requested_by_name} />
+          <ValueLine label="تاريخ السجل" value={formatDate(request.register_date)} />
+          <ValueLine label="سبب إعادة الفتح" value={request.reason} />
+          <TextInput mode="outlined" label="ملاحظات المراجعة (اختياري)"
+            value={reopenReviewNotes[request.register] ?? ""}
+            onChangeText={(value) => setReopenReviewNotes((current) => ({ ...current, [request.register]: value }))}
+            multiline numberOfLines={2} style={styles.input} contentStyle={styles.inputText} />
+          <View style={styles.reviewButtons}>
+            <Button mode="contained" buttonColor={palette.success}
+              loading={reviewReopenMutation.isPending} disabled={reviewReopenMutation.isPending}
+              onPress={() => reviewReopenMutation.mutate({ registerId: request.register, approved: true, notes: reopenReviewNotes[request.register] ?? "" })}>
+              الموافقة على إعادة الفتح
+            </Button>
+            <Button mode="outlined" textColor={palette.danger}
+              loading={reviewReopenMutation.isPending} disabled={reviewReopenMutation.isPending}
+              onPress={() => reviewReopenMutation.mutate({ registerId: request.register, approved: false, notes: reopenReviewNotes[request.register] ?? "" })}>
+              رفض الطلب
+            </Button>
+          </View>
+        </ModuleCard>
+      ))}
+      {reviewReopenMutation.isError ? <AppNotice message={getApiErrorMessage(reviewReopenMutation.error)} /> : null}
+
+      <View style={styles.sectionTitle}>
         <AppIcon icon={Users} color={palette.secondary} size={19} />
         <Text style={styles.sectionHeading}>أعذار أولياء الأمور</Text>
       </View>
@@ -507,6 +598,7 @@ function TeacherAttendance() {
   const queryScope = useModuleQueryScope();
   const [assignmentId, setAssignmentId] = useState("");
   const [statuses, setStatuses] = useState<Record<string, string>>({});
+  const [reopenReason, setReopenReason] = useState("");
   const date = todayIso();
 
   const assignmentsQuery = useQuery({
@@ -543,6 +635,13 @@ function TeacherAttendance() {
     statuses[studentId] ?? recordedStatusByStudent[studentId] ?? defaultStatus?.category ?? "";
 
   const isEditable = record?.status === "open";
+  const pendingReopenQuery = useQuery({
+    queryKey: ["module", "attendance-reopen-request", record?.id, ...queryScope],
+    queryFn: () => getAttendanceReopenRequests("pending", record!.id),
+    enabled: Boolean(record?.id && record.status === "locked"),
+    refetchInterval: 30_000,
+  });
+  const hasPendingReopenRequest = (pendingReopenQuery.data ?? []).length > 0;
   const students = studentsQuery.data ?? [];
   const allStudentsHaveStatus = students.length > 0 &&
     students.every((student) => Boolean(getStudentStatus(student.id)));
@@ -573,6 +672,13 @@ function TeacherAttendance() {
     mutationFn: (registerId: string) => submitAttendanceRegister(registerId),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ["module", "attendance-register"] });
+    },
+  });
+  const reopenMutation = useMutation({
+    mutationFn: (registerId: string) => requestAttendanceRegisterReopen(registerId, reopenReason.trim()),
+    onSuccess: async () => {
+      setReopenReason("");
+      await queryClient.invalidateQueries({ queryKey: ["module", "attendance-reopen-request"] });
     },
   });
 
@@ -693,6 +799,30 @@ function TeacherAttendance() {
               {saveMutation.isSuccess ? <AppNotice tone="success" message="تم حفظ الرصد في الخادم." /> : null}
               {submitMutation.isError ? <AppNotice message={getApiErrorMessage(submitMutation.error)} /> : null}
               {submitMutation.isSuccess ? <AppNotice tone="success" message="تم إرسال السجل إلى دورة المراجعة الرسمية." /> : null}
+            </ModuleCard>
+          ) : null}
+          {record?.status === "locked" ? (
+            <ModuleCard>
+              <Text style={styles.cardTitle}>السجل مقفل</Text>
+              {pendingReopenQuery.isLoading ? <ActivityIndicator color={palette.secondary} /> : null}
+              {hasPendingReopenRequest ? (
+                <AppNotice message="أرسلت طلب إعادة فتح هذا السجل، وهو الآن بانتظار مراجعة الإدارة." />
+              ) : (
+                <>
+                  <TextInput mode="outlined" label="سبب طلب إعادة الفتح" value={reopenReason}
+                    onChangeText={setReopenReason} multiline numberOfLines={3}
+                    style={styles.input} contentStyle={styles.inputText} />
+                  <Button mode="contained" buttonColor={palette.primary}
+                    loading={reopenMutation.isPending}
+                    disabled={reopenMutation.isPending || !reopenReason.trim() || pendingReopenQuery.isLoading}
+                    onPress={() => reopenMutation.mutate(record.id)}>
+                    إرسال طلب إعادة الفتح
+                  </Button>
+                </>
+              )}
+              {pendingReopenQuery.isError ? <AppNotice message={getApiErrorMessage(pendingReopenQuery.error)} /> : null}
+              {reopenMutation.isError ? <AppNotice message={getApiErrorMessage(reopenMutation.error)} /> : null}
+              {reopenMutation.isSuccess ? <AppNotice tone="success" message="تم إرسال طلب إعادة الفتح إلى الإدارة." /> : null}
             </ModuleCard>
           ) : null}
         </>
