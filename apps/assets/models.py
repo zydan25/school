@@ -312,8 +312,6 @@ class AssetDisposal(TenantOwnedModel):
         "accounts.User", null=True, blank=True, on_delete=models.SET_NULL,
         related_name="asset_disposals", verbose_name="منفذ الاستبعاد",
     )
-    created_at = models.DateTimeField("تاريخ الإنشاء", default=timezone.now)
-
     class Meta:
         verbose_name = "مستند استبعاد أصل"
         verbose_name_plural = "مستندات استبعاد الأصول"

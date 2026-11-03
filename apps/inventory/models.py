@@ -147,7 +147,7 @@ class WarehouseStock(TenantOwnedModel):
                 name="inventory_warehouse_cost_nonnegative",
             ),
         ]
-        indexes = [models.Index(fields=["school", "warehouse", "item"])]
+        indexes = [models.Index(fields=["school", "warehouse", "item"], name="inventory_whstock_scope_idx")]
 
     def clean(self):
         super().clean()
@@ -227,8 +227,8 @@ class StockMovement(TenantOwnedModel):
             ),
         ]
         indexes = [
-            models.Index(fields=["school", "warehouse", "date"]),
-            models.Index(fields=["school", "item", "date"]),
+            models.Index(fields=["school", "warehouse", "date"], name="inventory_stock_wh_date_idx"),
+            models.Index(fields=["school", "item", "date"], name="inventory_stock_item_date_idx"),
         ]
 
     def __str__(self) -> str:
