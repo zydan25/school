@@ -58,6 +58,7 @@ DEFAULT_ACCOUNTS: list[tuple[str, str, str, str | None, bool]] = [
     ("4108", "إيرادات متنوعة وتبرعات", Account.AccountType.REVENUE, "41", True),
     ("42", "إيرادات أخرى وجزاءات", Account.AccountType.REVENUE, "4", False),
     ("4201", "إيرادات جزاءات واستقطاعات غياب الموظفين", Account.AccountType.REVENUE, "42", True),
+    ("4202", "أرباح استبعاد الأصول الثابتة", Account.AccountType.REVENUE, "42", True),
 
     # ---------------- 5. المصروفات (Expenses) ----------------
     ("5", "المصروفات", Account.AccountType.EXPENSE, None, False),
@@ -78,6 +79,7 @@ DEFAULT_ACCOUNTS: list[tuple[str, str, str, str | None, bool]] = [
     ("5207", "قرطاسية ومطبوعات ومستلزمات مدرسية", Account.AccountType.EXPENSE, "52", True),
     ("5208", "الضيافة والاحتفالات وتكريم المتفوقين", Account.AccountType.EXPENSE, "52", True),
     ("5209", "مصروفات الإهلاك السنوي للأصول", Account.AccountType.EXPENSE, "52", True),
+    ("5210", "خسائر استبعاد الأصول الثابتة", Account.AccountType.EXPENSE, "52", True),
 ]
 
 

@@ -681,8 +681,16 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
         if existing:
             if existing.status != JournalEntry.Status.POSTED:
                 raise ValidationError("يوجد قيد إهلاك سابق غير مرحّل؛ يجب مراجعته قبل المتابعة.")
+            if locked_entry.journal_entry_id and locked_entry.journal_entry_id != existing.pk:
+                raise ValidationError("سجل الإهلاك مرتبط بقيد مختلف عن قيد مصدره.")
+            if not locked_entry.journal_entry_id:
+                locked_entry.journal_entry = existing
+                locked_entry.posted_at = existing.posted_at or timezone.now()
+                locked_entry.save(update_fields=["journal_entry", "posted_at", "updated_at"])
             return existing
 
+        if locked_asset.status == FixedAsset.Status.DISPOSED:
+            raise ValidationError("لا يمكن إهلاك أصل مستبعد.")
         period = _get_active_fiscal_period(school, locked_entry.date)
         if period.fiscal_year_id != locked_entry.fiscal_year_id:
             raise ValidationError("الفترة المحاسبية لا تتبع السنة المالية لسجل الإهلاك.")
@@ -1019,7 +1027,11 @@ def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
         locked_invoice.journal_entry = entry
         if locked_invoice.status == VendorInvoice.Status.DRAFT:
             locked_invoice.status = VendorInvoice.Status.APPROVED
-        locked_invoice.save(update_fields=["journal_entry", "status", "updated_at"])
+        locked_invoice.approved_by = user
+        locked_invoice.approved_at = locked_invoice.approved_at or timezone.now()
+        locked_invoice.save(update_fields=[
+            "journal_entry", "status", "approved_by", "approved_at", "updated_at",
+        ])
         return entry
 
 def disburse_vendor_payment(
@@ -1075,6 +1087,7 @@ def disburse_vendor_payment(
                     and existing.debit_account_id == vendor_payable_acc.pk
                     and existing.paid_to == locked_invoice.supplier.name
                     and existing.reference_number == reference_number
+                    and existing.description == f"سداد دفعة من فاتورة المورد #{locked_invoice.invoice_number}"
                 )
                 if not same_data:
                     raise ValidationError("مفتاح منع التكرار مستخدم لسداد ببيانات مختلفة.")
