@@ -6,6 +6,7 @@ from apps.core.admin import AuditedAdminMixin
 from apps.notifications.models import (
     InboundWebhookMessage, Notification, NotificationDeliveryAttempt, SchoolEmailGateway,
     NotificationPreference, NotificationTemplate, OutboxEvent, SchoolMessagingGateway,
+    NotificationDeliveryReceipt,
 )
 
 
