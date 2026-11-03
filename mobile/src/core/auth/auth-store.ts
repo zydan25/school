@@ -58,6 +58,7 @@ type AuthState = {
   logout: () => Promise<void>;
   hydrate: () => Promise<void>;
   chooseSchool: (schoolId: string) => Promise<void>;
+  acceptInvitation: (token: string) => Promise<string>;
   chooseWorkspace: (workspace: WorkspaceType) => Promise<void>;
   refreshAccessToken: () => Promise<string | null>;
   clearSession: () => Promise<void>;
@@ -262,6 +263,57 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const session = { ...current, activeSchoolId: schoolId, activeWorkspace: null };
     await persistSession(session);
     set({ session });
+  },
+
+  acceptInvitation: async (token) => {
+    const current = get().session;
+    if (!current?.accessToken) {
+      throw new ApiError("سجل الدخول أولاً لقبول دعوة المدرسة.", 401, null);
+    }
+    const result = await apiRequest<{
+      membership_id: string;
+      school: { id: string; code: string; name: string };
+      roles: string[];
+      status: string;
+    }>("app/account/invitations/accept/", {
+      method: "POST",
+      body: JSON.stringify({ token: token.trim() }),
+    }, { accessToken: current.accessToken });
+
+    const invitedSchool: SchoolOption = {
+      id: result.school.id,
+      code: result.school.code,
+      name: result.school.name,
+      roles: result.roles ?? [],
+      isDefault: false,
+    };
+    const merged = [
+      ...current.schools.filter((item) => item.id !== invitedSchool.id),
+      invitedSchool,
+    ];
+
+    let schools = merged;
+    try {
+      const remote = await apiRequest<SchoolListResponse>(
+        "schools/",
+        {},
+        { accessToken: current.accessToken },
+      );
+      schools = mergeAvailableSchools(remote, merged);
+    } catch {
+      // The accepted membership response is sufficient to keep this school selectable.
+    }
+
+    appQueryClient.clear();
+    const session: AuthSession = {
+      ...current,
+      schools,
+      activeSchoolId: invitedSchool.id,
+      activeWorkspace: null,
+    };
+    await persistSession(session);
+    set({ session });
+    return invitedSchool.id;
   },
 
   chooseWorkspace: async (workspace) => {
