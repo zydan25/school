@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text } from "react-native-paper";
-import { BookOpen, BriefcaseBusiness, Building2, CalendarDays, ClipboardCheck, GraduationCap, LogOut, RefreshCw, Repeat2, Users } from "lucide-react-native";
+import { Bell, BookOpen, BriefcaseBusiness, Building2, CalendarDays, ClipboardCheck, GraduationCap, LogOut, MessageCircle, RefreshCw, Repeat2, Users, Wallet } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuthStore } from "@/core/auth/auth-store";
@@ -161,24 +161,56 @@ export function HomeDashboardScreen() {
         </>
       )}
 
-      {["student", "guardian", "teacher"].includes(workspace) ? (
-        <View style={styles.academicShortcut}>
+      <View style={styles.moduleShortcuts}>
+        <AppActionTile
+          icon={CalendarDays}
+          label="الحضور والغياب"
+          onPress={() => router.push("/attendance" as never)}
+          color={palette.info}
+          tint={palette.infoTint}
+        />
+        {["student", "guardian", "teacher", "management"].includes(workspace) ? (
           <AppActionTile
             icon={BookOpen}
-            label={workspace === "guardian" ? "واجبات ودرجات الأبناء" : "الواجبات والدرجات"}
+            label="الدراسة والدرجات"
             onPress={() => router.push("/academics" as never)}
-            color={palette.info}
-            tint={palette.infoTint}
-          />
-          <AppActionTile
-            icon={ClipboardCheck}
-            label="النتائج المنشورة"
-            onPress={() => router.push("/academics?tab=grades" as never)}
             color={palette.success}
             tint={palette.successTint}
           />
-        </View>
-      ) : null}
+        ) : null}
+        {workspace === "student" ? (
+          <AppActionTile
+            icon={ClipboardCheck}
+            label="الاختبارات"
+            onPress={() => router.push("/exams" as never)}
+            color={palette.warning}
+            tint={palette.warningTint}
+          />
+        ) : null}
+        {["student", "guardian"].includes(workspace) ? (
+          <AppActionTile
+            icon={Wallet}
+            label="الملف المالي"
+            onPress={() => router.push("/fees" as never)}
+            color={palette.secondary}
+            tint={palette.secondaryTint}
+          />
+        ) : null}
+        <AppActionTile
+          icon={MessageCircle}
+          label="المحادثات"
+          onPress={() => router.push("/messages" as never)}
+          color={palette.info}
+          tint={palette.infoTint}
+        />
+        <AppActionTile
+          icon={Bell}
+          label="الإشعارات"
+          onPress={() => router.push("/notifications" as never)}
+          color={palette.secondary}
+          tint={palette.secondaryTint}
+        />
+      </View>
 
       <View style={styles.bottomActions}>
         <Button mode="text" compact onPress={() => router.push("/workspace" as never)} textColor={palette.secondary}>تبديل الدور</Button>
@@ -432,6 +464,6 @@ const styles = StyleSheet.create({
   lessonSubject: { color: palette.primary, fontWeight: "800", fontSize: 12, textAlign: "right" },
   lessonMeta: { color: palette.muted, fontSize: 10, textAlign: "right", lineHeight: 15 },
   lessonPeriod: { color: palette.muted, fontSize: 9 },
-  academicShortcut: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  moduleShortcuts: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, paddingTop: spacing.sm },
   bottomActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: spacing.xs, paddingTop: spacing.sm },
 });
