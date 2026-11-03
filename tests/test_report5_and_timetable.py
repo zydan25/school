@@ -480,7 +480,7 @@ class Report5AndTimetableSystemTests(TestCase):
             unit_cost=item_b.unit_cost,
             idempotency_key="legacy-issue-b",
             notes="صرف لاحق يترك رصيداً أقل من التوريد",
-            created_by=self.user,
+            created_by=self.owner,
         )
         item_b.refresh_from_db()
         self.assertEqual(item_b.current_stock, Decimal("2.00"))
