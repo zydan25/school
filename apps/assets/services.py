@@ -98,15 +98,24 @@ def register_asset_from_vendor_invoice(
     if amount <= 0 or current_assets_total + amount > locked_invoice.total_amount:
         raise ValidationError("تكلفة الأصل تتجاوز المبلغ المتبقي من فاتورة المورد.")
 
-    asset_account = category.asset_account or locked_invoice.expense_account
+    invoice_asset_account = locked_invoice.expense_account or _get_account_or_seed(
+        locked_invoice.school, "1201", "الأصول الثابتة",
+    )
+    asset_account = category.asset_account or invoice_asset_account
+    _ensure_account(
+        account=invoice_asset_account,
+        school=locked_invoice.school,
+        account_type=Account.AccountType.ASSET,
+        label="حساب فاتورة اقتناء الأصل",
+    )
     _ensure_account(
         account=asset_account,
         school=locked_invoice.school,
         account_type=Account.AccountType.ASSET,
         label="حساب تكلفة الأصل",
     )
-    if locked_invoice.expense_account_id and locked_invoice.expense_account_id != asset_account.pk:
-        raise ValidationError("حساب الأصل في التصنيف لا يطابق الحساب المستخدم في قيد فاتورة المورد.")
+    if invoice_asset_account.pk != asset_account.pk:
+        raise ValidationError("حساب تكلفة الأصل يجب أن يطابق الحساب المستخدم في قيد فاتورة المورد.")
     salvage = _money(Decimal(salvage_value))
     if salvage < 0 or salvage > amount:
         raise ValidationError("القيمة التخريدية يجب أن تكون بين صفر وتكلفة الاقتناء.")
