@@ -215,8 +215,8 @@ class NotificationOutboxTests(Stage12BaseTestCase):
         )
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT auth_token, webhook_verify_token FROM notifications_schoolmessaginggateway WHERE id = %s",
-                [str(gateway.pk)],
+                "SELECT auth_token, webhook_verify_token FROM notifications_schoolmessaginggateway WHERE name = %s",
+                ["بوابة سرية"],
             )
             stored_token, stored_webhook = cursor.fetchone()
         self.assertTrue(stored_token.startswith("enc:v1:"))
