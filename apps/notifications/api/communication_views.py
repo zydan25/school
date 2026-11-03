@@ -142,11 +142,12 @@ def _conversation_for_participant(request, school, conversation_id):
 
 
 def _conversation_payload(conversation, participant):
-    unread = conversation.messages.filter(
-        is_archived=False, is_deleted=False, created_at__gt=(participant.last_read_at or timezone.make_aware(
-            timezone.datetime(1970, 1, 1)
-        )),
-    ).exclude(sender_id=participant.user_id).count()
+    unread_qs = conversation.messages.filter(
+        is_archived=False, is_deleted=False,
+    ).exclude(sender_id=participant.user_id)
+    if participant.last_read_at:
+        unread_qs = unread_qs.filter(created_at__gt=participant.last_read_at)
+    unread = unread_qs.count()
     return {
         "id": str(conversation.pk),
         "subject": conversation.subject,

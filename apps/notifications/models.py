@@ -411,7 +411,7 @@ class ConversationMessage(TenantOwnedModel):
     )
     message_type = models.CharField("نوع الرسالة", max_length=12, choices=MessageType.choices, default=MessageType.TEXT)
     body = models.TextField("محتوى الرسالة", blank=True)
-    attachment = models.FileField("المرفق الخاص", upload_to=conversation_attachment_path, blank=True)
+    attachment = models.FileField("المرفق الخاص", upload_to=conversation_attachment_path, storage=__import__("apps.core.storage", fromlist=["private_storage"]).private_storage, blank=True)
     attachment_name = models.CharField("اسم الملف الأصلي", max_length=255, blank=True)
     attachment_size = models.PositiveBigIntegerField("حجم المرفق", default=0)
     reply_to = models.ForeignKey(
