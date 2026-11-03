@@ -87,7 +87,10 @@ class SchoolListCreateAPIView(generics.ListCreateAPIView):
         return context
 
     def perform_create(self, serializer):
-        serializer.save(school=_school(self.request))
+        try:
+            serializer.save(school=_school(self.request))
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
 
 
 class SchoolDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
@@ -113,8 +116,17 @@ class SchoolDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         context["school"] = _school(self.request)
         return context
 
+    def perform_update(self, serializer):
+        try:
+            serializer.save()
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
+
     def perform_destroy(self, instance):
-        instance.archive(actor=self.request.user, reason="أرشفة عبر واجهة API")
+        try:
+            instance.archive(actor=self.request.user, reason="أرشفة عبر واجهة API")
+        except DjangoValidationError as exc:
+            raise ValidationError(exc.messages) from exc
 
 
 class SupplierListCreateAPIView(SchoolListCreateAPIView):
@@ -425,7 +437,7 @@ class WarehouseTransferListCreateAPIView(generics.ListCreateAPIView):
 
         serializer = WarehouseTransferCreateSerializer(data=request.data, context={"school": _school(request)})
         serializer.is_valid(raise_exception=True)
-        transfer = serializer.save(school=_school(request))
+        transfer = serializer.save()
         return Response({"id": str(transfer.pk), "status": transfer.status}, status=status.HTTP_201_CREATED)
 
 
