@@ -13,6 +13,8 @@ from apps.inventory.models import (
     VendorInvoicePayment,
     Warehouse,
     WarehouseStock,
+    WarehouseStocktake,
+    WarehouseStocktakeLine,
     WarehouseTransfer,
 )
 
@@ -180,6 +182,51 @@ class VendorInvoicePaymentAdmin(ModelAdmin):
     list_filter = ("school", "payment_date")
     search_fields = ("invoice__invoice_number", "payment_voucher__voucher_number")
     readonly_fields = ("id", "school", "branch", "invoice", "payment_voucher", "journal_entry", "amount", "idempotency_key", "payment_date", "recorded_by", "created_at", "updated_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WarehouseStocktake)
+class WarehouseStocktakeAdmin(ModelAdmin):
+    list_display = ("stocktake_number", "warehouse", "count_date", "status", "created_by", "posted_by", "school")
+    list_filter = ("school", "status", "count_date", "warehouse")
+    search_fields = ("stocktake_number", "warehouse__name")
+    readonly_fields = (
+        "id", "school", "branch", "warehouse", "stocktake_number", "count_date",
+        "idempotency_key", "status", "created_by", "posted_by", "posted_at",
+        "cancelled_by", "cancelled_at", "notes", "created_at", "updated_at",
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WarehouseStocktakeLine)
+class WarehouseStocktakeLineAdmin(ModelAdmin):
+    list_display = ("stocktake", "item", "system_quantity", "counted_quantity", "variance", "unit_cost", "school")
+    list_filter = ("school", "stocktake__warehouse", "stocktake__status")
+    search_fields = ("stocktake__stocktake_number", "item__code", "item__name")
+    readonly_fields = (
+        "id", "school", "branch", "stocktake", "item", "system_quantity",
+        "counted_quantity", "unit_cost", "created_at", "updated_at",
+    )
+
+    @admin.display(description="فرق الجرد")
+    def variance(self, obj):
+        return obj.variance
 
     def has_add_permission(self, request):
         return False
