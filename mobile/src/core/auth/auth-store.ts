@@ -1,6 +1,8 @@
 import { Platform } from "react-native";
 import { create } from "zustand";
 
+import { appQueryClient } from "@/core/providers/query-client";
+
 import { ApiError, apiRequest } from "@/core/api/api-client";
 import {
   clearStoredSession,
@@ -113,6 +115,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   clearSession: async () => {
     await clearStoredSession();
+    appQueryClient.clear();
     set({ session: null, isBusy: false });
   },
 
@@ -224,6 +227,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         activeWorkspace: null,
       };
 
+      appQueryClient.clear();
       await persistSession(session);
       set({ session });
     } finally {
@@ -243,6 +247,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch {
       // The local session must still be removed when the network is unavailable.
     } finally {
+      appQueryClient.clear();
       await clearStoredSession();
       set({ session: null, isBusy: false });
     }
@@ -253,6 +258,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!current?.schools.some((school) => school.id === schoolId)) {
       throw new Error("هذه المدرسة غير موجودة ضمن المدارس المتاحة لحسابك.");
     }
+    appQueryClient.clear();
     const session = { ...current, activeSchoolId: schoolId, activeWorkspace: null };
     await persistSession(session);
     set({ session });
@@ -261,6 +267,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   chooseWorkspace: async (workspace) => {
     const current = get().session;
     if (!current?.activeSchoolId) throw new Error("اختر المدرسة أولاً.");
+    if (current.activeWorkspace !== workspace) appQueryClient.clear();
     const session = { ...current, activeWorkspace: workspace };
     await persistSession(session);
     set({ session });
