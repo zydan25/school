@@ -131,7 +131,7 @@ class WhatsAppWebhookAPIView(APIView):
                     aggregate_type="inbound_webhook",
                     aggregate_id=inbound.pk,
                     payload={"inbound_id": str(inbound.pk), "message_text": message},
-                    idempotency_key=f"whatsapp-inbound:{school.pk}:{provider_id[:200]}",
+                    idempotency_key=f"whatsapp-inbound:{school.pk}:{hashlib.sha256(provider_id.encode()).hexdigest()}",
                     school=school,
                 )
         except IntegrityError:

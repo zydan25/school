@@ -86,7 +86,7 @@ def _user_belongs_to_school(user, school) -> bool:
         school=school,
         status=SchoolMembership.Status.ACTIVE,
     ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now)).exists()
-    return membership or any((
+    return membership or school.owner_id == user.pk or any((
         Student.objects.filter(user=user, school=school, is_archived=False).exists(),
         Guardian.objects.filter(user=user, school=school, is_archived=False).exists(),
         Teacher.objects.filter(user=user, school=school, is_archived=False).exists(),
@@ -428,7 +428,7 @@ def _dispatch_notification(notification, attempt_number):
     channel = notification.channel
     if channel == Notification.Channel.EMAIL:
         recipient = notification.recipient.email
-        if not recipient:
+        if not recipient or not getattr(notification.recipient, "email_verified_at", None):
             raise DeliveryError("لا يوجد بريد إلكتروني موثق أو مسجل للمستلم.", code="missing_email", retryable=False)
         from apps.notifications.models import SchoolEmailGateway
         school_gateway = (
@@ -474,7 +474,7 @@ def _dispatch_notification(notification, attempt_number):
 
     if channel in {Notification.Channel.SMS, Notification.Channel.WHATSAPP, Notification.Channel.PUSH}:
         destination = notification.recipient.phone
-        if channel != Notification.Channel.PUSH and not destination:
+        if channel != Notification.Channel.PUSH and (not destination or not getattr(notification.recipient, "phone_verified_at", None)):
             raise DeliveryError("لا يوجد رقم هاتف للمستلم.", code="missing_phone", retryable=False)
         return _send_message_to_gateway(
             school=notification.school,
@@ -497,14 +497,15 @@ def _safe_whatsapp_auto_reply(inbound, gateway, message_text):
 
     school = inbound.school
     phone = inbound.sender_phone.replace("+", "").replace(" ", "").strip()
+    phone_variants = [phone, f"+{phone}"]
     student = Student.objects.filter(
-        school=school, is_archived=False, user__phone=phone,
+        school=school, is_archived=False, user__phone__in=phone_variants,
         user__phone_verified_at__isnull=False, user__status="active",
     ).select_related("section").first()
     guardian = None
     if student is None:
         guardian = Guardian.objects.filter(
-            school=school, is_archived=False, user__phone=phone,
+            school=school, is_archived=False, user__phone__in=phone_variants,
             user__phone_verified_at__isnull=False, user__status="active",
         ).select_related("user").first()
         children = guardian.children.filter(school=school, is_archived=False) if guardian else Student.objects.none()
