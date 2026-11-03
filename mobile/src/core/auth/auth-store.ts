@@ -106,6 +106,13 @@ async function persistSession(session: AuthSession | null) {
   else await clearStoredSession();
 }
 
+function resolveDefaultSchoolId(schools: SchoolOption[]): string | null {
+  const defaults = schools.filter((school) => school.isDefault);
+  if (defaults.length === 1) return defaults[0].id;
+  if (schools.length === 1) return schools[0].id;
+  return null;
+}
+
 let hydrationTask: Promise<void> | null = null;
 let refreshTask: Promise<string | null> | null = null;
 
@@ -163,8 +170,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             session.activeSchoolId = null;
             session.activeWorkspace = null;
           }
-          if (!session.activeSchoolId && session.schools.length === 1) {
-            session.activeSchoolId = session.schools[0].id;
+          if (!session.activeSchoolId) {
+            session.activeSchoolId = resolveDefaultSchoolId(session.schools);
           }
           await persistSession(session);
           set({ session });
@@ -224,7 +231,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         deviceId: payload.device_id ?? deviceId,
         user: payload.user,
         schools: mergedSchools,
-        activeSchoolId: mergedSchools.length === 1 ? mergedSchools[0].id : null,
+        activeSchoolId: resolveDefaultSchoolId(mergedSchools),
         activeWorkspace: null,
       };
 
