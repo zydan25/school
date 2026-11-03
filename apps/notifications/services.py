@@ -14,7 +14,7 @@ from datetime import timedelta
 from string import Formatter
 
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMessage, get_connection, send_mail
 from django.db import connection, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -414,16 +414,46 @@ def _dispatch_notification(notification, attempt_number):
         recipient = notification.recipient.email
         if not recipient:
             raise DeliveryError("لا يوجد بريد إلكتروني موثق أو مسجل للمستلم.", code="missing_email", retryable=False)
-        sent = send_mail(
-            subject=notification.title,
-            message=notification.body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[recipient],
-            fail_silently=False,
+        from apps.notifications.models import SchoolEmailGateway
+        school_gateway = (
+            SchoolEmailGateway.objects.filter(school=notification.school, is_active=True).first()
+            if notification.school_id else None
         )
+        try:
+            if school_gateway:
+                connection = get_connection(
+                    backend="django.core.mail.backends.smtp.EmailBackend",
+                    host=school_gateway.host,
+                    port=school_gateway.port,
+                    username=school_gateway.username,
+                    password=school_gateway.password,
+                    use_tls=school_gateway.use_tls,
+                    use_ssl=school_gateway.use_ssl,
+                    timeout=10,
+                )
+                email = EmailMessage(
+                    subject=notification.title,
+                    body=notification.body,
+                    from_email=school_gateway.from_email,
+                    to=[recipient],
+                    connection=connection,
+                )
+                sent = email.send(fail_silently=False)
+                provider = "school-smtp"
+            else:
+                sent = send_mail(
+                    subject=notification.title,
+                    message=notification.body,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[recipient],
+                    fail_silently=False,
+                )
+                provider = "django-email"
+        except Exception as exc:
+            raise DeliveryError("تعذر إرسال البريد الإلكتروني.", code="smtp_error", retryable=True) from exc
         if sent != 1:
             raise DeliveryError("لم يقبل خادم البريد الرسالة.", code="email_rejected", retryable=True)
-        _record_attempt(notification, attempt_number, recipient, "django-email", succeeded=True)
+        _record_attempt(notification, attempt_number, recipient, provider, succeeded=True)
         return "", "email"
 
     if channel in {Notification.Channel.SMS, Notification.Channel.WHATSAPP, Notification.Channel.PUSH}:

@@ -4,7 +4,7 @@ from unfold.admin import ModelAdmin
 
 from apps.core.admin import AuditedAdminMixin
 from apps.notifications.models import (
-    InboundWebhookMessage, Notification, NotificationDeliveryAttempt,
+    InboundWebhookMessage, Notification, NotificationDeliveryAttempt, SchoolEmailGateway,
     NotificationPreference, NotificationTemplate, OutboxEvent, SchoolMessagingGateway,
 )
 
@@ -94,3 +94,25 @@ class NotificationDeliveryAttemptAdmin(ModelAdmin):
     readonly_fields = tuple(field.name for field in NotificationDeliveryAttempt._meta.fields)
     def has_add_permission(self, request): return False
     def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")
+
+
+class SchoolEmailGatewayAdminForm(forms.ModelForm):
+    password = forms.CharField(required=False, widget=forms.PasswordInput(render_value=False), label="كلمة مرور SMTP")
+
+    class Meta:
+        model = SchoolEmailGateway
+        fields = "__all__"
+
+    def clean_password(self):
+        value = self.cleaned_data.get("password")
+        return value if value else (self.instance.password if self.instance.pk else "")
+
+
+@admin.register(SchoolEmailGateway)
+class SchoolEmailGatewayAdmin(AuditedAdminMixin, ModelAdmin):
+    form = SchoolEmailGatewayAdminForm
+    list_display = ("school", "is_active", "host", "port", "from_email", "use_tls", "use_ssl")
+    list_filter = ("is_active", "use_tls", "use_ssl")
+    search_fields = ("school__name", "host", "from_email")
+    autocomplete_fields = ("school",)
+    readonly_fields = ("id", "created_at", "updated_at")

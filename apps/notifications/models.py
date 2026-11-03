@@ -438,3 +438,36 @@ class ConversationMessage(TenantOwnedModel):
 
     def __str__(self):
         return f"{self.sender or 'النظام'} - {self.created_at}"
+
+
+class SchoolEmailGateway(UUIDTimestampedModel):
+    """SMTP settings and an encrypted password scoped to one school."""
+
+    school = models.OneToOneField(
+        "tenants.School", on_delete=models.CASCADE,
+        related_name="email_gateway", verbose_name="المدرسة",
+    )
+    is_active = models.BooleanField("بوابة البريد مفعلة", default=False)
+    host = models.CharField("خادم SMTP", max_length=255, blank=True)
+    port = models.PositiveSmallIntegerField("منفذ SMTP", default=587)
+    username = models.CharField("اسم مستخدم SMTP", max_length=255, blank=True)
+    password = EncryptedTextField("كلمة مرور SMTP", blank=True)
+    from_email = models.EmailField("عنوان المرسل", blank=True)
+    use_tls = models.BooleanField("TLS", default=True)
+    use_ssl = models.BooleanField("SSL", default=False)
+
+    class Meta:
+        verbose_name = "بوابة البريد الإلكتروني للمدرسة"
+        verbose_name_plural = "بوابات البريد الإلكتروني للمدارس"
+
+    def clean(self):
+        super().clean()
+        if self.use_tls and self.use_ssl:
+            raise ValidationError("اختر TLS أو SSL، ولا يمكن تفعيلهما معاً.")
+        if self.is_active and (not self.host or not self.from_email):
+            raise ValidationError("يجب تحديد خادم SMTP وعنوان المرسل قبل التفعيل.")
+        if self.port < 1 or self.port > 65535:
+            raise ValidationError({"port": "منفذ SMTP غير صالح."})
+
+    def __str__(self):
+        return f"{self.school} / SMTP"
