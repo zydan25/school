@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   classTitle: { color: palette.primary, fontWeight: "800", fontSize: 13, textAlign: "right" },
   classSubject: { color: palette.secondary, fontSize: 12 },
   classCount: { color: palette.muted, fontSize: 11 },
-  classState: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: "#F1F5F9" },
+  classState: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: radius.pill, backgroundColor: palette.background },
   classStateText: { color: palette.muted, fontSize: 9, fontWeight: "700" },
   classStateSelected: { color: palette.success },
   studentGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-start", gap: spacing.md },

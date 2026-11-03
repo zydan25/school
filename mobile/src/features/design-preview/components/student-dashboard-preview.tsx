@@ -35,8 +35,8 @@ export function StudentDashboardPreview({ onAction }: Props) {
       <AppSectionHeader title="ماذا تريد أن تفعل؟" subtitle="اختر الخدمة التي تحتاجها" />
       <View style={styles.actionsGrid}>
         <AppActionTile icon={CalendarDays} label="جدولي" onPress={() => onAction("الجدول الدراسي")} />
-        <AppActionTile icon={BookOpen} label="واجباتي" color={palette.info} tint="#EAF1FB" onPress={() => onAction("الواجبات")} />
-        <AppActionTile icon={GraduationCap} label="نتائجي" color={palette.success} tint="#EAF6EF" onPress={() => onAction("النتائج والدرجات")} />
+        <AppActionTile icon={BookOpen} label="واجباتي" color={palette.info} tint={palette.infoTint} onPress={() => onAction("الواجبات")} />
+        <AppActionTile icon={GraduationCap} label="نتائجي" color={palette.success} tint={palette.successTint} onPress={() => onAction("النتائج والدرجات")} />
         <AppActionTile icon={ClipboardCheck} label="اختباراتي" onPress={() => onAction("الاختبارات")} />
       </View>
 
