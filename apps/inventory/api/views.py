@@ -22,6 +22,9 @@ from apps.inventory.api.serializers import (
     VendorPaymentInputSerializer,
     WarehouseSerializer,
     WarehouseStockSerializer,
+    WarehouseStocktakeSerializer,
+    WarehouseStocktakeCreateSerializer,
+    WarehouseStocktakeCountsInputSerializer,
 )
 from apps.inventory.models import (
     InventoryItem,
@@ -31,17 +34,22 @@ from apps.inventory.models import (
     VendorInvoice,
     Warehouse,
     WarehouseStock,
+    WarehouseStocktake,
     WarehouseTransfer,
 )
 from apps.inventory.services import (
     approve_purchase_order,
     approve_vendor_invoice,
     cancel_purchase_order,
+    cancel_stocktake,
     pay_vendor_invoice,
     post_warehouse_transfer,
     receive_purchase_order,
     record_stock_movement,
+    record_stocktake_counts,
     reverse_stock_movement,
+    post_stocktake,
+    start_stocktake,
     reverse_warehouse_transfer,
 )
 
@@ -462,3 +470,138 @@ class WarehouseTransferWorkflowAPIView(APIView):
             return Response({"detail": "Unknown action."}, status=status.HTTP_404_NOT_FOUND)
         transfer.refresh_from_db()
         return Response({"id": str(transfer.pk), "status": transfer.status})
+
+
+class WarehouseStocktakeListCreateAPIView(generics.ListCreateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = WarehouseStocktakeSerializer
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        _authorize(
+            request,
+            "inventory.view_warehousestocktake"
+            if request.method == "GET" else "inventory.add_warehousestocktake",
+        )
+
+    def get_queryset(self):
+        queryset = WarehouseStocktake.objects.filter(
+            school=_school(self.request), is_archived=False,
+        ).select_related("warehouse", "created_by", "posted_by").prefetch_related(
+            "lines__item",
+        ).order_by("-count_date", "-created_at")
+        warehouse_id = self.request.query_params.get("warehouse")
+        if warehouse_id:
+            queryset = queryset.filter(warehouse_id=warehouse_id)
+        status_value = self.request.query_params.get("status")
+        if status_value:
+            queryset = queryset.filter(status=status_value)
+        return queryset
+
+    def get_serializer_class(self):
+        return (
+            WarehouseStocktakeCreateSerializer
+            if self.request.method == "POST" else WarehouseStocktakeSerializer
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["school"] = _school(self.request)
+        return context
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        stocktake, created = _django_validation(
+            start_stocktake,
+            school=_school(request),
+            created_by=request.user,
+            **serializer.validated_data,
+        )
+        result = WarehouseStocktakeSerializer(
+            stocktake, context={"school": _school(request)},
+        )
+        return Response(
+            result.data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class WarehouseStocktakeDetailAPIView(generics.RetrieveAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = WarehouseStocktakeSerializer
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        _authorize(request, "inventory.view_warehousestocktake")
+
+    def get_queryset(self):
+        return WarehouseStocktake.objects.filter(
+            school=_school(self.request), is_archived=False,
+        ).select_related("warehouse", "created_by", "posted_by", "cancelled_by").prefetch_related(
+            "lines__item",
+        )
+
+
+class WarehouseStocktakeCountsAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        _authorize(request, "inventory.count_warehousestocktake")
+        stocktake = get_object_or_404(
+            WarehouseStocktake,
+            pk=pk, school=_school(request), is_archived=False,
+        )
+        serializer = WarehouseStocktakeCountsInputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        stocktake = _django_validation(
+            record_stocktake_counts,
+            stocktake=stocktake,
+            counts=serializer.validated_data["counts"],
+        )
+        return Response(
+            WarehouseStocktakeSerializer(
+                stocktake, context={"school": _school(request)},
+            ).data,
+        )
+
+
+class WarehouseStocktakePostAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        _authorize(request, "inventory.post_warehousestocktake")
+        stocktake = get_object_or_404(
+            WarehouseStocktake,
+            pk=pk, school=_school(request), is_archived=False,
+        )
+        stocktake = _django_validation(
+            post_stocktake, stocktake=stocktake, posted_by=request.user,
+        )
+        return Response(
+            WarehouseStocktakeSerializer(
+                stocktake, context={"school": _school(request)},
+            ).data,
+        )
+
+
+class WarehouseStocktakeCancelAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        _authorize(request, "inventory.cancel_warehousestocktake")
+        stocktake = get_object_or_404(
+            WarehouseStocktake,
+            pk=pk, school=_school(request), is_archived=False,
+        )
+        stocktake = _django_validation(
+            cancel_stocktake,
+            stocktake=stocktake,
+            cancelled_by=request.user,
+            reason=request.data.get("reason", ""),
+        )
+        return Response(
+            WarehouseStocktakeSerializer(
+                stocktake, context={"school": _school(request)},
+            ).data,
+        )
