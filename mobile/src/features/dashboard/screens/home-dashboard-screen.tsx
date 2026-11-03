@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text } from "react-native-paper";
-import { BookOpen, BriefcaseBusiness, Building2, CalendarDays, GraduationCap, LogOut, RefreshCw, Repeat2, Users } from "lucide-react-native";
+import { BookOpen, BriefcaseBusiness, Building2, CalendarDays, ClipboardCheck, GraduationCap, LogOut, RefreshCw, Repeat2, Users } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuthStore } from "@/core/auth/auth-store";
@@ -15,6 +15,7 @@ import {
   type StudentSummary,
   type TeacherAssignment,
 } from "@/features/dashboard/api/dashboard-api";
+import { AppActionTile } from "@/shared/components/app-action-tile";
 import { AppAvatar } from "@/shared/components/app-avatar";
 import { AppCard } from "@/shared/components/app-card";
 import { AppEmptyState } from "@/shared/components/app-empty-state";
@@ -159,6 +160,25 @@ export function HomeDashboardScreen() {
           {workspace === "management" ? <ManagementDashboard /> : null}
         </>
       )}
+
+      {["student", "guardian", "teacher"].includes(workspace) ? (
+        <View style={styles.academicShortcut}>
+          <AppActionTile
+            icon={BookOpen}
+            label={workspace === "guardian" ? "واجبات ودرجات الأبناء" : "الواجبات والدرجات"}
+            onPress={() => router.push("/academics" as never)}
+            color={palette.info}
+            tint={palette.infoTint}
+          />
+          <AppActionTile
+            icon={ClipboardCheck}
+            label="النتائج المنشورة"
+            onPress={() => router.push("/academics?tab=grades" as never)}
+            color={palette.success}
+            tint={palette.successTint}
+          />
+        </View>
+      ) : null}
 
       <View style={styles.bottomActions}>
         <Button mode="text" compact onPress={() => router.push("/workspace" as never)} textColor={palette.secondary}>تبديل الدور</Button>
@@ -412,5 +432,6 @@ const styles = StyleSheet.create({
   lessonSubject: { color: palette.primary, fontWeight: "800", fontSize: 12, textAlign: "right" },
   lessonMeta: { color: palette.muted, fontSize: 10, textAlign: "right", lineHeight: 15 },
   lessonPeriod: { color: palette.muted, fontSize: 9 },
+  academicShortcut: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   bottomActions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: spacing.xs, paddingTop: spacing.sm },
 });

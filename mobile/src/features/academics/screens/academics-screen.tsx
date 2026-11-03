@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { router } from "expo-router";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Dialog, Portal, Text, TextInput } from "react-native-paper";
 import { BookOpen, ClipboardCheck, GraduationCap, RefreshCw } from "lucide-react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -162,6 +162,7 @@ export function AcademicsScreen() {
                 key={homework.id}
                 homework={homework}
                 submissions={submissionsByHomework.get(homework.id) ?? []}
+                workspace={workspace}
                 canSubmit={canSubmit}
                 onSubmit={() => {
                   setSelectedHomework(homework);
@@ -243,17 +244,24 @@ export function AcademicsScreen() {
 function HomeworkCard({
   homework,
   submissions,
+  workspace,
   canSubmit,
   onSubmit,
 }: {
   homework: HomeworkItem;
   submissions: HomeworkSubmission[];
+  workspace: "student" | "guardian" | "teacher" | "employee" | "management";
   canSubmit: boolean;
   onSubmit: () => void;
 }) {
   const submission = submissions[0];
   const isResubmit = submission?.status === "resubmit";
   const maySubmit = canSubmit && (!submission || isResubmit);
+  const statusSummary = workspace === "guardian"
+    ? (submissions.length ? submissions.length + " تسليمات للأبناء" : "لم يسلم الأبناء")
+    : workspace === "teacher"
+      ? (submissions.length ? submissions.length + " تسليمات طلاب" : "بانتظار التسليم")
+      : (submission ? submissionLabels[submission.status] ?? submission.status : "لم يتم التسليم");
 
   return (
     <AppCard padding={14}>
@@ -264,7 +272,7 @@ function HomeworkCard({
             <Text style={styles.cardMeta}>{homework.subject_name} · {homework.section_name}</Text>
           </View>
           <View style={[styles.pill, submission?.status === "graded" ? styles.pillSuccess : isResubmit ? styles.pillWarning : styles.pillNeutral]}>
-            <Text style={styles.pillText}>{submission ? submissionLabels[submission.status] ?? submission.status : "لم يتم التسليم"}</Text>
+            <Text style={styles.pillText}>{statusSummary}</Text>
           </View>
         </View>
         <Text style={styles.description}>{homework.description}</Text>
@@ -280,11 +288,27 @@ function HomeworkCard({
           <Text style={styles.infoLabel}>الدرجة العظمى</Text>
           <Text style={styles.infoValue}>{formatNumber(homework.max_score)}</Text>
         </View>
-        {submission?.status === "graded" ? (
+        {workspace === "student" && submission?.status === "graded" ? (
           <AppNotice tone="success" message={"درجتك: " + formatNumber(submission.score) + " من " + formatNumber(homework.max_score) + (submission.teacher_feedback ? " · " + submission.teacher_feedback : "")} />
         ) : null}
-        {submission && submission.status !== "graded" ? (
+        {workspace === "student" && submission && submission.status !== "graded" ? (
           <Text style={styles.submissionMeta}>آخر تسليم: {formatDate(submission.submitted_at)} · {submission.attempts.length} محاولات محفوظة</Text>
+        ) : null}
+        {workspace !== "student" && submissions.length ? (
+          <View style={styles.childSubmissionList}>
+            {submissions.slice(0, 5).map((item) => (
+              <View key={item.id} style={styles.childSubmissionRow}>
+                <Text style={styles.childSubmissionName}>{item.student_name}</Text>
+                <Text style={styles.submissionMeta}>
+                  {submissionLabels[item.status] ?? item.status}
+                  {item.status === "graded" ? " · " + formatNumber(item.score) + "/" + formatNumber(homework.max_score) : ""}
+                </Text>
+              </View>
+            ))}
+            {submissions.length > 5 ? (
+              <Text style={styles.submissionMeta}>و {submissions.length - 5} تسليمات أخرى</Text>
+            ) : null}
+          </View>
         ) : null}
         {maySubmit ? (
           <Button mode="contained" icon="send" onPress={onSubmit} buttonColor={palette.primary} contentStyle={styles.actionButton}>
@@ -342,6 +366,9 @@ const styles = StyleSheet.create({
   infoLabel: { color: palette.muted, fontSize: 11 },
   infoValue: { color: palette.text, fontSize: 11, fontWeight: "700" },
   submissionMeta: { color: palette.muted, fontSize: 10, lineHeight: 16, textAlign: "right" },
+  childSubmissionList: { gap: 6, paddingTop: spacing.xs },
+  childSubmissionRow: { flexDirection: "row", justifyContent: "space-between", gap: spacing.sm, paddingVertical: 5, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: palette.border },
+  childSubmissionName: { color: palette.text, fontSize: 11, fontWeight: "700" },
   actionButton: { minHeight: 42 },
   gradeScore: { flexDirection: "row", alignItems: "baseline", justifyContent: "flex-start", gap: 4 },
   gradeValue: { color: palette.success, fontSize: 24, fontWeight: "900" },

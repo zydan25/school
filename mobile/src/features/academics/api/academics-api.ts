@@ -87,10 +87,6 @@ export async function loadAcademicWorkspaceData(
   }
 
   if (workspace === "guardian") {
-    const profiles = await authenticatedRequest<{
-      guardians: { id: string }[];
-      students: { id: string }[];
-    }>("app/account/profiles/");
     const children = await authenticatedRequest<{
       guardian_id: string;
       results: { id: string }[];
