@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
-from apps.core.models import TenantOwnedModel
+from apps.core.models import TenantOwnedModel, TenantQuerySet
 
 
 class Supplier(TenantOwnedModel):
@@ -74,7 +74,7 @@ class Warehouse(TenantOwnedModel):
         return f"{self.name} ({self.code})"
 
 
-class InventoryItemQuerySet(models.QuerySet):
+class InventoryItemQuerySet(TenantQuerySet):
     def update(self, **kwargs):
         if {"current_stock", "unit_cost"}.intersection(kwargs):
             raise ValidationError("رصيد الصنف ومتوسط تكلفته يستمدان من دفتر الحركات ولا يعدلان مباشرة.")
