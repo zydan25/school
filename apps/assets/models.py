@@ -144,9 +144,18 @@ class FixedAsset(TenantOwnedModel):
         if self.pk:
             original = FixedAsset.objects.filter(pk=self.pk).first()
             if original:
-                protected = ("category_id", "purchase_date", "purchase_cost", "salvage_value", "source_vendor_invoice_id")
+                protected = (
+                    "category_id", "purchase_date", "purchase_cost", "salvage_value",
+                    "source_vendor_invoice_id", "accumulated_depreciation",
+                    "acquisition_journal_entry_id", "disposal_journal_entry_id",
+                    "disposed_at",
+                )
                 if any(getattr(original, field) != getattr(self, field) for field in protected):
-                    raise ValidationError("بيانات اقتناء الأصل التاريخية لا تعدل؛ استخدم مستند تسوية معتمداً.")
+                    raise ValidationError("بيانات اقتناء الأصل ومجمع إهلاكه وربطه المحاسبي لا تعدل مباشرة.")
+                if original.status != self.Status.DISPOSED and self.status == self.Status.DISPOSED:
+                    raise ValidationError("استبعاد الأصل يتم عبر خدمة استبعاد مع قيد محاسبي.")
+                if original.status == self.Status.DISPOSED and self.status != self.Status.DISPOSED:
+                    raise ValidationError("لا يمكن إعادة تنشيط أصل مستبعد دون إجراء محاسبي مستقل.")
         return super().save(*args, **kwargs)
 
     def __str__(self) -> str:
@@ -186,6 +195,9 @@ class AssetDepreciationEntry(TenantOwnedModel):
     class Meta:
         verbose_name = "قيد إهلاك أصل"
         verbose_name_plural = "سجلات إهلاك الأصول"
+        permissions = [
+            ("post_assetdepreciationentry", "Can post asset depreciation entries"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "asset", "fiscal_year"],
@@ -196,6 +208,20 @@ class AssetDepreciationEntry(TenantOwnedModel):
 
     def __str__(self) -> str:
         return f"{self.asset.name} - {self.fiscal_year.name}: {self.depreciation_amount}"
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = AssetDepreciationEntry.objects.filter(pk=self.pk).first()
+            if original and (
+                original.asset_id != self.asset_id
+                or original.fiscal_year_id != self.fiscal_year_id
+                or original.depreciation_amount != self.depreciation_amount
+                or original.date != self.date
+            ):
+                raise ValidationError("سجل الإهلاك التاريخي لا يعدل؛ أنشئ تصحيحاً محاسبياً موثقاً.")
+            if original and original.journal_entry_id and self.journal_entry_id != original.journal_entry_id:
+                raise ValidationError("لا يمكن تغيير القيد المرتبط بإهلاك مرحّل.")
+        return super().save(*args, **kwargs)
 
     def clean(self):
         super().clean()
@@ -260,6 +286,9 @@ class AssetMovement(TenantOwnedModel):
     class Meta:
         verbose_name = "حركة نقل أصل أو عهدة"
         verbose_name_plural = "سجل نقل الأصول والعهد"
+        permissions = [
+            ("move_assetmovement", "Can move assets and change custody"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "idempotency_key"],
@@ -315,6 +344,9 @@ class AssetDisposal(TenantOwnedModel):
     class Meta:
         verbose_name = "مستند استبعاد أصل"
         verbose_name_plural = "مستندات استبعاد الأصول"
+        permissions = [
+            ("dispose_assetdisposal", "Can dispose fixed assets"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "idempotency_key"],

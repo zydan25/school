@@ -54,6 +54,14 @@ SCHOOL_PERMISSION_APP_LABELS = {
 # These are deliberately narrow workflow permissions. They are not generic
 # Django model permissions and must never grant access to other app labels.
 SCHOOL_CUSTOM_ACTION_PERMISSIONS = {
+    "inventory": {
+        "approve_purchaseorder", "receive_purchaseorder", "cancel_purchaseorder",
+        "reverse_stockmovement", "post_warehousetransfer", "reverse_warehousetransfer",
+        "approve_vendorinvoice", "pay_vendorinvoice",
+    },
+    "assets": {
+        "post_assetdepreciationentry", "move_assetmovement", "dispose_assetdisposal",
+    },
     "payroll": {
         "approve_payrollrun",
         "post_payrollrun",

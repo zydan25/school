@@ -74,8 +74,16 @@ class Warehouse(TenantOwnedModel):
         return f"{self.name} ({self.code})"
 
 
+class InventoryItemQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        if {"current_stock", "unit_cost"}.intersection(kwargs):
+            raise ValidationError("رصيد الصنف ومتوسط تكلفته يستمدان من دفتر الحركات ولا يعدلان مباشرة.")
+        return super().update(**kwargs)
+
+
 class InventoryItem(TenantOwnedModel):
     """الأصناف المخزنية، المواد، والكتب المدرسية والزي."""
+    objects = InventoryItemQuerySet.as_manager()
     class Unit(models.TextChoices):
         PIECE = "piece", "قطعة / حبة"
         BOX = "box", "كرتون / صندوق"
@@ -105,8 +113,30 @@ class InventoryItem(TenantOwnedModel):
                 fields=["school", "code"],
                 condition=models.Q(is_archived=False),
                 name="inventory_item_code_uniq",
-            )
+            ),
+            models.CheckConstraint(condition=models.Q(current_stock__gte=0), name="inventory_item_stock_nonnegative"),
+            models.CheckConstraint(condition=models.Q(unit_cost__gte=0), name="inventory_item_cost_nonnegative"),
+            models.CheckConstraint(condition=models.Q(reorder_level__gte=0), name="inventory_item_reorder_nonnegative"),
         ]
+
+    def clean(self):
+        super().clean()
+        if self.warehouse_id and self.warehouse.school_id != self.school_id:
+            raise ValidationError({"warehouse": "المستودع لا يتبع المدرسة نفسها."})
+        if self.current_stock < 0 or self.unit_cost < 0 or self.reorder_level < 0:
+            raise ValidationError("الرصيد والتكلفة وحد إعادة الطلب لا يمكن أن تكون سالبة.")
+        if self._state.adding and self.current_stock != 0:
+            raise ValidationError({"current_stock": "رصيد البداية ينشأ عبر حركة افتتاحية موثقة، وليس من بطاقة الصنف."})
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            original = InventoryItem.objects.filter(pk=self.pk).first()
+            if original and (
+                original.current_stock != self.current_stock
+                or original.unit_cost != self.unit_cost
+            ):
+                raise ValidationError("رصيد الصنف ومتوسط تكلفته لا يعدلان مباشرة؛ استخدم حركات المخزون.")
+        return super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"[{self.code}] {self.name} (المتوفر: {self.current_stock})"
@@ -219,6 +249,9 @@ class StockMovement(TenantOwnedModel):
     class Meta:
         verbose_name = "حركة مخزنية"
         verbose_name_plural = "دفتر حركات المخزون"
+        permissions = [
+            ("reverse_stockmovement", "Can reverse stock movements"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "idempotency_key"],
@@ -421,6 +454,11 @@ class PurchaseOrder(TenantOwnedModel):
     class Meta:
         verbose_name = "أمر شراء"
         verbose_name_plural = "أوامر الشراء والتوريد"
+        permissions = [
+            ("approve_purchaseorder", "Can approve purchase orders"),
+            ("receive_purchaseorder", "Can receive purchase orders"),
+            ("cancel_purchaseorder", "Can cancel purchase orders"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "order_number"],
@@ -568,6 +606,10 @@ class WarehouseTransfer(TenantOwnedModel):
     class Meta:
         verbose_name = "تحويل مخزني"
         verbose_name_plural = "تحويلات المستودعات"
+        permissions = [
+            ("post_warehousetransfer", "Can post warehouse transfers"),
+            ("reverse_warehousetransfer", "Can reverse warehouse transfers"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "transfer_number"],
@@ -673,6 +715,10 @@ class VendorInvoice(TenantOwnedModel):
     class Meta:
         verbose_name = "فاتورة مورد"
         verbose_name_plural = "فواتير الموردين والذمم الدائنة"
+        permissions = [
+            ("approve_vendorinvoice", "Can approve vendor invoices"),
+            ("pay_vendorinvoice", "Can pay vendor invoices"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["school", "invoice_number"],
