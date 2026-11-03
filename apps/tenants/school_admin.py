@@ -29,6 +29,7 @@ from apps.accounts.models import (
     User,
 )
 from apps.accounts.services import has_school_permission, is_platform_operator
+from apps.school_services.services import school_service_is_enabled
 from apps.notifications.models import Notification, NotificationPreference, NotificationTemplate
 from apps.tenants.models import Branch, School
 
@@ -104,6 +105,21 @@ class SchoolScopedAdmin(AuditedAdminMixin, ModelAdmin):
         if school is None:
             return False
         opts = self.model._meta
+        if opts.app_label == "school_services" and not is_platform_operator(request.user):
+            required_features = {
+                "busroute": "school-transport",
+                "studentbussubscription": "school-transport",
+                "busfinancialsettlement": "school-transport",
+                "bussubscriptioncharge": "school-transport",
+                "librarybook": "school-library",
+                "bookloan": "school-library",
+                "studentbookdistribution": "school-book-distribution",
+                "bookrequisitionorder": "school-book-distribution",
+                "bookrequisitionitem": "school-book-distribution",
+            }
+            feature_code = required_features.get(opts.model_name)
+            if feature_code and not school_service_is_enabled(school, feature_code):
+                return False
         return has_school_permission(
             user=request.user,
             school=school,
@@ -1249,11 +1265,10 @@ from apps.school_services.models import (
     BookRequisitionOrder,
     BusFinancialSettlement,
     BusRoute,
-    ClinicVisit,
+    BusSubscriptionCharge,
     LibraryBook,
     StudentBookDistribution,
     StudentBusSubscription,
-    StudentHealthProfile,
 )
 
 
@@ -1263,6 +1278,24 @@ class SchoolBusRouteAdmin(SchoolScopedAdmin):
     list_filter = ("is_active", "compensation_type", "contractor_type")
     search_fields = ("route_code", "route_name", "bus_number", "driver_name", "destination_area")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(BusSubscriptionCharge, site=school_admin_site)
+class SchoolBusSubscriptionChargeAdmin(SchoolScopedAdmin):
+    list_display = ("subscription", "invoice", "billing_year", "billing_month", "amount", "issued_by")
+    list_filter = ("billing_year", "billing_month")
+    search_fields = ("invoice__invoice_number", "subscription__student__first_name", "subscription__student__last_name")
+    raw_id_fields = ("subscription", "invoice", "issued_by")
+    readonly_fields = ("id", "created_at", "updated_at", "subscription", "invoice", "billing_year", "billing_month", "amount", "issued_by", "is_archived", "archived_at", "archived_by", "archive_reason")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return request.method in ("GET", "HEAD", "OPTIONS") and super().has_view_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(BusFinancialSettlement, site=school_admin_site)
@@ -1297,7 +1330,7 @@ class SchoolLibraryBookAdmin(SchoolScopedAdmin):
     list_display = ("isbn", "title", "author", "category", "total_copies", "available_copies", "shelf_location")
     list_filter = ("category",)
     search_fields = ("isbn", "title", "author", "publisher")
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "available_copies")
 
 
 @admin.register(BookLoan, site=school_admin_site)
@@ -1305,26 +1338,8 @@ class SchoolBookLoanAdmin(SchoolScopedAdmin):
     list_display = ("book", "student", "teacher", "borrow_date", "due_date", "return_date", "status", "fine_amount")
     list_filter = ("status", "borrow_date")
     search_fields = ("book__title", "student__first_name", "teacher__user__first_name")
-    raw_id_fields = ("book", "student", "teacher")
-    readonly_fields = ("id", "created_at", "updated_at")
-
-
-@admin.register(StudentHealthProfile, site=school_admin_site)
-class SchoolStudentHealthProfileAdmin(SchoolScopedAdmin):
-    list_display = ("student", "blood_type", "emergency_contact_name", "emergency_contact_phone")
-    list_filter = ("blood_type",)
-    search_fields = ("student__first_name", "student__last_name", "emergency_contact_name")
-    raw_id_fields = ("student",)
-    readonly_fields = ("id", "created_at", "updated_at")
-
-
-@admin.register(ClinicVisit, site=school_admin_site)
-class SchoolClinicVisitAdmin(SchoolScopedAdmin):
-    list_display = ("student", "visit_date", "symptoms", "temperature", "sent_home", "parent_notified", "attended_by")
-    list_filter = ("sent_home", "parent_notified", "visit_date")
-    search_fields = ("student__first_name", "student__last_name", "diagnosis")
-    raw_id_fields = ("student",)
-    readonly_fields = ("id", "created_at", "updated_at")
+    raw_id_fields = ("book", "student", "teacher", "fine_invoice")
+    readonly_fields = ("id", "created_at", "updated_at", "status", "return_date", "fine_amount", "fine_invoice", "renewal_count")
 
 
 from unfold.admin import TabularInline
@@ -1333,6 +1348,13 @@ from unfold.admin import TabularInline
 class SchoolBookRequisitionItemInline(TabularInline):
     model = BookRequisitionItem
     extra = 1
+    readonly_fields = ("quantity_approved", "quantity_dispatched")
+
+    def has_add_permission(self, request, obj=None):
+        return obj is None or obj.status == BookRequisitionOrder.Status.DRAFT
+
+    def has_change_permission(self, request, obj=None):
+        return obj is None or obj.status == BookRequisitionOrder.Status.DRAFT
 
 
 @admin.register(BookRequisitionOrder, site=school_admin_site)
@@ -1341,7 +1363,7 @@ class SchoolBookRequisitionOrderAdmin(SchoolScopedAdmin):
     list_filter = ("status", "academic_year")
     search_fields = ("order_number", "requested_by__phone", "notes")
     raw_id_fields = ("requested_by", "approved_by", "fulfilled_by", "academic_year", "grade_level", "section")
-    readonly_fields = ("id", "created_at", "updated_at", "approved_at", "fulfilled_at")
+    readonly_fields = ("id", "created_at", "updated_at", "status", "approved_by", "approved_at", "fulfilled_by", "fulfilled_at")
     inlines = (SchoolBookRequisitionItemInline,)
 
 
@@ -1350,7 +1372,13 @@ class SchoolBookRequisitionItemAdmin(SchoolScopedAdmin):
     list_display = ("requisition", "book_title", "quantity_requested", "quantity_approved", "quantity_dispatched")
     search_fields = ("book_title", "requisition__order_number")
     raw_id_fields = ("requisition",)
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "quantity_approved", "quantity_dispatched")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return request.method in ("GET", "HEAD", "OPTIONS") and super().has_view_permission(request, obj)
 
 
 # -----------------------------------------------------------------------------

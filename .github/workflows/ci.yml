@@ -123,6 +123,18 @@ jobs:
             apps/api/urls.py \
             apps/tenants/school_admin.py \
             apps/school_services/models.py \
+            apps/school_services/services.py \
+            apps/school_services/admin.py \
+            apps/school_services/api/serializers.py \
+            apps/school_services/api/views.py \
+            apps/school_services/api/urls.py \
+            apps/school_services/migrations/0007_stage11_optional_school_services.py \
+            apps/tenants/models.py \
+            apps/tenants/migrations/0002_stage11_library_policy_settings.py \
+            apps/tenants/admin.py \
+            apps/tenants/school_admin.py \
+            tests/test_school_services_api.py \
+            tests/test_stage11_school_services.py \
             tests/test_stage10_procurement_assets.py \
             tests/test_report4_fixes.py \
             tests/test_report5_and_timetable.py \

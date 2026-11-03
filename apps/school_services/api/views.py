@@ -1,4 +1,4 @@
-"""Tenant-safe API views for transportation, library, textbooks and clinic."""
+"""Tenant-safe API views for optional transportation, library, and textbook services."""
 from __future__ import annotations
 
 import uuid
@@ -13,40 +13,50 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import MethodNotAllowed, PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from apps.auditlog.services import record_event
 from apps.accounts.api_permissions import (
     FINANCIAL_ROLES,
     has_school_roles,
     require_school_role_or_permission,
     resolve_active_school,
 )
-from apps.academics.models import AcademicYear
-from apps.inventory.models import InventoryItem, StockMovement
+from apps.accounts.services import is_platform_operator
 from apps.school_services.models import (
     BookLoan,
     BookRequisitionItem,
     BookRequisitionOrder,
     BusFinancialSettlement,
     BusRoute,
-    ClinicVisit,
+    BusSubscriptionCharge,
     LibraryBook,
     StudentBookDistribution,
     StudentBusSubscription,
-    StudentHealthProfile,
 )
-from apps.students.models import Student
 from apps.staff.models import Teacher
+
+from apps.school_services.services import (
+    fulfill_book_requisition,
+    issue_bus_route_monthly_invoices,
+    mark_book_loan_lost,
+    renew_book_loan,
+    return_book_loan,
+    school_service_feature_state,
+    update_library_policy,
+    school_service_is_enabled,
+    set_school_service_enabled,
+)
 
 from .serializers import (
     BookLoanSerializer,
     BookRequisitionOrderSerializer,
     BusFinancialSettlementSerializer,
     BusRouteSerializer,
-    ClinicVisitSerializer,
+    BusSubscriptionChargeSerializer,
     LibraryBookSerializer,
     StudentBookDistributionSerializer,
     StudentBusSubscriptionSerializer,
-    StudentHealthProfileSerializer,
 )
 
 
@@ -62,11 +72,6 @@ TRANSPORT_ROLES = ADMIN_ROLES | {
 LIBRARY_ROLES = ADMIN_ROLES | {
     "librarian", "library-manager", "library_manager",
 }
-CLINIC_ROLES = ADMIN_ROLES | {
-    "school-nurse", "school_nurse", "nurse", "school-doctor",
-    "school_doctor", "doctor", "clinic", "clinic-staff", "clinic_staff",
-    "health-officer", "health_officer",
-}
 INVENTORY_ROLES = ADMIN_ROLES | {
     "store-keeper", "store_keeper", "inventory-manager", "inventory_manager",
 }
@@ -80,6 +85,7 @@ LIBRARY_READ_ROLES = LIBRARY_ROLES | TEACHER_ROLES | FAMILY_READ_ROLES
 TRANSPORT_READ_ROLES = TRANSPORT_ROLES | {"bus-driver", "bus_driver"}
 DISTRIBUTION_READ_ROLES = ADMIN_ROLES | INVENTORY_ROLES | ACADEMIC_ROLES | FAMILY_READ_ROLES
 REQUISITION_READ_ROLES = ADMIN_ROLES | INVENTORY_ROLES | ACADEMIC_ROLES | TEACHER_ROLES
+BUS_BILLING_ROLES = ADMIN_ROLES | FINANCIAL_ROLES
 
 
 def school_for(request):
@@ -91,6 +97,8 @@ def school_for(request):
 
 class SchoolServiceViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
+    required_feature_code = ""
+    action_permission_map = {}
 
     def save_serializer(self, serializer, **kwargs):
         try:
@@ -109,11 +117,37 @@ class SchoolServiceViewSet(viewsets.ModelViewSet):
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
+        school = self.get_school()
+        action = getattr(self, "action", "")
+        if (
+            self.required_feature_code
+            and not is_platform_operator(request.user)
+            and not school_service_is_enabled(school, self.required_feature_code)
+        ):
+            raise PermissionDenied({
+                "detail": "هذه الخدمة غير متاحة أو معطلة لهذه المدرسة.",
+                "code": "feature_disabled",
+                "feature": self.required_feature_code,
+                "school": school.code,
+            })
         allowed = self.action_role_map.get(
-            getattr(self, "action", ""),
-            self.read_roles if getattr(self, "action", "") in {"list", "retrieve"} else self.write_roles,
+            action,
+            self.read_roles if action in {"list", "retrieve"} else self.write_roles,
         )
-        require_school_role_or_permission(request, self.get_school(), allowed)
+        permission = self.action_permission_map.get(action)
+        if permission is None:
+            permission_prefix = {
+                "list": "view", "retrieve": "view", "create": "add",
+                "update": "change", "partial_update": "change", "destroy": "delete",
+            }.get(action)
+            if permission_prefix:
+                model = self.get_serializer_class().Meta.model
+                permission = f"{model._meta.app_label}.{permission_prefix}_{model._meta.model_name}"
+        elif "." not in permission:
+            permission = f"school_services.{permission}"
+        require_school_role_or_permission(
+            request, school, allowed, permission_codename=permission
+        )
 
     def get_queryset(self):
         model = self.get_serializer_class().Meta.model
@@ -141,11 +175,99 @@ class SchoolServiceViewSet(viewsets.ModelViewSet):
             raise ValidationError(detail) from exc
 
 
+class SchoolServiceFeaturesView(APIView):
+    """Read service entitlements and allow school administrators to disable/restore them."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        school = school_for(request)
+        require_school_role_or_permission(
+            request, school,
+            ADMIN_ROLES | TRANSPORT_ROLES | LIBRARY_ROLES | INVENTORY_ROLES | ACADEMIC_ROLES,
+        )
+        return Response({"features": school_service_feature_state(school)})
+
+    def patch(self, request):
+        school = school_for(request)
+        require_school_role_or_permission(request, school, ADMIN_ROLES)
+        code = str(request.data.get("code", "")).strip()
+        enabled = request.data.get("enabled")
+        try:
+            result = set_school_service_enabled(
+                school=school, feature_code=code, enabled=enabled, actor=request.user
+            )
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or exc.messages
+            raise ValidationError(detail) from exc
+        return Response(result)
+
+
+class LibraryPolicyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _school(self, request):
+        school = school_for(request)
+        if (
+            not is_platform_operator(request.user)
+            and not school_service_is_enabled(school, "school-library")
+        ):
+            raise PermissionDenied({
+                "detail": "خدمة المكتبة غير مفعلة لهذه المدرسة.",
+                "code": "feature_disabled",
+                "feature": "school-library",
+                "school": school.code,
+            })
+        return school
+
+    @staticmethod
+    def _data(settings):
+        return {
+            "library_default_loan_days": settings.library_default_loan_days,
+            "library_max_renewals": settings.library_max_renewals,
+            "library_overdue_fine_per_day": str(settings.library_overdue_fine_per_day),
+            "library_max_overdue_fine": str(settings.library_max_overdue_fine),
+            "library_lost_book_fine": str(settings.library_lost_book_fine),
+        }
+
+    def get(self, request):
+        school = self._school(request)
+        require_school_role_or_permission(
+            request, school, LIBRARY_ROLES,
+            permission_codename="school_services.manage_library_policy",
+        )
+        from apps.tenants.models import SchoolSettings
+        settings = SchoolSettings.objects.filter(school=school).first()
+        if settings is None:
+            settings = SchoolSettings(school=school)
+        return Response(self._data(settings))
+
+    def patch(self, request):
+        school = self._school(request)
+        require_school_role_or_permission(
+            request, school, LIBRARY_ROLES,
+            permission_codename="school_services.manage_library_policy",
+        )
+        try:
+            settings = update_library_policy(
+                school=school, values=request.data, actor=request.user
+            )
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or exc.messages
+            raise ValidationError(detail) from exc
+        return Response(self._data(settings))
+
+
 class BusRouteViewSet(SchoolServiceViewSet):
     serializer_class = BusRouteSerializer
+    required_feature_code = "school-transport"
+    action_permission_map = {"bill_month": "bill_studentbussubscription"}
     read_roles = TRANSPORT_READ_ROLES
     write_roles = TRANSPORT_ROLES
-    action_role_map = {"list": TRANSPORT_READ_ROLES, "retrieve": TRANSPORT_READ_ROLES}
+    action_role_map = {
+        "list": TRANSPORT_READ_ROLES,
+        "retrieve": TRANSPORT_READ_ROLES,
+        "bill_month": BUS_BILLING_ROLES,
+    }
 
     def get_queryset(self):
         queryset = super().get_queryset().select_related(
@@ -156,13 +278,28 @@ class BusRouteViewSet(SchoolServiceViewSet):
         return queryset.order_by("route_name")
 
     def perform_destroy(self, instance):
-        active_subscriptions = instance.student_subscriptions.filter(
-            status=StudentBusSubscription.Status.ACTIVE,
-            is_archived=False,
-        ).exists()
-        if active_subscriptions:
-            raise ValidationError("لا يمكن أرشفة خط نقل عليه اشتراكات نشطة.")
-        super().perform_destroy(instance)
+        with transaction.atomic():
+            route = get_object_or_404(
+                BusRoute.objects.select_for_update(),
+                pk=instance.pk,
+                school=self.get_school(),
+                is_archived=False,
+            )
+            active_subscriptions = route.student_subscriptions.filter(
+                status=StudentBusSubscription.Status.ACTIVE,
+                is_archived=False,
+            ).exists()
+            if active_subscriptions:
+                raise ValidationError("لا يمكن أرشفة خط نقل عليه اشتراكات نشطة.")
+            super().perform_destroy(route)
+            record_event(
+                action="school_transport.route.archived",
+                description=f"أرشفة خط النقل {route.route_code}",
+                actor=self.request.user,
+                school=self.get_school(),
+                obj=route,
+                request=self.request,
+            )
 
     def perform_update(self, serializer):
         with transaction.atomic():
@@ -181,11 +318,31 @@ class BusRouteViewSet(SchoolServiceViewSet):
                 raise ValidationError(
                     "لا يمكن خفض سعة الحافلة عن عدد اشتراكاتها النشطة."
                 )
+            serializer.instance = route
             self.save_serializer(serializer)
+
+    @action(detail=True, methods=["post"], url_path="bill-month")
+    def bill_month(self, request, pk=None):
+        year = request.data.get("year")
+        month = request.data.get("month")
+        try:
+            result = issue_bus_route_monthly_invoices(
+                school=self.get_school(), route_id=pk, year=year, month=month,
+                actor=request.user,
+            )
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or exc.messages
+            raise ValidationError(detail) from exc
+        return Response({
+            "created": result["created"],
+            "already_issued": result["already_issued"],
+            "charges": BusSubscriptionChargeSerializer(result["charges"], many=True).data,
+        })
 
 
 class StudentBusSubscriptionViewSet(SchoolServiceViewSet):
     serializer_class = StudentBusSubscriptionSerializer
+    required_feature_code = "school-transport"
     read_roles = TRANSPORT_ROLES | FAMILY_READ_ROLES
     write_roles = TRANSPORT_ROLES
     action_role_map = {"list": read_roles, "retrieve": read_roles}
@@ -244,18 +401,54 @@ class StudentBusSubscriptionViewSet(SchoolServiceViewSet):
                 school=self.get_school(),
                 is_archived=False,
             )
+            subscription = get_object_or_404(
+                StudentBusSubscription.objects.select_for_update(),
+                pk=serializer.instance.pk,
+                school=self.get_school(),
+                is_archived=False,
+            )
             status_value = serializer.validated_data.get(
-                "status", serializer.instance.status
+                "status", subscription.status
             )
             if status_value == StudentBusSubscription.Status.ACTIVE:
                 self._check_route_capacity(
-                    route, exclude_subscription_id=serializer.instance.pk
+                    route, exclude_subscription_id=subscription.pk
                 )
+            serializer.instance = subscription
             self.save_serializer(serializer)
+
+
+    def perform_destroy(self, instance):
+        # Deleting a transport subscription means cancelling it, never erasing
+        # its billing and route history.
+        with transaction.atomic():
+            get_object_or_404(
+                BusRoute.objects.select_for_update(),
+                pk=instance.bus_route_id,
+                school=self.get_school(),
+            )
+            subscription = get_object_or_404(
+                StudentBusSubscription.objects.select_for_update(),
+                pk=instance.pk,
+                school=self.get_school(),
+                is_archived=False,
+            )
+            if subscription.status != StudentBusSubscription.Status.CANCELLED:
+                subscription.status = StudentBusSubscription.Status.CANCELLED
+                subscription.save(update_fields=["status", "updated_at"])
+                record_event(
+                    action="school_transport.subscription.cancelled",
+                    description="إلغاء اشتراك نقل طالب",
+                    actor=self.request.user,
+                    school=self.get_school(),
+                    obj=subscription,
+                    request=self.request,
+                )
 
 
 class LibraryBookViewSet(SchoolServiceViewSet):
     serializer_class = LibraryBookSerializer
+    required_feature_code = "school-library"
     read_roles = LIBRARY_READ_ROLES
     write_roles = LIBRARY_ROLES
     action_role_map = {"list": LIBRARY_READ_ROLES, "retrieve": LIBRARY_READ_ROLES}
@@ -263,15 +456,34 @@ class LibraryBookViewSet(SchoolServiceViewSet):
     def get_queryset(self):
         return super().get_queryset().order_by("title")
 
+    def perform_update(self, serializer):
+        with transaction.atomic():
+            book = get_object_or_404(
+                LibraryBook.objects.select_for_update(),
+                pk=serializer.instance.pk,
+                school=self.get_school(),
+                is_archived=False,
+            )
+            serializer.instance = book
+            self.save_serializer(serializer)
+
 
 class BookLoanViewSet(SchoolServiceViewSet):
     serializer_class = BookLoanSerializer
+    required_feature_code = "school-library"
+    action_permission_map = {
+        "return_copy": "return_bookloan",
+        "renew": "renew_bookloan",
+        "mark_lost": "marklost_bookloan",
+    }
     read_roles = LIBRARY_READ_ROLES
     write_roles = LIBRARY_ROLES
     action_role_map = {
         "list": LIBRARY_READ_ROLES,
         "retrieve": LIBRARY_READ_ROLES,
         "return_copy": LIBRARY_ROLES,
+        "renew": LIBRARY_ROLES,
+        "mark_lost": LIBRARY_ROLES,
     }
     http_method_names = ["get", "post", "head", "options"]
 
@@ -299,26 +511,68 @@ class BookLoanViewSet(SchoolServiceViewSet):
 
     @action(detail=True, methods=["post"], url_path="return")
     def return_copy(self, request, pk=None):
-        with transaction.atomic():
-            loan = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+        try:
+            loan = return_book_loan(
+                school=self.get_school(), loan_id=pk, actor=request.user
             )
-            if loan.status == BookLoan.Status.RETURNED:
-                return Response(BookLoanSerializer(loan).data)
-            if loan.status not in {BookLoan.Status.BORROWED, BookLoan.Status.OVERDUE}:
-                raise ValidationError("لا يمكن إرجاع هذا السجل بحالته الحالية.")
-            loan.status = BookLoan.Status.RETURNED
-            loan.return_date = timezone.localdate()
-            try:
-                loan.save(update_fields=["status", "return_date", "updated_at"])
-            except DjangoValidationError as exc:
-                detail = getattr(exc, "message_dict", None) or exc.messages
-                raise ValidationError(detail) from exc
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or exc.messages
+            raise ValidationError(detail) from exc
         return Response(BookLoanSerializer(loan).data)
+
+    @action(detail=True, methods=["post"])
+    def renew(self, request, pk=None):
+        try:
+            loan = renew_book_loan(
+                school=self.get_school(), loan_id=pk, actor=request.user
+            )
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or exc.messages
+            raise ValidationError(detail) from exc
+        return Response(BookLoanSerializer(loan).data)
+
+    @action(detail=True, methods=["post"], url_path="mark-lost")
+    def mark_lost(self, request, pk=None):
+        try:
+            loan = mark_book_loan_lost(
+                school=self.get_school(), loan_id=pk, actor=request.user
+            )
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or exc.messages
+            raise ValidationError(detail) from exc
+        return Response(BookLoanSerializer(loan).data)
+
+
+class BusSubscriptionChargeViewSet(SchoolServiceViewSet):
+    serializer_class = BusSubscriptionChargeSerializer
+    required_feature_code = "school-transport"
+    read_roles = TRANSPORT_ROLES | FINANCIAL_ROLES
+    write_roles = set()
+    http_method_names = ["get", "head", "options"]
+
+    def get_queryset(self):
+        queryset = BusSubscriptionCharge.objects.filter(
+            school=self.get_school(), is_archived=False
+        ).select_related("subscription", "subscription__student", "invoice")
+        year = self.request.query_params.get("year")
+        month = self.request.query_params.get("month")
+        route_id = self.request.query_params.get("route")
+        if year:
+            queryset = queryset.filter(billing_year=year)
+        if month:
+            queryset = queryset.filter(billing_month=month)
+        if route_id:
+            queryset = queryset.filter(subscription__bus_route_id=route_id)
+        return queryset.order_by("-billing_year", "-billing_month", "-created_at")
 
 
 class BusFinancialSettlementViewSet(SchoolServiceViewSet):
     serializer_class = BusFinancialSettlementSerializer
+    required_feature_code = "school-transport"
+    action_permission_map = {
+        "calculate": "calculate_busfinancialsettlement",
+        "approve": "approve_busfinancialsettlement",
+    }
     read_roles = FINANCIAL_ROLES | ADMIN_ROLES
     write_roles = FINANCIAL_ROLES | ADMIN_ROLES
     action_role_map = {
@@ -374,6 +628,11 @@ class BusFinancialSettlementViewSet(SchoolServiceViewSet):
 
 class StudentBookDistributionViewSet(SchoolServiceViewSet):
     serializer_class = StudentBookDistributionSerializer
+    required_feature_code = "school-book-distribution"
+    action_permission_map = {
+        "deliver": "deliver_studentbookdistribution",
+        "return_copy": "return_studentbookdistribution",
+    }
     read_roles = DISTRIBUTION_READ_ROLES
     write_roles = ADMIN_ROLES | INVENTORY_ROLES | ACADEMIC_ROLES
     action_role_map = {
@@ -429,6 +688,14 @@ class StudentBookDistributionViewSet(SchoolServiceViewSet):
 
 class BookRequisitionOrderViewSet(SchoolServiceViewSet):
     serializer_class = BookRequisitionOrderSerializer
+    required_feature_code = "school-book-distribution"
+    action_permission_map = {
+        "submit": "submit_bookrequisitionorder",
+        "add_items": "submit_bookrequisitionorder",
+        "approve": "approve_bookrequisitionorder",
+        "reject": "reject_bookrequisitionorder",
+        "fulfill": "fulfill_bookrequisitionorder",
+    }
     read_roles = REQUISITION_READ_ROLES
     write_roles = ACADEMIC_ROLES | TEACHER_ROLES
     action_role_map = {
@@ -512,7 +779,16 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
             if not order.items.exists():
                 raise ValidationError("أضف بنداً واحداً على الأقل قبل رفع الطلب.")
             order.status = BookRequisitionOrder.Status.SUBMITTED
+            order._allow_requisition_workflow_update = True
             order.save(update_fields=["status", "updated_at"])
+            record_event(
+                action="school_book_requisition.submitted",
+                description=f"رفع أمر صرف الكتب {order.order_number}",
+                actor=request.user,
+                school=self.get_school(),
+                obj=order,
+                request=request,
+            )
         return Response(self.get_serializer(order).data)
 
     @action(detail=True, methods=["post"], url_path="items")
@@ -570,11 +846,22 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
                 if quantity < 0 or quantity > item.quantity_requested:
                     raise ValidationError("كمية الاعتماد يجب أن تكون بين صفر والكمية المطلوبة.")
                 item.quantity_approved = quantity
+                item._allow_requisition_approval_update = True
                 item.save(update_fields=["quantity_approved", "updated_at"])
             order.status = BookRequisitionOrder.Status.APPROVED
             order.approved_by = request.user
             order.approved_at = timezone.now()
+            order._allow_requisition_workflow_update = True
             order.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
+            record_event(
+                action="school_book_requisition.approved",
+                description=f"اعتماد أمر صرف الكتب {order.order_number}",
+                actor=request.user,
+                school=self.get_school(),
+                obj=order,
+                request=request,
+                metadata={"approved_items": len(approved_by_id)},
+            )
         return Response(self.get_serializer(order).data)
 
     @action(detail=True, methods=["post"])
@@ -591,7 +878,17 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
             order.status = BookRequisitionOrder.Status.REJECTED
             order.approved_by = request.user
             order.approved_at = timezone.now()
+            order._allow_requisition_workflow_update = True
             order.save(update_fields=["status", "approved_by", "approved_at", "notes", "updated_at"])
+            record_event(
+                action="school_book_requisition.rejected",
+                description=f"رفض أمر صرف الكتب {order.order_number}",
+                actor=request.user,
+                school=self.get_school(),
+                obj=order,
+                request=request,
+                metadata={"reason": reason},
+            )
         return Response(self.get_serializer(order).data)
 
     @action(detail=True, methods=["post"])
@@ -601,86 +898,24 @@ class BookRequisitionOrderViewSet(SchoolServiceViewSet):
             raise ValidationError({
                 "items": "أرسل قائمة البنود مع inventory_item_id وquantity لكل بند."
             })
-        used_item_ids = set()
-        with transaction.atomic():
-            order = get_object_or_404(
-                self.get_queryset().select_for_update(), pk=pk
+        try:
+            order = fulfill_book_requisition(
+                school=self.get_school(),
+                order_id=pk,
+                allocations=allocations,
+                idempotency_key=request.headers.get("Idempotency-Key", ""),
+                actor=request.user,
             )
-            if order.status != BookRequisitionOrder.Status.APPROVED:
-                raise ValidationError("لا يصرف إلا أمر الصرف المعتمد.")
-            requisition_items = {
-                str(item.pk): item
-                for item in order.items.select_for_update()
-            }
-            for allocation in allocations:
-                requisition_item_id = str(allocation.get("requisition_item_id", ""))
-                if requisition_item_id in used_item_ids:
-                    raise ValidationError("لا تكرر بنداً في طلب الصرف.")
-                used_item_ids.add(requisition_item_id)
-                req_item = requisition_items.get(requisition_item_id)
-                if req_item is None:
-                    raise ValidationError("أحد البنود لا يتبع أمر الصرف الحالي.")
-                try:
-                    quantity = Decimal(str(allocation.get("quantity", "0")))
-                except Exception as exc:
-                    raise ValidationError("كمية الصرف غير صالحة.") from exc
-                remaining = req_item.quantity_approved - req_item.quantity_dispatched
-                if quantity <= 0 or quantity != quantity.to_integral_value() or quantity > remaining:
-                    raise ValidationError("كمية الصرف يجب أن تكون عدداً صحيحاً موجباً ولا تتجاوز الكمية المعتمدة المتبقية.")
-                inventory_item = get_object_or_404(
-                    InventoryItem.objects.select_for_update(),
-                    pk=allocation.get("inventory_item_id"),
-                    school=self.get_school(),
-                    is_archived=False,
-                )
-                try:
-                    StockMovement.objects.create(
-                        school=self.get_school(),
-                        item=inventory_item,
-                        movement_type=StockMovement.MovementType.ISSUE,
-                        quantity=quantity,
-                        unit_cost=inventory_item.unit_cost,
-                        recipient_name=f"أمر صرف الكتب {order.order_number}",
-                        reference=order.order_number,
-                        notes=f"{req_item.book_title} - صرف لصالح الطلب",
-                    )
-                except DjangoValidationError as exc:
-                    raise ValidationError(
-                        getattr(exc, "message_dict", None) or exc.messages
-                    ) from exc
-                req_item.quantity_dispatched += int(quantity)
-                req_item.save(update_fields=["quantity_dispatched", "updated_at"])
-            if all(
-                item.quantity_dispatched >= item.quantity_approved
-                for item in requisition_items.values()
-            ):
-                order.status = BookRequisitionOrder.Status.FULFILLED
-                order.fulfilled_by = request.user
-                order.fulfilled_at = timezone.now()
-                order.save(update_fields=["status", "fulfilled_by", "fulfilled_at", "updated_at"])
-        order.refresh_from_db()
+        except DjangoValidationError as exc:
+            detail = getattr(exc, "message_dict", None) or exc.messages
+            raise ValidationError(detail) from exc
+        record_event(
+            action="school_book_requisition.fulfilled",
+            description=f"تنفيذ دفعة صرف لأمر الكتب {order.order_number}",
+            actor=request.user,
+            school=self.get_school(),
+            obj=order,
+            request=request,
+            metadata={"idempotency_key": request.headers.get("Idempotency-Key", "")},
+        )
         return Response(self.get_serializer(order).data)
-
-
-class StudentHealthProfileViewSet(SchoolServiceViewSet):
-    serializer_class = StudentHealthProfileSerializer
-    read_roles = CLINIC_ROLES
-    write_roles = CLINIC_ROLES
-    http_method_names = ["get", "post", "put", "patch", "head", "options"]
-
-    def get_queryset(self):
-        return super().get_queryset().select_related("student").order_by("student__first_name")
-
-
-class ClinicVisitViewSet(SchoolServiceViewSet):
-    serializer_class = ClinicVisitSerializer
-    read_roles = CLINIC_ROLES
-    write_roles = CLINIC_ROLES
-    http_method_names = ["get", "post", "put", "patch", "head", "options"]
-
-    def get_queryset(self):
-        queryset = super().get_queryset().select_related("student").order_by("-visit_date")
-        student_id = self.request.query_params.get("student")
-        if student_id:
-            queryset = queryset.filter(student_id=student_id)
-        return queryset

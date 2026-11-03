@@ -72,10 +72,30 @@ SCHOOL_CUSTOM_ACTION_PERMISSIONS = {
         "approve_employeeloanadvance",
         "disburse_employeeloanadvance",
     },
+    "school_services": {
+        "return_bookloan", "renew_bookloan", "marklost_bookloan",
+        "manage_library_policy",
+        "calculate_busfinancialsettlement", "approve_busfinancialsettlement",
+        "bill_studentbussubscription",
+        "deliver_studentbookdistribution", "return_studentbookdistribution",
+        "submit_bookrequisitionorder", "approve_bookrequisitionorder",
+        "reject_bookrequisitionorder", "fulfill_bookrequisitionorder",
+    },
+}
+
+
+LEGACY_DISABLED_SCHOOL_SERVICE_MODELS = {
+    "clinicvisit",
+    "studenthealthprofile",
 }
 
 
 def is_school_permission_codename_allowed(app_label: str, codename: str) -> bool:
+    if app_label == "school_services" and any(
+        codename.endswith(f"_{model_name}")
+        for model_name in LEGACY_DISABLED_SCHOOL_SERVICE_MODELS
+    ):
+        return False
     return (
         app_label in SCHOOL_PERMISSION_APP_LABELS
         and (
@@ -106,7 +126,13 @@ def school_assignable_permissions():
         actions |= Q(content_type__app_label=app_label, codename__in=codenames)
     return Permission.objects.filter(
         content_type__app_label__in=SCHOOL_PERMISSION_APP_LABELS,
-    ).filter(actions).select_related("content_type").distinct()
+    ).filter(actions).exclude(
+        codename__in={
+            f"{action}_{model_name}"
+            for action in ("view", "add", "change", "delete")
+            for model_name in LEGACY_DISABLED_SCHOOL_SERVICE_MODELS
+        },
+    ).select_related("content_type").distinct()
 
 
 def has_school_permission(*, user, school, permission: str) -> bool:

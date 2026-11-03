@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
@@ -158,11 +159,35 @@ class SchoolSettings(UUIDTimestampedModel):
     attendance_lock_after_days = models.PositiveSmallIntegerField("قفل تعديل الحضور بعد (أيام)", default=7)
     default_lesson_minutes = models.PositiveSmallIntegerField("مدة الحصة الافتراضية بالدقائق", default=45)
     notification_channels = models.JSONField("قنوات الإشعار المفعلة", default=list, blank=True)
-    feature_overrides = models.JSONField("تجاوزات المزايا", default=dict, blank=True)
+    feature_overrides = models.JSONField(
+        "تجاوزات المزايا",
+        default=dict,
+        blank=True,
+        help_text="تخزن تعطيل خدمات المدرسة ضمن المفتاح school_services؛ لا تسمح بتجاوز ميزات الباقة.",
+    )
+    library_default_loan_days = models.PositiveSmallIntegerField("مدة إعارة الكتاب الافتراضية بالأيام", default=14)
+    library_max_renewals = models.PositiveSmallIntegerField("الحد الأقصى لتجديد الإعارة", default=1)
+    library_overdue_fine_per_day = models.DecimalField("غرامة تأخير الكتاب عن كل يوم", max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    library_max_overdue_fine = models.DecimalField("الحد الأعلى لغرامة التأخير (صفر بلا حد)", max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    library_lost_book_fine = models.DecimalField("غرامة الكتاب المفقود", max_digits=10, decimal_places=2, default=Decimal("0.00"))
 
     class Meta:
         verbose_name = "إعدادات المدرسة"
         verbose_name_plural = "إعدادات المدارس"
+
+    def clean(self):
+        super().clean()
+        if self.library_default_loan_days < 1:
+            raise ValidationError({"library_default_loan_days": "مدة الإعارة يجب أن تكون يوماً واحداً على الأقل."})
+        for field in ("library_overdue_fine_per_day", "library_max_overdue_fine", "library_lost_book_fine"):
+            if getattr(self, field) < 0:
+                raise ValidationError({field: "قيمة الغرامة لا يمكن أن تكون سالبة."})
+        if not isinstance(self.feature_overrides, dict):
+            raise ValidationError({"feature_overrides": "تجاوزات المزايا يجب أن تكون كائناً منظماً."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         return f"إعدادات {self.school.name}"
