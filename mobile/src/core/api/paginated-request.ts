@@ -31,7 +31,7 @@ export async function authenticatedListRequest<T>(path: string): Promise<T[]> {
       throw new Error("رفض التطبيق رابط صفحة خارج نطاق API المدرسة.");
     }
 
-    const response = await authenticatedRequest<ListResponse<T>>(pageUrl.toString());
+    const response: ListResponse<T> = await authenticatedRequest<ListResponse<T>>(pageUrl.toString());
     if (Array.isArray(response)) {
       results.push(...response);
       return results;
