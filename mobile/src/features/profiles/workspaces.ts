@@ -10,10 +10,11 @@ export type WorkspaceOption = {
 const MANAGEMENT_ROLES = new Set([
   "admin", "school-admin", "school_admin", "school-director", "school_director",
   "principal", "school-principal", "academic-coordinator", "academic_coordinator",
+  "academic-head", "academic_head", "exam-controller", "exam_controller",
   "student-affairs", "student_affairs", "accountant", "school-accountant",
   "school_accountant", "hr", "hr-manager", "hr_manager", "librarian",
   "store-keeper", "store_keeper", "inventory-manager", "inventory_manager",
-  "gate-security", "gate_security",
+  "gate-security", "gate_security", "school-gate-guard",
 ]);
 
 export function buildWorkspaceOptions(
