@@ -56,6 +56,8 @@ urlpatterns = [
     path("<str:version>/staff/", include("apps.staff.api.urls")),
     path("<str:version>/payroll/", include("apps.payroll.api.urls")),
     path("<str:version>/attendance/", include("apps.attendance.api.urls")),
+    path("<str:version>/inventory/", include("apps.inventory.api.urls")),
+    path("<str:version>/assets/", include("apps.assets.api.urls")),
     path("<str:version>/school-services/", include("apps.school_services.api.urls")),
     path("<str:version>/app/", include("apps.api.v1.urls")),
 ]
