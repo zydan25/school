@@ -1,6 +1,5 @@
 import { authenticatedRequest } from "@/core/api/authenticated-request";
-import { toResults, type ApiPage } from "@/core/api/api-response";
-import type { WorkspaceType } from "@/core/auth/types";
+import { authenticatedListRequest } from "@/core/api/paginated-request";
 
 export type AttendanceRow = {
   id: string;
@@ -49,61 +48,6 @@ export type AttendanceExcuse = {
   status: string;
   review_notes: string;
   created_at: string;
-};
-
-export type HomeworkItem = {
-  id: string;
-  title: string;
-  description: string;
-  subject: string;
-  subject_name?: string;
-  section: string;
-  section_name?: string;
-  teacher_name?: string;
-  assigned_date: string;
-  due_date: string;
-  max_score: string;
-  is_active: boolean;
-};
-
-export type HomeworkAttempt = {
-  id: string;
-  attempt_number: number;
-  submission_text: string;
-  attachment_name: string;
-  submitted_at: string;
-  status: string;
-};
-
-export type HomeworkSubmission = {
-  id: string;
-  homework: string;
-  student: string;
-  student_name: string;
-  submission_text: string;
-  attachment_name?: string;
-  attachment_available?: boolean;
-  submitted_at: string;
-  status: string;
-  score?: string | null;
-  teacher_feedback: string;
-  attempts: HomeworkAttempt[];
-};
-
-export type GradeEntry = {
-  id: string;
-  student: string;
-  student_name?: string;
-  subject: string;
-  subject_name?: string;
-  academic_term: string;
-  academic_term_name?: string;
-  assessment_type?: string | null;
-  score: string;
-  max_score: string;
-  graded_at?: string | null;
-  workflow_status: string;
-  is_published: boolean;
 };
 
 export type OnlineExam = {
@@ -196,6 +140,7 @@ export type FeeStatement = {
     id: string;
     plan_name: string;
     total_amount: string | number;
+    number_of_installments: number;
     installments: {
       id: string;
       installment_number: number;
@@ -205,6 +150,7 @@ export type FeeStatement = {
       paid_amount: string | number;
       remaining_amount: string | number;
       status: string;
+      paid_date?: string | null;
     }[];
   }[];
   credit_transactions: {
@@ -235,6 +181,14 @@ export type UserNotification = {
 export type NotificationsResponse = {
   unread_count: number;
   notifications: UserNotification[];
+};
+
+export type NotificationPreference = {
+  id: string;
+  school: string | null;
+  category: string;
+  channel: string;
+  is_enabled: boolean;
 };
 
 export type Conversation = {
@@ -279,159 +233,6 @@ export type ConversationMessagesResponse = {
   has_more: boolean;
 };
 
-type ListResult<T> = T[] | ApiPage<T>;
-
-export async function getAttendanceRecords(studentId?: string) {
-  const query = studentId ? "?student_id=" + encodeURIComponent(studentId) : "";
-  return authenticatedRequest<AttendanceResponse>("attendance/me/children/records/" + query);
-}
-
-export async function getAttendanceScores(studentId?: string) {
-  const query = studentId ? "?student_id=" + encodeURIComponent(studentId) : "";
-  return authenticatedRequest<{ results: AttendanceScore[]; count: number }>(
-    "attendance/me/children/scores/" + query,
-  );
-}
-
-export async function getAttendanceExcuses() {
-  const result = await authenticatedRequest<ListResult<AttendanceExcuse>>(
-    "attendance/excuses/",
-  );
-  return toResults(result);
-}
-
-export async function createAttendanceExcuse(input: {
-  student: string;
-  request_type: string;
-  start_date: string;
-  end_date: string;
-  reason: string;
-}) {
-  return authenticatedRequest<AttendanceExcuse>("attendance/excuses/", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
-}
-
-export async function getHomeworkList() {
-  const result = await authenticatedRequest<ListResult<HomeworkItem>>("app/homework/");
-  return toResults(result);
-}
-
-export async function getHomeworkSubmissions(homeworkId?: string) {
-  const query = homeworkId ? "?homework_id=" + encodeURIComponent(homeworkId) : "";
-  const result = await authenticatedRequest<ListResult<HomeworkSubmission>>(
-    "app/homework-submissions/" + query,
-  );
-  return toResults(result);
-}
-
-export async function submitHomework(homeworkId: string, submissionText: string) {
-  return authenticatedRequest<HomeworkSubmission>("app/homework-submissions/submit/", {
-    method: "POST",
-    body: JSON.stringify({ homework_id: homeworkId, submission_text: submissionText }),
-  });
-}
-
-export async function gradeHomework(submissionId: string, score: string, feedback: string) {
-  return authenticatedRequest<HomeworkSubmission>(
-    "app/homework-submissions/" + submissionId + "/grade/",
-    { method: "POST", body: JSON.stringify({ score, teacher_feedback: feedback }) },
-  );
-}
-
-export async function requestHomeworkResubmission(submissionId: string, reason: string) {
-  return authenticatedRequest<HomeworkSubmission>(
-    "app/homework-submissions/" + submissionId + "/request-resubmission/",
-    { method: "POST", body: JSON.stringify({ reason }) },
-  );
-}
-
-export async function getGradeEntries() {
-  const result = await authenticatedRequest<ListResult<GradeEntry>>("app/gradebook/");
-  return toResults(result);
-}
-
-export async function getOnlineExams() {
-  const result = await authenticatedRequest<ListResult<OnlineExam>>("app/online-exams/");
-  return toResults(result);
-}
-
-export async function getExamPaper(examId: string) {
-  return authenticatedRequest<ExamPaper>("app/online-exams/" + examId + "/paper/");
-}
-
-export async function startOnlineExam(examId: string) {
-  return authenticatedRequest<ExamStartResult>(
-    "app/online-exams/" + examId + "/start/",
-    { method: "POST", body: JSON.stringify({}) },
-  );
-}
-
-export async function submitOnlineExam(examId: string, answers: Record<string, string>) {
-  return authenticatedRequest<{ submission_id: string; status: string; auto_score: string }>(
-    "app/online-exams/" + examId + "/submit/",
-    { method: "POST", body: JSON.stringify({ answers }) },
-  );
-}
-
-export async function getFeeStatement(studentId: string) {
-  return authenticatedRequest<FeeStatement>(
-    "fees/students/" + encodeURIComponent(studentId) + "/statement/",
-  );
-}
-
-export async function getUserNotifications() {
-  return authenticatedRequest<NotificationsResponse>("notifications/");
-}
-
-export async function markNotificationRead(notificationId: string) {
-  return authenticatedRequest<{ status: string; id: string; is_read: boolean }>(
-    "notifications/" + notificationId + "/read/",
-    { method: "POST", body: JSON.stringify({}) },
-  );
-}
-
-export async function markAllNotificationsRead() {
-  return authenticatedRequest<{ status: string; marked_read_count: number }>(
-    "notifications/",
-    { method: "POST", body: JSON.stringify({}) },
-  );
-}
-
-export async function getConversations() {
-  const result = await authenticatedRequest<ListResult<Conversation>>("app/conversations/");
-  return toResults(result);
-}
-
-export async function getConversationMessages(conversationId: string) {
-  return authenticatedRequest<ConversationMessagesResponse>(
-    "app/conversations/" + conversationId + "/messages/",
-  );
-}
-
-export async function sendConversationMessage(conversationId: string, body: string) {
-  return authenticatedRequest<ConversationMessage>(
-    "app/conversations/" + conversationId + "/messages/",
-    { method: "POST", body: JSON.stringify({ body }) },
-  );
-}
-
-export async function markConversationRead(conversationId: string) {
-  return authenticatedRequest<{ conversation_id: string; last_read_at: string }>(
-    "app/conversations/" + conversationId + "/read/",
-    { method: "POST", body: JSON.stringify({}) },
-  );
-}
-
-export async function setConversationMuted(conversationId: string, muted: boolean) {
-  return authenticatedRequest<{ conversation_id: string; is_muted: boolean }>(
-    "app/conversations/" + conversationId + "/mute/",
-    { method: "POST", body: JSON.stringify({ muted }) },
-  );
-}
-
-
 export type TeacherAttendanceAssignment = {
   id: string;
   section: string;
@@ -448,6 +249,10 @@ export type AttendanceStatusOption = {
   name: string;
   category: string;
   color_code: string;
+  counts_as_present: boolean;
+  counts_as_absent: boolean;
+  is_excused: boolean;
+  is_default: boolean;
   is_active: boolean;
   display_order: number;
 };
@@ -459,12 +264,13 @@ export type AttendanceRegister = {
   section_name: string;
   date: string;
   session_type: string;
-  status: string;
+  status: "open" | "submitted" | "approved" | "locked" | string;
   student_records: {
     id: string;
     student: string;
     student_name: string;
     student_id_number: string;
+    status_type: string | null;
     status_category: string;
     late_minutes: number;
     notes: string;
@@ -479,34 +285,144 @@ export type AttendanceStudent = {
   section_name: string;
 };
 
-export async function getTeacherAssignmentsForAttendance() {
-  const result = await authenticatedRequest<ListResult<TeacherAttendanceAssignment>>(
-    "app/teacher-assignments/",
+export async function getAttendanceRecords(studentId?: string) {
+  const query = studentId ? "?student_id=" + encodeURIComponent(studentId) : "";
+  return authenticatedRequest<AttendanceResponse>("attendance/me/children/records/" + query);
+}
+
+export async function getAttendanceScores(studentId?: string) {
+  const query = studentId ? "?student_id=" + encodeURIComponent(studentId) : "";
+  return authenticatedRequest<{ results: AttendanceScore[]; count: number }>(
+    "attendance/me/children/scores/" + query,
   );
-  return toResults(result);
+}
+
+export async function getAttendanceExcuses() {
+  return authenticatedListRequest<AttendanceExcuse>("attendance/excuses/");
+}
+
+export async function createAttendanceExcuse(input: {
+  student: string;
+  request_type: string;
+  start_date: string;
+  end_date: string;
+  reason: string;
+}) {
+  return authenticatedRequest<AttendanceExcuse>("attendance/excuses/", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getOnlineExams() {
+  return authenticatedListRequest<OnlineExam>("app/online-exams/");
+}
+
+export async function getExamPaper(examId: string) {
+  return authenticatedRequest<ExamPaper>("app/online-exams/" + encodeURIComponent(examId) + "/paper/");
+}
+
+export async function startOnlineExam(examId: string) {
+  return authenticatedRequest<ExamStartResult>(
+    "app/online-exams/" + encodeURIComponent(examId) + "/start/",
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function submitOnlineExam(examId: string, answers: Record<string, string>) {
+  return authenticatedRequest<{ submission_id: string; status: string; auto_score: string }>(
+    "app/online-exams/" + encodeURIComponent(examId) + "/submit/",
+    { method: "POST", body: JSON.stringify({ answers }) },
+  );
+}
+
+export async function getFeeStatement(studentId: string) {
+  return authenticatedRequest<FeeStatement>(
+    "fees/students/" + encodeURIComponent(studentId) + "/statement/",
+  );
+}
+
+export async function getUserNotifications() {
+  return authenticatedRequest<NotificationsResponse>("notifications/");
+}
+
+export async function markNotificationRead(notificationId: string) {
+  return authenticatedRequest<{ status: string; id: string; is_read: boolean }>(
+    "notifications/" + encodeURIComponent(notificationId) + "/read/",
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function markAllNotificationsRead() {
+  return authenticatedRequest<{ status: string; marked_read_count: number }>(
+    "notifications/",
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function getNotificationPreferences() {
+  return authenticatedRequest<NotificationPreference[]>("app/notification-preferences/");
+}
+
+export async function updateNotificationPreference(id: string, isEnabled: boolean) {
+  return authenticatedRequest<NotificationPreference>(
+    "app/notification-preferences/" + encodeURIComponent(id) + "/",
+    { method: "PATCH", body: JSON.stringify({ is_enabled: isEnabled }) },
+  );
+}
+
+export async function getConversations() {
+  return authenticatedListRequest<Conversation>("app/conversations/");
+}
+
+export async function getConversationMessages(conversationId: string, before?: string) {
+  const query = before ? "?before=" + encodeURIComponent(before) : "";
+  return authenticatedRequest<ConversationMessagesResponse>(
+    "app/conversations/" + encodeURIComponent(conversationId) + "/messages/" + query,
+  );
+}
+
+export async function sendConversationMessage(conversationId: string, body: string) {
+  return authenticatedRequest<ConversationMessage>(
+    "app/conversations/" + encodeURIComponent(conversationId) + "/messages/",
+    { method: "POST", body: JSON.stringify({ body }) },
+  );
+}
+
+export async function markConversationRead(conversationId: string) {
+  return authenticatedRequest<{ conversation_id: string; last_read_at: string }>(
+    "app/conversations/" + encodeURIComponent(conversationId) + "/read/",
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function setConversationMuted(conversationId: string, muted: boolean) {
+  return authenticatedRequest<{ conversation_id: string; is_muted: boolean }>(
+    "app/conversations/" + encodeURIComponent(conversationId) + "/mute/",
+    { method: "POST", body: JSON.stringify({ muted }) },
+  );
+}
+
+export async function getTeacherAssignmentsForAttendance() {
+  return authenticatedListRequest<TeacherAttendanceAssignment>("app/teacher-assignments/");
 }
 
 export async function getAttendanceStatusTypes() {
-  const result = await authenticatedRequest<ListResult<AttendanceStatusOption>>(
-    "attendance/status-types/",
-  );
-  return toResults(result).filter((status) => status.is_active);
+  const result = await authenticatedListRequest<AttendanceStatusOption>("attendance/status-types/");
+  return result.filter((item) => item.is_active);
 }
 
 export async function getStudentsForAttendance(sectionId: string, academicYearId: string) {
   const query =
     "?section=" + encodeURIComponent(sectionId) +
     "&academic_year=" + encodeURIComponent(academicYearId);
-  const result = await authenticatedRequest<ListResult<AttendanceStudent>>("students/" + query);
-  return toResults(result);
+  return authenticatedListRequest<AttendanceStudent>("students/" + query);
 }
 
 export async function getAttendanceRegister(sectionId: string, date: string) {
   const query = "?section_id=" + encodeURIComponent(sectionId) + "&date=" + encodeURIComponent(date);
-  const result = await authenticatedRequest<ListResult<AttendanceRegister>>(
-    "attendance/registers/" + query,
-  );
-  return toResults(result)[0] ?? null;
+  const result = await authenticatedListRequest<AttendanceRegister>("attendance/registers/" + query);
+  return result[0] ?? null;
 }
 
 export async function openAttendanceRegister(
@@ -530,18 +446,14 @@ export async function recordAttendanceBulk(
   records: { student_id: string; status_category: string; late_minutes?: number; notes?: string }[],
 ) {
   return authenticatedRequest<{ message: string; updated_records: number }>(
-    "attendance/registers/" + registerId + "/bulk-record/",
+    "attendance/registers/" + encodeURIComponent(registerId) + "/bulk-record/",
     { method: "POST", body: JSON.stringify({ records }) },
   );
 }
 
 export async function submitAttendanceRegister(registerId: string) {
   return authenticatedRequest<AttendanceRegister>(
-    "attendance/registers/" + registerId + "/submit/",
+    "attendance/registers/" + encodeURIComponent(registerId) + "/submit/",
     { method: "POST", body: JSON.stringify({}) },
   );
-}
-
-export function workspaceSupportsAcademicModules(workspace: WorkspaceType) {
-  return ["student", "guardian", "teacher", "management"].includes(workspace);
 }
