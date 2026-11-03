@@ -34,6 +34,7 @@ class InventoryItemAdmin(ModelAdmin):
     list_filter = ("school", "category", "warehouse")
     search_fields = ("code", "name", "category")
     raw_id_fields = ("warehouse",)
+    readonly_fields = ("current_stock", "unit_cost")
 
 
 @admin.register(StockMovement)
