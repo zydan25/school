@@ -603,21 +603,27 @@ def _safe_whatsapp_auto_reply(inbound, gateway, message_text):
     school = inbound.school
     phone = inbound.sender_phone.replace("+", "").replace(" ", "").strip()
     phone_variants = [phone, f"+{phone}"]
-    student = Student.objects.filter(
+    students = Student.objects.filter(
         school=school, is_archived=False, user__phone__in=phone_variants,
         user__phone_verified_at__isnull=False, user__status="active",
-    ).select_related("section").first()
+    ).select_related("section")
+    student = students.first() if students.count() == 1 else None
     guardian = None
+    if student is None and students.count() > 1:
+        return "يرتبط رقم الهاتف بأكثر من ملف طالب. يرجى تحديد الملف من تطبيق المدرسة."
     if student is None:
-        guardian = Guardian.objects.filter(
+        guardians = Guardian.objects.filter(
             school=school, is_archived=False, user__phone__in=phone_variants,
             user__phone_verified_at__isnull=False, user__status="active",
-        ).select_related("user").first()
+        ).select_related("user")
+        guardian = guardians.first() if guardians.count() == 1 else None
+        if guardians.count() > 1:
+            return "يرتبط رقم الهاتف بأكثر من ملف ولي أمر. يرجى استخدام تطبيق المدرسة."
         children = guardian.children.filter(school=school, is_archived=False) if guardian else Student.objects.none()
         if children.count() == 1:
             student = children.first()
         elif children.exists():
-            return "تم التحقق من حساب ولي الأمر. يرجى تحديد اسم الطالب المطلوب عبر تطبيق المدرسة لضمان عرض بياناته الصحيحة."
+            return "تم التحقق من حساب ولي الأمر. يرجى تحديد الطالب المطلوب عبر تطبيق المدرسة لضمان عرض بياناته الصحيحة."
 
     message_text = str(message_text or "")[:2000]
     if student is None:

@@ -199,6 +199,9 @@ class NotificationOutboxTests(Stage12BaseTestCase):
         self.assertEqual(duplicate.status_code, 200)
         self.assertEqual(InboundWebhookMessage.objects.count(), 1)
         self.assertEqual(OutboxEvent.objects.filter(event_name="webhook.whatsapp.inbound").count(), 1)
+        process_outbox_batch(limit=1)
+        inbound.refresh_from_db()
+        self.assertTrue(inbound.processed)
 
     def test_gateway_credentials_are_encrypted_at_rest(self):
         gateway = SchoolMessagingGateway.objects.create(
