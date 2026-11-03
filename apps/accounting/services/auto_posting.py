@@ -687,12 +687,27 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
         if period.fiscal_year_id != locked_entry.fiscal_year_id:
             raise ValidationError("الفترة المحاسبية لا تتبع السنة المالية لسجل الإهلاك.")
 
-        depreciation_expense = _get_account_or_seed(
+        category = locked_asset.category
+        depreciation_expense = category.depreciation_expense_account or _get_account_or_seed(
             school, "5209", "مصروف إهلاك الأصول",
         )
-        accumulated_depreciation = _get_account_or_seed(
+        accumulated_depreciation = category.accumulated_depreciation_account or _get_account_or_seed(
             school, "1209", "مجمع إهلاك الأصول المتراكم",
         )
+        if (
+            depreciation_expense.school_id != school.pk
+            or depreciation_expense.account_type != Account.AccountType.EXPENSE
+            or not depreciation_expense.is_leaf
+            or depreciation_expense.is_archived
+        ):
+            raise ValidationError("حساب مصروف الإهلاك غير صالح.")
+        if (
+            accumulated_depreciation.school_id != school.pk
+            or accumulated_depreciation.account_type != Account.AccountType.ASSET
+            or not accumulated_depreciation.is_leaf
+            or accumulated_depreciation.is_archived
+        ):
+            raise ValidationError("حساب مجمع الإهلاك غير صالح.")
         asset_branch_id = locked_entry.branch_id or locked_asset.branch_id
         journal_entry = JournalEntry.objects.create(
             school=school,
@@ -732,6 +747,9 @@ def post_asset_depreciation_to_journal(entry: AssetDepreciationEntry) -> Journal
         journal_entry.post()
         locked_asset.accumulated_depreciation += locked_entry.depreciation_amount
         locked_asset.save(update_fields=["accumulated_depreciation", "updated_at"])
+        locked_entry.journal_entry = journal_entry
+        locked_entry.posted_at = timezone.now()
+        locked_entry.save(update_fields=["journal_entry", "posted_at", "updated_at"])
         return journal_entry
 
 @transaction.atomic
@@ -939,9 +957,23 @@ def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
 
         post_date = locked_invoice.invoice_date or timezone.localdate()
         period = _get_active_fiscal_period(school, post_date)
-        debit_acc = _get_account_or_seed(
-            school, "1106", "مخزون الكتب والقرطاسية والزي",
-        )
+        if locked_invoice.accounting_treatment == VendorInvoice.AccountingTreatment.FIXED_ASSET:
+            debit_acc = locked_invoice.expense_account or _get_account_or_seed(
+                school, "1201", "الأصول الثابتة",
+            )
+        elif locked_invoice.accounting_treatment == VendorInvoice.AccountingTreatment.EXPENSE:
+            debit_acc = locked_invoice.expense_account
+            if debit_acc is None:
+                raise ValidationError("فاتورة المصروف تتطلب تحديد حساب مصروف تفصيلي.")
+        else:
+            debit_acc = _get_account_or_seed(
+                school, "1106", "مخزون الكتب والقرطاسية والزي",
+            )
+        if (
+            debit_acc.school_id != school.pk or not debit_acc.is_leaf
+            or debit_acc.is_archived
+        ):
+            raise ValidationError("حساب مدين فاتورة المورد غير صالح أو لا يتبع المدرسة.")
         credit_acc = _get_account_or_seed(
             school, "2101", "ذمم الموردين والشركات الدائنة",
         )
@@ -965,7 +997,8 @@ def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
             branch=locked_invoice.branch,
             journal_entry=entry,
             account=debit_acc,
-            description=f"إثبات بضاعة / مخزون مورد: {locked_invoice.supplier.name}",
+            cost_center=locked_invoice.cost_center,
+            description=f"إثبات فاتورة المورد: {locked_invoice.supplier.name}",
             debit=locked_invoice.total_amount,
             credit=Decimal("0.00"),
         )
@@ -974,6 +1007,7 @@ def post_vendor_invoice_to_journal(vendor_invoice, user=None) -> JournalEntry:
             branch=locked_invoice.branch,
             journal_entry=entry,
             account=credit_acc,
+            cost_center=locked_invoice.cost_center,
             description=(
                 f"استحقاق ذمة المورد: {locked_invoice.supplier.name} "
                 f"- فاتورة #{locked_invoice.invoice_number}"
@@ -998,22 +1032,32 @@ def disburse_vendor_payment(
     idempotency_key: str = "",
 ) -> tuple[JournalEntry, PaymentVoucher]:
     """سداد المورد بقيد واحد مع مفتاح اختياري يمنع تكرار طلب السداد نفسه."""
-    from apps.inventory.models import VendorInvoice
+    from apps.inventory.models import VendorInvoice, VendorInvoicePayment
     from apps.tenants.models import School
 
+    normalized_key = (idempotency_key or "").strip()
+    if len(normalized_key) < 8 or len(normalized_key) > 100:
+        raise ValidationError("مفتاح منع تكرار سداد المورد يجب أن يكون بين 8 و100 حرف.")
     if amount <= Decimal("0.00"):
         raise ValidationError("مبلغ السداد يجب أن يكون أكبر من الصفر.")
     if idempotency_key and len(idempotency_key.strip()) < 8:
         raise ValidationError("مفتاح منع التكرار يجب ألا يقل عن 8 أحرف.")
     school = vendor_invoice.school
-    if payment_account.school_id != school.pk:
-        raise ValidationError("حساب السداد لا يتبع نفس المدرسة الخاصة بالفاتورة.")
+    if payment_account.school_id != school.pk or payment_account.is_archived:
+        raise ValidationError("حساب السداد غير صالح أو لا يتبع المدرسة نفسها.")
     if payment_account.account_type != Account.AccountType.ASSET or not payment_account.is_leaf:
         raise ValidationError("حساب السداد يجب أن يكون حساب أصول تفصيلياً (صندوق أو بنك).")
 
     with transaction.atomic():
         School.objects.select_for_update().get(pk=school.pk)
         locked_invoice = VendorInvoice.objects.select_for_update().get(pk=vendor_invoice.pk)
+        recorded_payment = VendorInvoicePayment.objects.select_for_update().filter(
+            school=school, idempotency_key=normalized_key, is_archived=False,
+        ).select_related("payment_voucher", "journal_entry").first()
+        if recorded_payment:
+            if recorded_payment.invoice_id != locked_invoice.pk or recorded_payment.amount != amount:
+                raise ValidationError("مفتاح منع التكرار مستخدم لسداد فاتورة أخرى أو بمبلغ مختلف.")
+            return recorded_payment.journal_entry, recorded_payment.payment_voucher
         vendor_payable_acc = _get_account_or_seed(
             school, "2101", "ذمم الموردين والشركات الدائنة",
         )
@@ -1035,14 +1079,18 @@ def disburse_vendor_payment(
                 if not same_data:
                     raise ValidationError("مفتاح منع التكرار مستخدم لسداد ببيانات مختلفة.")
                 if existing.status == PaymentVoucher.Status.POSTED and existing.journal_entry_id:
-                    return existing.journal_entry, existing
-                if existing.status != PaymentVoucher.Status.DRAFT:
+                    payment_voucher = existing
+                    already_posted = True
+                elif existing.status != PaymentVoucher.Status.DRAFT:
                     raise ValidationError("سند السداد السابق ليس مسودة قابلة للاستكمال.")
                 payment_voucher = existing
             else:
                 payment_voucher = None
         else:
             payment_voucher = None
+
+        if "already_posted" not in locals():
+            already_posted = False
 
         if payment_voucher is None:
             if amount > locked_invoice.remaining_amount:
@@ -1139,10 +1187,22 @@ def disburse_vendor_payment(
         payment_voucher.status = PaymentVoucher.Status.POSTED
         payment_voucher.save(update_fields=["journal_entry", "status", "updated_at"])
 
-        locked_invoice.paid_amount += amount
-        if locked_invoice.paid_amount >= locked_invoice.total_amount:
-            locked_invoice.status = VendorInvoice.Status.PAID
-        else:
-            locked_invoice.status = VendorInvoice.Status.PARTIAL
-        locked_invoice.save(update_fields=["paid_amount", "status", "updated_at"])
+        if not already_posted:
+            locked_invoice.paid_amount += amount
+            if locked_invoice.paid_amount >= locked_invoice.total_amount:
+                locked_invoice.status = VendorInvoice.Status.PAID
+            else:
+                locked_invoice.status = VendorInvoice.Status.PARTIAL
+            locked_invoice.save(update_fields=["paid_amount", "status", "updated_at"])
+        VendorInvoicePayment.objects.create(
+            school=school,
+            branch=locked_invoice.branch,
+            invoice=locked_invoice,
+            payment_voucher=payment_voucher,
+            journal_entry=entry,
+            amount=amount,
+            idempotency_key=normalized_key,
+            payment_date=payment_date,
+            recorded_by=user,
+        )
         return entry, payment_voucher
