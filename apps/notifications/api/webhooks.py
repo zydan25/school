@@ -5,7 +5,7 @@ import base64
 import hashlib
 import hmac
 
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
@@ -195,7 +195,7 @@ class WhatsAppWebhookAPIView(APIView):
             if not reference or provider_status not in {"sent", "accepted", "delivered", "read", "failed"}:
                 continue
             key_digest = hashlib.sha256(
-                f"{reference}|{provider_status}|{gateway.provider}".encode("utf-8")
+                f"{reference}|{provider_status}|{gateway.provider}".encode()
             ).hexdigest()
             enqueue_event(
                 event_name="notification.delivery_receipt",
