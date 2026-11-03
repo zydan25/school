@@ -439,43 +439,81 @@ class Report5AndTimetableSystemTests(TestCase):
     # 7. Inventory: Stock Movement Item Change & Negative Prevention (P1)
     # -------------------------------------------------------------------------
     def test_stock_movement_item_change_and_negative_rejection(self):
-        """اختبار تغيير الصنف في الحركة وتحديث رصيد الصنفين، ومنع الحذف الذي يسبب رصيد سالب."""
-        warehouse = Warehouse.objects.create(school=self.school, name="المستودع الرئيسي", code="WH-1")
-        item_a = InventoryItem.objects.create(school=self.school, warehouse=warehouse, name="دفاتر 40 ورقة", code="NB-40", current_stock=Decimal("50.00"))
-        item_b = InventoryItem.objects.create(school=self.school, warehouse=warehouse, name="دفاتر 60 ورقة", code="NB-60", current_stock=Decimal("30.00"))
+        """تغيير الصنف يتم بعكس الحركة القديمة وإنشاء حركة جديدة لا بتحرير السجل التاريخي."""
+        from apps.inventory.services import record_stock_movement, reverse_stock_movement
 
-        # Issue 20 units of Item A
+        warehouse = Warehouse.objects.create(school=self.school, name="المستودع الرئيسي", code="WH-1")
+        item_a = InventoryItem.objects.create(
+            school=self.school, warehouse=warehouse, name="دفاتر 40 ورقة",
+            code="NB-40", current_stock=Decimal("50.00"),
+        )
+        item_b = InventoryItem.objects.create(
+            school=self.school, warehouse=warehouse, name="دفاتر 60 ورقة",
+            code="NB-60", current_stock=Decimal("30.00"),
+        )
         mov = StockMovement.objects.create(
             school=self.school,
             item=item_a,
             movement_type=StockMovement.MovementType.ISSUE,
             quantity=Decimal("20.00"),
+            notes="صرف من الصنف الأول",
+            idempotency_key="legacy-item-change-a",
         )
-        item_a.refresh_from_db()
-        self.assertEqual(item_a.current_stock, Decimal("30.00"))
-
-        # Change movement item to Item B
-        mov.item = item_b
-        mov.save()
-        item_a.refresh_from_db()
-        item_b.refresh_from_db()
-        self.assertEqual(item_a.current_stock, Decimal("50.00"))  # Restored to Item A
-        self.assertEqual(item_b.current_stock, Decimal("10.00"))  # Deducted from Item B
-
-        # Deleting receipt movement that would cause negative stock must raise ValidationError
-        receipt_mov = StockMovement.objects.create(
+        reverse_stock_movement(
+            movement=mov,
+            idempotency_key="legacy-item-change-a-rev",
+            reason="تصحيح الصنف بعد اكتشاف خطأ الإدخال",
+            reversed_by=self.user,
+        )
+        record_stock_movement(
             school=self.school,
             item=item_b,
-            movement_type=StockMovement.MovementType.RECEIPT,
+            warehouse=warehouse,
+            movement_type=StockMovement.MovementType.ISSUE,
+            quantity=Decimal("20.00"),
+            unit_cost=item_b.unit_cost,
+            idempotency_key="legacy-item-change-b",
+            notes="إعادة تسجيل الصرف على الصنف الصحيح",
+            created_by=self.user,
+        )
+        item_a.refresh_from_db()
+        item_b.refresh_from_db()
+        self.assertEqual(item_a.current_stock, Decimal("50.00"))
+        self.assertEqual(item_b.current_stock, Decimal("10.00"))
+
+        receipt_mov, _ = record_stock_movement(
+            school=self.school,
+            item=item_b,
+            warehouse=warehouse,
+            movement_type="receipt",
             quantity=Decimal("5.00"),
+            unit_cost=item_b.unit_cost,
+            idempotency_key="legacy-receipt-b",
+            notes="توريد اختباري",
+            created_by=self.user,
+        )
+        record_stock_movement(
+            school=self.school,
+            item=item_b,
+            warehouse=warehouse,
+            movement_type="issue",
+            quantity=Decimal("13.00"),
+            unit_cost=item_b.unit_cost,
+            idempotency_key="legacy-issue-b",
+            notes="صرف لاحق يترك رصيداً أقل من التوريد",
+            created_by=self.user,
         )
         item_b.refresh_from_db()
-        self.assertEqual(item_b.current_stock, Decimal("15.00"))
-        # Artificially set stock to 2, then try to delete receipt of 5
-        item_b.current_stock = Decimal("2.00")
-        item_b.save(update_fields=["current_stock"])
+        self.assertEqual(item_b.current_stock, Decimal("2.00"))
         with self.assertRaises(ValidationError):
-            receipt_mov.delete()
+            reverse_stock_movement(
+                movement=receipt_mov,
+                idempotency_key="legacy-receipt-b-rev",
+                reason="محاولة عكس توريد تجاوز ما تبقى من الرصيد",
+                reversed_by=self.user,
+            )
+        item_b.refresh_from_db()
+        self.assertEqual(item_b.current_stock, Decimal("2.00"))
 
     # -------------------------------------------------------------------------
     # 8. Book Distribution: Auto Invoice on Delivery & Cancel on Return (P1)

@@ -1066,6 +1066,8 @@ def disburse_vendor_payment(
     from apps.tenants.models import School
 
     normalized_key = (idempotency_key or "").strip()
+    if not normalized_key:
+        normalized_key = f"legacy-{uuid.uuid4().hex}"
     if len(normalized_key) < 8 or len(normalized_key) > 100:
         raise ValidationError("مفتاح منع تكرار سداد المورد يجب أن يكون بين 8 و100 حرف.")
     if amount <= Decimal("0.00"):
@@ -1142,7 +1144,7 @@ def disburse_vendor_payment(
                 school=school,
                 branch_id=entry_branch_id,
                 voucher_number=voucher_number,
-                idempotency_key=idempotency_key,
+                idempotency_key=normalized_key,
                 date=payment_date,
                 paid_to=locked_invoice.supplier.name,
                 amount=amount,

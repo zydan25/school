@@ -467,18 +467,20 @@ class StudentBookDistribution(TenantOwnedModel):
             if locked_dist.delivery_status == self.DeliveryStatus.DELIVERED:
                 return
             if locked_dist.inventory_item:
-                from apps.inventory.models import InventoryItem, StockMovement
-                item = InventoryItem.objects.select_for_update().get(pk=locked_dist.inventory_item_id)
-                if item.current_stock < locked_dist.quantity:
-                    raise ValidationError(f"رصيد الكتاب المخزني ({item.current_stock}) غير كافٍ لصرف كمية ({locked_dist.quantity}).")
-                StockMovement.objects.create(
+                from apps.inventory.services import record_stock_movement
+                item = locked_dist.inventory_item
+                record_stock_movement(
                     school=locked_dist.school,
                     item=item,
-                    movement_type=StockMovement.MovementType.ISSUE,
+                    warehouse=item.warehouse,
+                    movement_type="issue",
                     quantity=locked_dist.quantity,
                     unit_cost=item.unit_cost,
+                    idempotency_key=f"book-delivery-{locked_dist.pk}",
+                    notes=f"تسليم كتاب للطالب {locked_dist.student.student_id_number}",
                     recipient_name=f"الطالب: {locked_dist.student}",
                     reference=f"تسليم كتاب للطالب {locked_dist.student.student_id_number}",
+                    created_by=user,
                 )
             # الربط المالي التلقائي: إنشاء فاتورة رسوم الكتاب إن وجدت قيمة للرسم
             if locked_dist.fee_amount > Decimal("0.00") and not locked_dist.invoice:
@@ -530,16 +532,20 @@ class StudentBookDistribution(TenantOwnedModel):
             if locked_dist.delivery_status != self.DeliveryStatus.DELIVERED:
                 return
             if locked_dist.inventory_item:
-                from apps.inventory.models import InventoryItem, StockMovement
-                item = InventoryItem.objects.select_for_update().get(pk=locked_dist.inventory_item_id)
-                StockMovement.objects.create(
+                from apps.inventory.services import record_stock_movement
+                item = locked_dist.inventory_item
+                record_stock_movement(
                     school=locked_dist.school,
                     item=item,
-                    movement_type=StockMovement.MovementType.RECEIPT,
+                    warehouse=item.warehouse,
+                    movement_type="receipt",
                     quantity=locked_dist.quantity,
                     unit_cost=item.unit_cost,
+                    idempotency_key=f"book-return-{locked_dist.pk}",
+                    notes=f"استرجاع كتاب من الطالب {locked_dist.student.student_id_number}",
                     recipient_name=f"استرجاع من الطالب: {locked_dist.student}",
                     reference=f"استرجاع كتاب من الطالب {locked_dist.student.student_id_number}",
+                    created_by=user,
                 )
 
             # معالجة الأثر المالي عند استرجاع الكتاب

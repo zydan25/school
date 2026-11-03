@@ -1,11 +1,11 @@
 """Procurement and inventory management domain models."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.core.models import TenantOwnedModel, TenantQuerySet
@@ -125,18 +125,40 @@ class InventoryItem(TenantOwnedModel):
             raise ValidationError({"warehouse": "المستودع لا يتبع المدرسة نفسها."})
         if self.current_stock < 0 or self.unit_cost < 0 or self.reorder_level < 0:
             raise ValidationError("الرصيد والتكلفة وحد إعادة الطلب لا يمكن أن تكون سالبة.")
-        if self._state.adding and self.current_stock != 0:
-            raise ValidationError({"current_stock": "رصيد البداية ينشأ عبر حركة افتتاحية موثقة، وليس من بطاقة الصنف."})
 
     def save(self, *args, **kwargs):
-        if self.pk:
+        is_new = self._state.adding
+        opening_quantity = self.current_stock if is_new else Decimal("0.00")
+        opening_cost = self.unit_cost
+        if not is_new:
             original = InventoryItem.objects.filter(pk=self.pk).first()
             if original and (
                 original.current_stock != self.current_stock
                 or original.unit_cost != self.unit_cost
             ):
                 raise ValidationError("رصيد الصنف ومتوسط تكلفته لا يعدلان مباشرة؛ استخدم حركات المخزون.")
-        return super().save(*args, **kwargs)
+        if is_new and opening_quantity > 0:
+            # Legacy callers may supply an opening count while creating a
+            # stock card. Persist it as an immutable opening ledger movement.
+            self.current_stock = Decimal("0.00")
+        with transaction.atomic():
+            result = super().save(*args, **kwargs)
+            if is_new and opening_quantity > 0:
+                StockMovement.objects.create(
+                    school=self.school,
+                    branch=self.warehouse.branch or self.branch,
+                    item=self,
+                    warehouse=self.warehouse,
+                    movement_type=StockMovement.MovementType.OPENING,
+                    quantity=opening_quantity,
+                    unit_cost=opening_cost,
+                    date=timezone.localdate(),
+                    reference=f"رصيد افتتاحي للصنف {self.code}",
+                    notes="رصيد افتتاحي مرحّل من بطاقة الصنف إلى دفتر الحركات.",
+                    idempotency_key=f"opening-{self.pk}",
+                )
+                self.refresh_from_db(fields=["current_stock", "unit_cost"])
+            return result
 
     def __str__(self) -> str:
         return f"[{self.code}] {self.name} (المتوفر: {self.current_stock})"
@@ -202,6 +224,7 @@ class StockMovement(TenantOwnedModel):
     objects = StockMovementQuerySet.as_manager()
 
     class MovementType(models.TextChoices):
+        OPENING = "opening", "رصيد افتتاحي"
         RECEIPT = "receipt", "توريد وارد (مشتريات)"
         ISSUE = "issue", "صرف"
         ADJUSTMENT_ADD = "adj_add", "تسوية جردية بالزيادة"
@@ -270,6 +293,7 @@ class StockMovement(TenantOwnedModel):
     @property
     def is_inbound(self) -> bool:
         return self.movement_type in {
+            self.MovementType.OPENING,
             self.MovementType.RECEIPT,
             self.MovementType.ADJUSTMENT_ADD,
             self.MovementType.TRANSFER_IN,
@@ -556,7 +580,9 @@ class PurchaseOrderItem(TenantOwnedModel):
             order = PurchaseOrder.objects.get(pk=self.purchase_order_id)
             if order.status != PurchaseOrder.Status.DRAFT:
                 raise ValidationError("لا يمكن تعديل بنود أمر شراء بعد اعتماده.")
-        self.total_price = self.quantity * self.unit_price
+        self.total_price = (self.quantity * self.unit_price).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP,
+        )
         super().save(*args, **kwargs)
         total = PurchaseOrderItem.objects.filter(
             purchase_order_id=self.purchase_order_id, is_archived=False,

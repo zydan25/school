@@ -409,7 +409,9 @@ class Report4FixesTestCase(TestCase):
 
     # ---------------- 6. Inventory StockMovement Updates and Deletes ----------------
     def test_stock_movement_updates_and_deletes_adjusts_stock(self):
-        """التحقق من تصحيح رصيد المخزون عند تعديل أو حذف حركات المخزون."""
+        """الحركات التاريخية لا تعدل أو تحذف؛ التصحيح يكون بحركة عكسية مرتبطة."""
+        from apps.inventory.services import reverse_stock_movement
+
         wh = Warehouse.objects.create(school=self.school, name="المستودع الرئيسي", code="WH-1")
         item = InventoryItem.objects.create(
             school=self.school,
@@ -419,25 +421,32 @@ class Report4FixesTestCase(TestCase):
             current_stock=Decimal("100.00"),
             unit_cost=Decimal("20.00"),
         )
-        # Create issue movement of 20 units -> stock drops to 80
         mv = StockMovement.objects.create(
             school=self.school,
             item=item,
             movement_type=StockMovement.MovementType.ISSUE,
             quantity=Decimal("20.00"),
             unit_cost=Decimal("20.00"),
+            notes="صرف تجريبي",
+            idempotency_key="legacy-movement-issue-001",
         )
         item.refresh_from_db()
         self.assertEqual(item.current_stock, Decimal("80.00"))
 
-        # Update movement quantity to 35 -> stock should be 100 - 35 = 65
         mv.quantity = Decimal("35.00")
-        mv.save()
+        with self.assertRaises(ValidationError):
+            mv.save()
+        with self.assertRaises(ValidationError):
+            mv.delete()
         item.refresh_from_db()
-        self.assertEqual(item.current_stock, Decimal("65.00"))
+        self.assertEqual(item.current_stock, Decimal("80.00"))
 
-        # Delete movement -> stock should restore back to 100
-        mv.delete()
+        reverse_stock_movement(
+            movement=mv,
+            idempotency_key="legacy-movement-reverse-001",
+            reason="عكس سند الصرف التجريبي",
+            reversed_by=self.user,
+        )
         item.refresh_from_db()
         self.assertEqual(item.current_stock, Decimal("100.00"))
 
