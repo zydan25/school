@@ -7,7 +7,7 @@ import { AppIcon } from "@/shared/components/app-icon";
 
 type Props = { title?: string; subtitle?: string };
 
-export function AppBrand({ title = "School", subtitle = "منصة المدرسة في هاتفك" }: Props) {
+export function AppBrand({ title = "مدرستي", subtitle = "منصة المدرسة في هاتفك" }: Props) {
   return (
     <View style={styles.container}>
       <View style={styles.logo}><AppIcon icon={GraduationCap} size={30} color={palette.white} /></View>
