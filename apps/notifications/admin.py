@@ -1,15 +1,29 @@
+from django import forms
 from django.contrib import admin
 from unfold.admin import ModelAdmin
 
 from apps.core.admin import AuditedAdminMixin
 from apps.notifications.models import (
-    InboundWebhookMessage,
-    Notification,
-    NotificationPreference,
-    NotificationTemplate,
-    OutboxEvent,
-    SchoolMessagingGateway,
+    InboundWebhookMessage, Notification, NotificationDeliveryAttempt,
+    NotificationPreference, NotificationTemplate, OutboxEvent, SchoolMessagingGateway,
 )
+
+
+class SchoolMessagingGatewayAdminForm(forms.ModelForm):
+    auth_token = forms.CharField(required=False, widget=forms.PasswordInput(render_value=False), label="مفتاح المصادقة")
+    webhook_verify_token = forms.CharField(required=False, widget=forms.PasswordInput(render_value=False), label="سر توقيع Webhook")
+
+    class Meta:
+        model = SchoolMessagingGateway
+        fields = "__all__"
+
+    def clean_auth_token(self):
+        value = self.cleaned_data.get("auth_token")
+        return value if value else (self.instance.auth_token if self.instance.pk else "")
+
+    def clean_webhook_verify_token(self):
+        value = self.cleaned_data.get("webhook_verify_token")
+        return value if value else (self.instance.webhook_verify_token if self.instance.pk else "")
 
 
 @admin.register(Notification)
@@ -21,9 +35,7 @@ class NotificationAdmin(AuditedAdminMixin, ModelAdmin):
     readonly_fields = ("id", "read_at", "sent_at", "delivered_at", "provider_reference", "created_at", "updated_at")
     date_hierarchy = "created_at"
     list_select_related = ("school", "recipient")
-
-    def has_delete_permission(self, request, obj=None):
-        return False
+    def has_delete_permission(self, request, obj=None): return False
 
 
 @admin.register(NotificationTemplate)
@@ -46,6 +58,7 @@ class NotificationPreferenceAdmin(AuditedAdminMixin, ModelAdmin):
 
 @admin.register(SchoolMessagingGateway)
 class SchoolMessagingGatewayAdmin(AuditedAdminMixin, ModelAdmin):
+    form = SchoolMessagingGatewayAdminForm
     list_display = ("name", "school", "channel", "provider", "sender_id", "auto_ai_reply", "is_active")
     list_filter = ("channel", "provider", "auto_ai_reply", "is_active", "school")
     search_fields = ("name", "sender_id", "api_endpoint_url", "school__name")
@@ -59,7 +72,7 @@ class InboundWebhookMessageAdmin(AuditedAdminMixin, ModelAdmin):
     list_filter = ("processed", "school", "created_at")
     search_fields = ("provider_msg_id", "sender_phone", "school__name")
     autocomplete_fields = ("school",)
-    readonly_fields = ("id", "created_at", "updated_at")
+    readonly_fields = ("id", "created_at", "updated_at", "last_error")
 
 
 @admin.register(OutboxEvent)
@@ -68,7 +81,16 @@ class OutboxEventAdmin(ModelAdmin):
     list_filter = ("status", "event_name", "school")
     search_fields = ("event_name", "aggregate_type", "aggregate_id", "idempotency_key")
     autocomplete_fields = ("school",)
-    readonly_fields = ("id", "event_name", "school", "aggregate_type", "aggregate_id", "payload", "status", "idempotency_key", "available_at", "attempts", "max_attempts", "last_error", "processed_at", "created_at", "updated_at")
+    readonly_fields = ("id", "event_name", "school", "aggregate_type", "aggregate_id", "payload", "status", "idempotency_key", "available_at", "attempts", "max_attempts", "last_error", "processed_at", "locked_at", "created_at", "updated_at")
+    def has_add_permission(self, request): return False
+    def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")
 
-    def has_add_permission(self, request):
-        return False
+
+@admin.register(NotificationDeliveryAttempt)
+class NotificationDeliveryAttemptAdmin(ModelAdmin):
+    list_display = ("notification", "attempt_number", "provider", "status", "response_code", "attempted_at")
+    list_filter = ("status", "provider", "attempted_at")
+    search_fields = ("notification__title", "provider_reference", "error_code")
+    readonly_fields = tuple(field.name for field in NotificationDeliveryAttempt._meta.fields)
+    def has_add_permission(self, request): return False
+    def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")

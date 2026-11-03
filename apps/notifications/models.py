@@ -8,6 +8,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from apps.core.models import UUIDTimestampedModel, TenantOwnedModel
+from apps.core.fields import EncryptedTextField
 
 
 class NotificationTemplate(UUIDTimestampedModel):
@@ -127,6 +128,7 @@ class OutboxEvent(UUIDTimestampedModel):
     max_attempts = models.PositiveSmallIntegerField("الحد الأقصى للمحاولات", default=8)
     last_error = models.TextField("آخر خطأ", blank=True)
     processed_at = models.DateTimeField("وقت المعالجة", null=True, blank=True)
+    locked_at = models.DateTimeField("وقت قفل العامل", null=True, blank=True, db_index=True)
 
     class Meta:
         verbose_name = "حدث قائمة المعالجة"
@@ -138,6 +140,38 @@ class OutboxEvent(UUIDTimestampedModel):
         return f"{self.event_name} - {self.status}"
 
 
+
+class NotificationDeliveryAttempt(UUIDTimestampedModel):
+    """محاولة تسليم واحدة، دون تخزين نص الرسالة أو بيانات الاعتماد في سجل المزود."""
+
+    class Status(models.TextChoices):
+        SUCCEEDED = "succeeded", "قبلها المزود"
+        FAILED = "failed", "فشلت المحاولة"
+
+    notification = models.ForeignKey(
+        Notification, on_delete=models.CASCADE, related_name="delivery_attempts",
+        verbose_name="الإشعار",
+    )
+    attempt_number = models.PositiveSmallIntegerField("رقم المحاولة")
+    destination_fingerprint = models.CharField("بصمة الوجهة", max_length=64, blank=True)
+    provider = models.CharField("المزود", max_length=40, blank=True)
+    status = models.CharField("الحالة", max_length=12, choices=Status.choices)
+    provider_reference = models.CharField("مرجع المزود", max_length=160, blank=True)
+    response_code = models.PositiveSmallIntegerField("رمز استجابة HTTP", null=True, blank=True)
+    error_code = models.CharField("رمز الخطأ", max_length=80, blank=True)
+    error_message = models.CharField("وصف الخطأ", max_length=500, blank=True)
+    attempted_at = models.DateTimeField("وقت المحاولة", default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "محاولة تسليم إشعار"
+        verbose_name_plural = "محاولات تسليم الإشعارات"
+        ordering = ["-attempted_at"]
+        indexes = [models.Index(fields=["notification", "attempted_at"], name="ntf_attempt_notif_time")]
+
+    def __str__(self):
+        return f"{self.notification_id} / {self.attempt_number} / {self.status}"
+
+
 # -----------------------------------------------------------------------------
 # WhatsApp & SMS Gateway Integrations per School (ربط بوابات الرسائل والواتساب)
 # -----------------------------------------------------------------------------
@@ -147,6 +181,7 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
     class Channel(models.TextChoices):
         WHATSAPP = "whatsapp", "واتساب للأعمال (WhatsApp)"
         SMS = "sms", "رسائل نصية قصيرة (SMS)"
+        PUSH = "push", "إشعارات Push"
 
     class Provider(models.TextChoices):
         CUSTOM_WEBHOOK = "custom_webhook", "رابط ويب هوك مخصص (Custom API)"
@@ -154,6 +189,7 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
         TWILIO = "twilio", "Twilio"
         INFOBIP = "infobip", "Infobip"
         LOCAL_GATEWAY = "local_gateway", "بوابة محلية (Local Gateway)"
+        GENERIC_HTTP = "generic_http", "بوابة HTTP موحدة"
 
     school = models.ForeignKey(
         "tenants.School",
@@ -169,15 +205,15 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
     
     # Endpoint & Authentication
     api_endpoint_url = models.URLField("رابط واجهة الإرسال (API Endpoint URL)", max_length=500)
-    auth_token = models.CharField("مفتاح المصادقة والتوكن (API Key / Token)", max_length=255, blank=True)
+    auth_token = EncryptedTextField("مفتاح المصادقة والتوكن (API Key / Token)", blank=True)
     sender_id = models.CharField("معرف المرسل أو رقم الهاتف (Instance ID / Sender Phone)", max_length=100, blank=True)
-    webhook_verify_token = models.CharField("المفتاح السري للتحقق من الرسائل الواردة (Webhook Secret)", max_length=100, blank=True)
+    webhook_verify_token = EncryptedTextField("المفتاح السري للتحقق من الرسائل الواردة (Webhook Secret)", blank=True)
     
     # AI Auto-Reply Behavior
     auto_ai_reply = models.BooleanField(
         "تفعيل الرد الآلي الذكي (AI Auto-Responder)",
-        default=True,
-        help_text="عند استقبال رسالة من عميل أو ولي أمر أو طالب، يجيب الذكاء الاصطناعي للمدرسة آلياً استناداً لبيانات المدرسة.",
+        default=False,
+        help_text="يظل الرد الآلي معطلاً افتراضياً لحماية بيانات الطلاب، ولا يفعل إلا بقرار صريح من المدرسة.",
     )
     
     # Templates & Headers
@@ -219,7 +255,8 @@ class InboundWebhookMessage(UUIDTimestampedModel):
     provider_msg_id = models.CharField("معرف الرسالة من المزود", max_length=255, db_index=True)
     sender_phone = models.CharField("رقم المرسل", max_length=50)
     received_at = models.DateTimeField("تاريخ ووقت الاستقبال", default=timezone.now)
-    processed = models.BooleanField("تمت المعالجة", default=True)
+    processed = models.BooleanField("تمت المعالجة", default=False)
+    last_error = models.CharField("آخر خطأ معالجة", max_length=500, blank=True)
 
     class Meta:
         verbose_name = "رسالة ويب هوك واردة"
