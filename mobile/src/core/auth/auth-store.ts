@@ -177,6 +177,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           set({ session });
         } catch (error) {
           if (error instanceof ApiError && error.status === 401) {
+            appQueryClient.clear();
             await clearStoredSession();
             set({ session: null });
           }
@@ -357,6 +358,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return token;
       } catch (error) {
         if (error instanceof ApiError && error.status === 401) {
+          appQueryClient.clear();
           await clearStoredSession();
           set({ session: null });
         }

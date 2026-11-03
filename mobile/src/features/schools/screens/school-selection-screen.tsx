@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { router } from "expo-router";
 import { StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text } from "react-native-paper";
@@ -25,9 +25,14 @@ const roleLabels: Record<string, string> = {
 
 export function SchoolSelectionScreen() {
   const session = useAuthStore((state) => state.session);
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const chooseSchool = useAuthStore((state) => state.chooseSchool);
   const logout = useAuthStore((state) => state.logout);
   const [selectionError, setSelectionError] = useState("");
+
+  useEffect(() => {
+    if (hasHydrated && !session) router.replace("/login" as never);
+  }, [hasHydrated, session]);
 
   async function selectSchool(id: string) {
     setSelectionError("");
