@@ -41,13 +41,17 @@ export type AttendanceExcuse = {
   id: string;
   student: string;
   student_name: string;
+  guardian?: string;
+  guardian_name?: string;
   request_type: string;
   start_date: string;
   end_date: string;
   reason: string;
+  attachment?: string | null;
   status: string;
   review_notes: string;
   created_at: string;
+  reviewed_at?: string | null;
 };
 
 export type OnlineExam = {
@@ -260,11 +264,16 @@ export type AttendanceStatusOption = {
 export type AttendanceRegister = {
   id: string;
   academic_year: string;
+  academic_term?: string | null;
   section: string;
   section_name: string;
+  grade_name?: string;
   date: string;
   session_type: string;
   status: "open" | "submitted" | "approved" | "locked" | string;
+  submitted_at?: string | null;
+  approved_at?: string | null;
+  locked_at?: string | null;
   student_records: {
     id: string;
     student: string;
@@ -455,5 +464,31 @@ export async function submitAttendanceRegister(registerId: string) {
   return authenticatedRequest<AttendanceRegister>(
     "attendance/registers/" + encodeURIComponent(registerId) + "/submit/",
     { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function getAttendanceRegisters(date?: string) {
+  const query = date ? "?date=" + encodeURIComponent(date) : "";
+  return authenticatedListRequest<AttendanceRegister>("attendance/registers/" + query);
+}
+
+export async function approveAttendanceRegister(registerId: string) {
+  return authenticatedRequest<AttendanceRegister>(
+    "attendance/registers/" + encodeURIComponent(registerId) + "/approve/",
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function reviewAttendanceExcuse(
+  excuseId: string,
+  approved: boolean,
+  reviewNotes: string,
+) {
+  return authenticatedRequest<AttendanceExcuse>(
+    "attendance/excuses/" + encodeURIComponent(excuseId) + "/review/",
+    {
+      method: "POST",
+      body: JSON.stringify({ is_approved: approved, review_notes: reviewNotes }),
+    },
   );
 }
