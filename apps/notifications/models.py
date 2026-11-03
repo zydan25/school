@@ -55,6 +55,7 @@ class Notification(UUIDTimestampedModel):
         DELIVERED = "delivered", "تم التسليم"
         FAILED = "failed", "فشل الإرسال"
         READ = "read", "مقروءة"
+        CANCELLED = "cancelled", "ملغاة"
 
     school = models.ForeignKey("tenants.School", verbose_name="المدرسة", null=True, blank=True, on_delete=models.PROTECT, related_name="notifications")
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="المستلم", on_delete=models.CASCADE, related_name="notifications")
@@ -173,6 +174,38 @@ class NotificationDeliveryAttempt(UUIDTimestampedModel):
         return f"{self.notification_id} / {self.attempt_number} / {self.status}"
 
 
+class NotificationDeliveryReceipt(UUIDTimestampedModel):
+    """Signed provider delivery/read/failure callback retained for audit."""
+
+    class Status(models.TextChoices):
+        SENT = "sent", "قبل المزود الإرسال"
+        DELIVERED = "delivered", "تم التسليم"
+        READ = "read", "قرأ المستلم الرسالة"
+        FAILED = "failed", "فشل التسليم"
+
+    notification = models.ForeignKey(
+        Notification, on_delete=models.CASCADE, related_name="delivery_receipts",
+        verbose_name="الإشعار",
+    )
+    provider = models.CharField("المزود", max_length=40)
+    provider_reference = models.CharField("مرجع المزود", max_length=160)
+    status = models.CharField("حالة التسليم", max_length=12, choices=Status.choices)
+    error_code = models.CharField("رمز فشل المزود", max_length=80, blank=True)
+    received_at = models.DateTimeField("وقت استلام الإيصال", default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "إيصال تسليم إشعار"
+        verbose_name_plural = "إيصالات تسليم الإشعارات"
+        ordering = ["-received_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["notification", "provider_reference", "status"],
+                name="ntf_receipt_status_uniq",
+            )
+        ]
+        indexes = [models.Index(fields=["provider_reference", "received_at"], name="ntf_receipt_provider_ref")]
+
+
 # -----------------------------------------------------------------------------
 # WhatsApp & SMS Gateway Integrations per School (ربط بوابات الرسائل والواتساب)
 # -----------------------------------------------------------------------------
@@ -226,6 +259,9 @@ class SchoolMessagingGateway(UUIDTimestampedModel):
         help_text="مثال: {'to': '{phone}', 'body': '{message}'}",
     )
     is_active = models.BooleanField("بوابة نشطة ومفعلة", default=True)
+    rate_limit_per_minute = models.PositiveSmallIntegerField("حد الإرسال في الدقيقة", default=60)
+    rate_limit_window_started_at = models.DateTimeField("بداية نافذة الإرسال", null=True, blank=True)
+    rate_limit_window_count = models.PositiveIntegerField("عدد الرسائل في النافذة", default=0)
 
     class Meta:
         verbose_name = "بوابة ربط رسائل / واتساب"
@@ -456,6 +492,9 @@ class SchoolEmailGateway(UUIDTimestampedModel):
     from_email = models.EmailField("عنوان المرسل", blank=True)
     use_tls = models.BooleanField("TLS", default=True)
     use_ssl = models.BooleanField("SSL", default=False)
+    rate_limit_per_minute = models.PositiveSmallIntegerField("حد الإرسال في الدقيقة", default=60)
+    rate_limit_window_started_at = models.DateTimeField("بداية نافذة الإرسال", null=True, blank=True)
+    rate_limit_window_count = models.PositiveIntegerField("عدد الرسائل في النافذة", default=0)
 
     class Meta:
         verbose_name = "بوابة البريد الإلكتروني للمدرسة"

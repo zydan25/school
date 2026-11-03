@@ -59,7 +59,7 @@ class NotificationPreferenceAdmin(AuditedAdminMixin, ModelAdmin):
 @admin.register(SchoolMessagingGateway)
 class SchoolMessagingGatewayAdmin(AuditedAdminMixin, ModelAdmin):
     form = SchoolMessagingGatewayAdminForm
-    list_display = ("name", "school", "channel", "provider", "sender_id", "auto_ai_reply", "is_active")
+    list_display = ("name", "school", "channel", "provider", "sender_id", "rate_limit_per_minute", "auto_ai_reply", "is_active")
     list_filter = ("channel", "provider", "auto_ai_reply", "is_active", "school")
     search_fields = ("name", "sender_id", "api_endpoint_url", "school__name")
     autocomplete_fields = ("school",)
@@ -111,8 +111,18 @@ class SchoolEmailGatewayAdminForm(forms.ModelForm):
 @admin.register(SchoolEmailGateway)
 class SchoolEmailGatewayAdmin(AuditedAdminMixin, ModelAdmin):
     form = SchoolEmailGatewayAdminForm
-    list_display = ("school", "is_active", "host", "port", "from_email", "use_tls", "use_ssl")
+    list_display = ("school", "is_active", "host", "port", "from_email", "rate_limit_per_minute", "use_tls", "use_ssl")
     list_filter = ("is_active", "use_tls", "use_ssl")
     search_fields = ("school__name", "host", "from_email")
     autocomplete_fields = ("school",)
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+@admin.register(NotificationDeliveryReceipt)
+class NotificationDeliveryReceiptAdmin(ModelAdmin):
+    list_display = ("notification", "provider", "provider_reference", "status", "error_code", "received_at")
+    list_filter = ("provider", "status", "received_at")
+    search_fields = ("provider_reference", "notification__title", "error_code")
+    readonly_fields = tuple(field.name for field in NotificationDeliveryReceipt._meta.fields)
+    def has_add_permission(self, request): return False
+    def has_change_permission(self, request, obj=None): return request.method in ("GET", "HEAD", "OPTIONS")
