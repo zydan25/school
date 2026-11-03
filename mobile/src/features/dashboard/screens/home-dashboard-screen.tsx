@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { router } from "expo-router";
 import { Pressable, StyleSheet, View } from "react-native";
 import { ActivityIndicator, Button, Text } from "react-native-paper";
-import { BookOpen, BriefcaseBusiness, Building2, CalendarDays, GraduationCap, RefreshCw, Repeat2, Users } from "lucide-react-native";
+import { BookOpen, BriefcaseBusiness, Building2, CalendarDays, GraduationCap, LogOut, RefreshCw, Repeat2, Users } from "lucide-react-native";
 import { useQuery } from "@tanstack/react-query";
 
 import { useAuthStore } from "@/core/auth/auth-store";
@@ -18,7 +18,6 @@ import {
 import { AppAvatar } from "@/shared/components/app-avatar";
 import { AppCard } from "@/shared/components/app-card";
 import { AppEmptyState } from "@/shared/components/app-empty-state";
-import { AppIcon } from "@/shared/components/app-icon";
 import { AppNotice } from "@/shared/components/app-notice";
 import { AppScreen } from "@/shared/components/app-screen";
 import { AppSectionHeader } from "@/shared/components/app-section-header";
