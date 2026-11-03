@@ -13,6 +13,8 @@ from apps.inventory.models import (
     VendorInvoice,
     Warehouse,
     WarehouseStock,
+    WarehouseStocktake,
+    WarehouseStocktakeLine,
     WarehouseTransfer,
 )
 from apps.tenants.models import Branch
@@ -403,3 +405,69 @@ class WarehouseTransferCreateSerializer(serializers.ModelSerializer):
             branch=validated_data["source_warehouse"].branch,
             **validated_data,
         )
+
+
+class WarehouseStocktakeLineSerializer(serializers.ModelSerializer):
+    item_code = serializers.CharField(source="item.code", read_only=True)
+    item_name = serializers.CharField(source="item.name", read_only=True)
+    variance = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WarehouseStocktakeLine
+        fields = [
+            "id", "item", "item_code", "item_name", "system_quantity",
+            "counted_quantity", "variance", "unit_cost", "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_variance(self, obj):
+        return obj.variance
+
+
+class WarehouseStocktakeSerializer(serializers.ModelSerializer):
+    warehouse_name = serializers.CharField(source="warehouse.name", read_only=True)
+    lines = WarehouseStocktakeLineSerializer(many=True, read_only=True)
+    line_count = serializers.SerializerMethodField()
+    counted_line_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WarehouseStocktake
+        fields = [
+            "id", "branch", "warehouse", "warehouse_name", "stocktake_number",
+            "count_date", "idempotency_key", "status", "created_by",
+            "posted_by", "posted_at", "cancelled_by", "cancelled_at",
+            "notes", "line_count", "counted_line_count", "lines", "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_line_count(self, obj):
+        return obj.lines.filter(is_archived=False).count()
+
+    def get_counted_line_count(self, obj):
+        return obj.lines.filter(is_archived=False, counted_quantity__isnull=False).count()
+
+
+class WarehouseStocktakeCreateSerializer(serializers.Serializer):
+    warehouse = serializers.PrimaryKeyRelatedField(queryset=Warehouse.objects.none())
+    stocktake_number = serializers.CharField(max_length=60)
+    count_date = serializers.DateField(required=False)
+    idempotency_key = serializers.CharField(min_length=8, max_length=100)
+    notes = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        school = self.context.get("school")
+        self.fields["warehouse"].queryset = Warehouse.objects.filter(
+            school=school, is_archived=False,
+        ) if school else Warehouse.objects.none()
+
+
+class WarehouseStocktakeCountLineInputSerializer(serializers.Serializer):
+    line_id = serializers.UUIDField()
+    counted_quantity = serializers.DecimalField(
+        max_digits=14, decimal_places=2, min_value=Decimal("0.00"),
+    )
+
+
+class WarehouseStocktakeCountsInputSerializer(serializers.Serializer):
+    counts = WarehouseStocktakeCountLineInputSerializer(many=True, allow_empty=False)
