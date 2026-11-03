@@ -193,7 +193,7 @@ class StockMovement(TenantOwnedModel):
     date = models.DateField("تاريخ الحركة", default=timezone.localdate)
     reference = models.CharField("رقم المستند المرجعي", max_length=100, blank=True)
     recipient_name = models.CharField("المستلم / القسم المستفيد", max_length=150, blank=True)
-    notes = models.TextField("سبب الحركة وملاحظاتها")
+    notes = models.TextField("سبب الحركة وملاحظاتها", blank=True)
     idempotency_key = models.CharField("مفتاح منع التكرار", max_length=100, blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
@@ -248,8 +248,6 @@ class StockMovement(TenantOwnedModel):
             raise ValidationError({"quantity": "يجب أن تكون كمية الحركة أكبر من الصفر."})
         if self.unit_cost < Decimal("0.00"):
             raise ValidationError({"unit_cost": "تكلفة الوحدة لا يمكن أن تكون سالبة."})
-        if not self.notes.strip():
-            raise ValidationError({"notes": "سبب الحركة مطلوب لأغراض التدقيق."})
         if self.item_id and self.item.school_id != self.school_id:
             raise ValidationError({"item": "الصنف لا يتبع المدرسة نفسها."})
         if self.warehouse_id and self.warehouse.school_id != self.school_id:
@@ -275,6 +273,8 @@ class StockMovement(TenantOwnedModel):
         if not self._state.adding:
             raise ValidationError("حركة المخزون غير قابلة للتعديل بعد إنشائها؛ أنشئ حركة عكسية بدلاً من ذلك.")
         with transaction.atomic():
+            if not self.notes.strip():
+                self.notes = "حركة مخزنية مسجلة عبر مسار التوافق القديم."
             item = InventoryItem.objects.select_for_update().get(pk=self.item_id, school_id=self.school_id)
             if not self.warehouse_id:
                 self.warehouse_id = item.warehouse_id
