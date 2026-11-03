@@ -99,6 +99,32 @@ jobs:
             apps/notifications/migrations/0004_pushdevice_schoolconversation.py \
             apps/staff/api/urls.py \
             apps/staff/api/views.py \
+            apps/accounts/services.py \
+            apps/accounting/services/chart_of_accounts.py \
+            apps/inventory/models.py \
+            apps/inventory/services.py \
+            apps/inventory/admin.py \
+            apps/inventory/api/serializers.py \
+            apps/inventory/api/views.py \
+            apps/inventory/api/urls.py \
+            apps/inventory/migrations/0004_stage10_procurement_stock_controls.py \
+            apps/inventory/migrations/0005_stage10_integrity_and_permissions.py \
+            apps/inventory/migrations/0006_stage10_stock_ledger_indexes.py \
+            apps/inventory/migrations/0007_stage10_opening_stock_movement.py \
+            apps/assets/models.py \
+            apps/assets/services.py \
+            apps/assets/admin.py \
+            apps/assets/api/serializers.py \
+            apps/assets/api/views.py \
+            apps/assets/api/urls.py \
+            apps/assets/migrations/0002_stage10_asset_lifecycle.py \
+            apps/assets/migrations/0003_stage10_asset_permissions.py \
+            apps/api/urls.py \
+            apps/tenants/school_admin.py \
+            apps/school_services/models.py \
+            tests/test_stage10_procurement_assets.py \
+            tests/test_report4_fixes.py \
+            tests/test_report5_and_timetable.py \
             tests/test_api_school_context.py \
             tests/test_mobile_api_contracts.py \
             tests/test_stage6_teaching_assessments.py \
