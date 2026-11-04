@@ -265,12 +265,12 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                   children: [
                     Row(
                       children: [
-                        const Icon(Icons.school_rounded, color: AppTheme.screenshotBlue, size: 20),
+                        const Icon(Icons.school_rounded, color: AppTheme.screenshotBlue, size: 22),
                         const SizedBox(width: 8),
                         Text(
                           'المدرسة',
                           style: GoogleFonts.cairo(
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: AppTheme.screenshotBlue,
                           ),
@@ -361,12 +361,12 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                 // Green Title
                 Row(
                   children: [
-                    const Icon(Icons.person_add_rounded, color: AppTheme.screenshotGreen, size: 20),
+                    const Icon(Icons.person_add_rounded, color: AppTheme.screenshotGreen, size: 22),
                     const SizedBox(width: 8),
                     Text(
-                      'إضافة طالب جديد',
+                      '+ إضافة طالب جديد',
                       style: GoogleFonts.cairo(
-                        fontSize: 15,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.screenshotGreen,
                       ),
@@ -380,7 +380,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                   children: [
                     // Child 0 in RTL = RIGHT: Purple Button (مسح QR)
                     Expanded(
-                      child: ElevatedButton.icon(
+                      child: ElevatedButton(
                         onPressed: _simulateQrScan,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.screenshotPurple,
@@ -389,10 +389,16 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        icon: const Icon(Icons.qr_code_2_rounded, size: 18),
-                        label: Text(
-                          'مسح QR',
-                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.qr_code_2_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              'مسح QR',
+                              style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -400,7 +406,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
 
                     // Child 1 in RTL = LEFT: Orange Button (QR من صورة)
                     Expanded(
-                      child: ElevatedButton.icon(
+                      child: ElevatedButton(
                         onPressed: _simulateQrScan,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.screenshotOrange,
@@ -409,10 +415,16 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         ),
-                        icon: const Icon(Icons.image_outlined, size: 18),
-                        label: Text(
-                          'QR من صورة',
-                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.image_outlined, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              'QR من صورة',
+                              style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -421,7 +433,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
 
                 const SizedBox(height: 16),
 
-                // Input Field 1: كود الطالب (Text on Right, Badge Icon on Far Left matching screenshot)
+                // Input Field 1: كود الطالب (Badge Icon on Far Right matching screenshot)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   decoration: BoxDecoration(
@@ -431,7 +443,10 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                   ),
                   child: Row(
                     children: [
-                      // In RTL: Child 0 is on the RIGHT (Arabic text)
+                      // In RTL: Child 0 is on the RIGHT: Badge icon
+                      const Icon(Icons.badge_outlined, color: Color(0xFF475569), size: 22),
+                      const SizedBox(width: 10),
+                      // In RTL: Child 1 is on the LEFT: Arabic text field
                       Expanded(
                         child: TextField(
                           controller: _studentCodeController,
@@ -444,16 +459,13 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      // In RTL: Child 1 is on the LEFT: Badge icon
-                      const Icon(Icons.badge_outlined, color: Color(0xFF475569), size: 22),
                     ],
                   ),
                 ),
 
                 const SizedBox(height: 12),
 
-                // Input Field 2: كلمة المرور (Text on Right, Lock Icon on Far Left matching screenshot)
+                // Input Field 2: كلمة المرور (Lock Icon on Far Right matching screenshot)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   decoration: BoxDecoration(
@@ -463,7 +475,10 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                   ),
                   child: Row(
                     children: [
-                      // In RTL: Child 0 on RIGHT: Password text field
+                      // In RTL: Child 0 on RIGHT: Lock icon
+                      const Icon(Icons.lock_outline_rounded, color: Color(0xFF475569), size: 22),
+                      const SizedBox(width: 10),
+                      // In RTL: Child 1: Password text field
                       Expanded(
                         child: TextField(
                           controller: _passwordController,
@@ -477,6 +492,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                           ),
                         ),
                       ),
+                      // In RTL: Child 2 on LEFT: Toggle visibility
                       IconButton(
                         icon: Icon(
                           _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
@@ -485,9 +501,6 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                         ),
                         onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                       ),
-                      const SizedBox(width: 4),
-                      // In RTL: Child 2 on LEFT: Lock icon
-                      const Icon(Icons.lock_outline_rounded, color: Color(0xFF475569), size: 22),
                     ],
                   ),
                 ),
@@ -515,12 +528,12 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                         : Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
+                              const Icon(Icons.person_add_alt_1_rounded, size: 20),
+                              const SizedBox(width: 8),
                               Text(
-                                'إضافة الطالب',
+                                '+ إضافة الطالب',
                                 style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold),
                               ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.person_add_alt_1_rounded, size: 20),
                             ],
                           ),
                   ),

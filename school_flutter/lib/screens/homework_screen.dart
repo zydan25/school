@@ -14,6 +14,19 @@ class HomeworkScreen extends StatefulWidget {
 
 class _HomeworkScreenState extends State<HomeworkScreen> {
   int _selectedFilterIndex = 0; // 0: الكل, 1: قيد الحل, 2: المكتملة
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHomeworks();
+  }
+
+  Future<void> _loadHomeworks() async {
+    setState(() => _isLoading = true);
+    await widget.api.fetchStudentHomeworks();
+    if (mounted) setState(() => _isLoading = false);
+  }
 
   Color _getSubjectColor(String subject) {
     if (subject.contains('رياضيات')) return AppTheme.screenshotBlue;
@@ -28,7 +41,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
     return ListenableBuilder(
       listenable: widget.api,
       builder: (context, _) {
-        final allHomeworks = widget.api.homeworks;
+        final allHomeworks = widget.api.studentHomeworks;
         final filteredHomeworks = allHomeworks.where((hw) {
           if (_selectedFilterIndex == 1) return hw.status == 'pending';
           if (_selectedFilterIndex == 2) return hw.status != 'pending';
@@ -48,9 +61,22 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
               onPressed: () => Navigator.pop(context),
             ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, color: AppTheme.screenshotBlue),
+                onPressed: _loadHomeworks,
+                tooltip: 'تحديث الواجبات',
+              ),
+            ],
           ),
           body: Column(
             children: [
+              if (_isLoading)
+                const LinearProgressIndicator(
+                  color: AppTheme.screenshotBlue,
+                  backgroundColor: Color(0xFFE2E8F0),
+                  minHeight: 2,
+                ),
               // 1. Filter Chips Row
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -348,7 +374,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
     );
   }
 
-  void _submitImageHomework() {
+  void _submitImageHomework() async {
     if (_selectedPhotoUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('الرجاء التقاط أو اختيار صورة صفحة الحل أولاً', style: GoogleFonts.cairo())),
@@ -362,12 +388,25 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
       _photoNoteController.text.trim(),
     );
 
-    _showSuccessDialog();
+    await widget.api.submitStudentHomework(
+      homeworkId: widget.homework.id,
+      submissionText: _photoNoteController.text.trim().isNotEmpty
+          ? _photoNoteController.text.trim()
+          : 'تم رفع صورة حل الواجب المدرسي في كشكول الطالب واعتماد التسليم.',
+    );
+
+    if (mounted) _showSuccessDialog();
   }
 
-  void _submitQuestionsHomework() {
+  void _submitQuestionsHomework() async {
     widget.api.submitHomeworkAnswer(widget.homework.id, _answers);
-    _showSuccessDialog();
+
+    await widget.api.submitStudentHomework(
+      homeworkId: widget.homework.id,
+      submissionText: 'تمت الإجابة عن أسئلة الواجب التفاعلية وتسليمها إلكترونياً.',
+    );
+
+    if (mounted) _showSuccessDialog();
   }
 
   void _showSuccessDialog() {

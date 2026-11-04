@@ -53,6 +53,8 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       listenable: widget.api,
       builder: (context, _) {
         final currentStudent = widget.api.currentStudent;
+        final studentName = currentStudent?.fullName ?? 'حساب الطالب';
+        final firstName = currentStudent?.fullName.split(' ').first ?? 'الطالب';
         final aiMessages = widget.api.currentStudentAiChat;
         final humanMessages = widget.api.humanChatMessages;
 
@@ -65,7 +67,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 Text(
-                  'الطالب المستفيد: ${currentStudent.fullName}',
+                  'الطالب المستفيد: $studentName',
                   style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.accent, fontWeight: FontWeight.bold),
                 ),
               ],
@@ -97,7 +99,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                         children: [
                           const Icon(Icons.auto_awesome_rounded, color: AppTheme.accent, size: 16),
                           const SizedBox(width: 6),
-                          Text('المساعد الذكي (${currentStudent.fullName.split(' ').first})'),
+                          Text('المساعد الذكي ($firstName)'),
                         ],
                       ),
                     ),
@@ -134,7 +136,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
   // ---------------------------------------------------------------------------
   // Tab 1: AI Copilot for Current Student
   // ---------------------------------------------------------------------------
-  Widget _buildAiCopilotTab(StudentProfile student, List<ChatMessage> messages) {
+  Widget _buildAiCopilotTab(StudentProfile? student, List<ChatMessage> messages) {
     return Column(
       children: [
         // AI Student Info Banner
@@ -165,11 +167,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'المعلم الذكي المخصص لـ ${student.fullName}',
+                      'المعلم الذكي المخصص لـ ${student?.fullName ?? 'الطالب'}',
                       style: GoogleFonts.cairo(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      'جاهز لشرح دروس ${student.grade} وتبسيط الواجبات فوراً 🎓',
+                      'جاهز لشرح دروس ${student?.grade ?? 'المنهج الدراسي'} وتبسيط الواجبات فوراً 🎓',
                       style: GoogleFonts.cairo(color: Colors.white70, fontSize: 10),
                     ),
                   ],

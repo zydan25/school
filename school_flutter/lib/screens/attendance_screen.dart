@@ -155,6 +155,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       listenable: widget.api,
       builder: (context, _) {
         final student = widget.api.currentStudent;
+        final studentName = student?.fullName ?? 'حساب الطالب';
+        final attendanceRate = student?.attendanceRate ?? 98.0;
         final excuses = widget.api.absenceExcuses;
 
         return Scaffold(
@@ -163,7 +165,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             backgroundColor: Colors.white,
             elevation: 0,
             title: Text(
-              'سجل الحضور والمواظبة • ${student.fullName}',
+              'سجل الحضور والمواظبة • $studentName',
               style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
             ),
             leading: IconButton(
@@ -202,14 +204,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             width: 76,
                             height: 76,
                             child: CircularProgressIndicator(
-                              value: student.attendanceRate / 100,
+                              value: attendanceRate / 100,
                               strokeWidth: 8,
                               backgroundColor: const Color(0xFFF1F5F9),
                               valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.screenshotGreen),
                             ),
                           ),
                           Text(
-                            '${student.attendanceRate.toInt()}%',
+                            '${attendanceRate.toInt()}%',
                             style: GoogleFonts.cairo(
                               fontSize: 17,
                               fontWeight: FontWeight.w900,

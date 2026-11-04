@@ -35,6 +35,41 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
       listenable: widget.api,
       builder: (context, _) {
         final currentStudent = widget.api.currentStudent;
+        if (currentStudent == null) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('كشف الدرجات والنتائج'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.school_outlined, size: 54, color: AppTheme.textMuted),
+                    const SizedBox(height: 16),
+                    Text(
+                      'لا يوجد ملف طالب نشط مرتبط بحسابك في هذه المدرسة',
+                      style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'يمكنك التحقق من المدرسة النشطة أو إضافة كود الطالب من شاشة إدارة الطلاب.',
+                      style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
         final grades = widget.api.grades;
 
         double totalEarned = 0;

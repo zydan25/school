@@ -14,6 +14,7 @@ import 'services_screen.dart';
 import 'manage_students_screen.dart';
 import 'subjects_screen.dart';
 import 'teacher_dashboard_screen.dart';
+import 'online_exams_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final ApiService api;
@@ -499,7 +500,9 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
           child: Text(
-            'خدمات متابعة الطالب (${activeStudent.fullName.split(' ').first})',
+            activeStudent != null
+                ? 'خدمات متابعة الطالب (${activeStudent.fullName.split(' ').first})'
+                : 'خدمات متابعة الطالب',
             style: GoogleFonts.cairo(
               fontSize: 14,
               fontWeight: FontWeight.w800,
@@ -730,6 +733,66 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Widget> _buildStudentDashboard(BuildContext context) {
     final student = widget.api.currentStudent;
 
+    if (student == null) {
+      return [
+        SliverToBoxAdapter(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: AppTheme.softShadow,
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: const BoxDecoration(
+                    color: AppTheme.screenshotLightBlue,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.school_rounded, color: AppTheme.screenshotBlue, size: 32),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'لا يوجد ملف طالب نشط مرتبط بحسابك في ${widget.api.activeSchoolName}',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'يمكنك ربط كود الطالب أو التبديل إلى مدرسة أخرى أو مساحة عمل أخرى.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api)),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.screenshotBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
+                  label: Text('إضافة وربط كود الطالب', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ];
+    }
+
+    final todayLessons = widget.api.studentTodayLessons;
+    final hasLessons = todayLessons.isNotEmpty;
+    final nextLesson = hasLessons ? todayLessons.first : null;
+
     return [
       // Student Identity Card
       SliverToBoxAdapter(
@@ -829,13 +892,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         const Icon(Icons.schedule_rounded, color: Colors.amber, size: 16),
                         const SizedBox(width: 8),
                         Text(
-                          'الحصة القادمة: الفيزياء (08:00 ص)',
+                          nextLesson != null
+                              ? 'الحصة ${nextLesson.period}: ${nextLesson.subject} (${nextLesson.time})'
+                              : 'انتهت الحصص المجدولة لليوم',
                           style: GoogleFonts.cairo(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
                     Text(
-                      'معمل 101',
+                      nextLesson != null ? nextLesson.classroom : 'الجدول مكتمل ✓',
                       style: GoogleFonts.cairo(fontSize: 11, color: Colors.white70),
                     ),
                   ],
@@ -890,6 +955,16 @@ class _HomeScreenState extends State<HomeScreen> {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => HomeworkScreen(api: widget.api)),
+              ),
+            ),
+            _buildServiceTile(
+              title: 'الاختبارات الإلكترونية',
+              subtitle: 'أوراق الاختبار والمؤقت والنتائج',
+              icon: Icons.quiz_rounded,
+              color: const Color(0xFF6366F1),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => OnlineExamsScreen(api: widget.api)),
               ),
             ),
             _buildServiceTile(

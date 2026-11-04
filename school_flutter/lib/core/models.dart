@@ -588,3 +588,85 @@ class AbsenceExcuse {
     required this.submittedAt,
   });
 }
+
+// -----------------------------------------------------------------------------
+// Online Exam Model (STU-08 & STU-09)
+// -----------------------------------------------------------------------------
+class OnlineExamItem {
+  final String id;
+  final String title;
+  final String description;
+  final String subjectName;
+  final String teacherName;
+  final int durationMinutes;
+  final String startTime;
+  final String endTime;
+  final double totalScore;
+  final double passingScore;
+  final String status; // 'upcoming', 'available', 'in_progress', 'submitted', 'graded'
+  final double? studentScore;
+  final bool isPublished;
+
+  OnlineExamItem({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.subjectName,
+    required this.teacherName,
+    required this.durationMinutes,
+    required this.startTime,
+    required this.endTime,
+    required this.totalScore,
+    this.passingScore = 50.0,
+    required this.status,
+    this.studentScore,
+    this.isPublished = false,
+  });
+
+  factory OnlineExamItem.fromJson(Map<String, dynamic> json) {
+    return OnlineExamItem(
+      id: json['id']?.toString() ?? '',
+      title: json['title']?.toString() ?? 'اختبار إلكتروني',
+      description: json['description']?.toString() ?? '',
+      subjectName: json['subject_name']?.toString() ?? json['subject']?.toString() ?? 'المادة الدراسية',
+      teacherName: json['teacher_name']?.toString() ?? 'معلم المادة',
+      durationMinutes: (json['duration_minutes'] as num?)?.toInt() ?? 45,
+      startTime: json['start_time']?.toString() ?? '',
+      endTime: json['end_time']?.toString() ?? '',
+      totalScore: (json['total_score'] as num?)?.toDouble() ?? 20.0,
+      passingScore: (json['passing_score'] as num?)?.toDouble() ?? 10.0,
+      status: json['status']?.toString() ?? 'available',
+      studentScore: (json['student_score'] as num?)?.toDouble(),
+      isPublished: json['is_published'] == true,
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Today Lesson Summary Model (STU-06)
+// -----------------------------------------------------------------------------
+class TodayLessonSummary {
+  final int period;
+  final String subject;
+  final String teacher;
+  final String time;
+  final String classroom;
+
+  TodayLessonSummary({
+    required this.period,
+    required this.subject,
+    required this.teacher,
+    required this.time,
+    required this.classroom,
+  });
+
+  factory TodayLessonSummary.fromJson(Map<String, dynamic> json) {
+    return TodayLessonSummary(
+      period: (json['period'] as num?)?.toInt() ?? (json['period_number'] as num?)?.toInt() ?? 1,
+      subject: json['subject']?.toString() ?? '',
+      teacher: json['teacher']?.toString() ?? '',
+      time: json['time']?.toString() ?? '${json['start_time'] ?? ''} - ${json['end_time'] ?? ''}',
+      classroom: json['classroom']?.toString() ?? '',
+    );
+  }
+}

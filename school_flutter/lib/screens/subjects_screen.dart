@@ -17,6 +17,19 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
   String _searchQuery = '';
   final Set<String> _downloadedBooks = {};
   final Map<String, double> _downloadProgress = {};
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSubjects();
+  }
+
+  Future<void> _loadSubjects() async {
+    setState(() => _isLoading = true);
+    await widget.api.fetchStudentSubjects();
+    if (mounted) setState(() => _isLoading = false);
+  }
 
   void _startDownload(SubjectCurriculum subject) {
     if (_downloadedBooks.contains(subject.id)) {
@@ -418,7 +431,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final subjects = widget.api.subjects.where((s) {
+    final subjects = widget.api.studentSubjects.where((s) {
       if (_searchQuery.trim().isEmpty) return true;
       final q = _searchQuery.toLowerCase();
       return s.name.toLowerCase().contains(q) ||
@@ -467,7 +480,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                       ),
                     ),
                     Text(
-                      '${widget.api.currentStudent.grade} • المنهج المعتمد',
+                      '${widget.api.currentStudent?.grade ?? 'المنهج الدراسي'} • المنهج المعتمد',
                       style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
                     ),
                   ],
@@ -475,16 +488,31 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
               ],
             ),
 
-            // Left: Back button
-            IconButton(
-              icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
-              onPressed: () => Navigator.pop(context),
+            // Left: Actions
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.refresh_rounded, size: 20, color: AppTheme.screenshotBlue),
+                  onPressed: _loadSubjects,
+                  tooltip: 'تحديث المواد',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
             ),
           ],
         ),
       ),
       body: Column(
         children: [
+          if (_isLoading)
+            const LinearProgressIndicator(
+              color: AppTheme.screenshotBlue,
+              backgroundColor: Color(0xFFE2E8F0),
+              minHeight: 2,
+            ),
           // 1. Search Bar & Summary
           Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),

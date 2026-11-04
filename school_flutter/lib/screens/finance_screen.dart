@@ -344,7 +344,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'المتبقي للسداد (${widget.api.currentStudent.fullName.split(' ').first})',
+                                'المتبقي للسداد (${widget.api.currentStudent?.fullName.split(' ').first ?? 'الطالب'})',
                                 style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
                               ),
                               Row(

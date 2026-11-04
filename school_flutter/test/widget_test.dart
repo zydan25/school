@@ -58,5 +58,52 @@ void main() {
       expect(api.availableRoles, isNotEmpty);
       expect(api.availableRoles.contains('admin'), isFalse);
     });
+
+    test('STU-01 & STU-02: Decoupled identity - activeStudentProfile is separate from guardianChildren', () {
+      final api = ApiService();
+      // By default with no login, activeStudentProfile is null and guardianChildren is empty
+      expect(api.activeStudentProfile, isNull);
+      expect(api.guardianChildren, isEmpty);
+      // currentStudent returns null when no profile is loaded - NO fake Ahmed Al-Attab fallback!
+      expect(api.currentStudent, isNull);
+    });
+
+    test('STU-08 & STU-09: OnlineExamItem model parses correctly from backend JSON', () {
+      final json = {
+        'id': 'exam-99',
+        'title': 'اختبار الفيزياء الفصلي',
+        'description': 'اختبار نهائي شامل لقوانين نيوتن والحركة',
+        'subject_name': 'الفيزياء',
+        'teacher_name': 'أ. إبراهيم الحداد',
+        'duration_minutes': 45,
+        'total_score': 30.0,
+        'passing_score': 15.0,
+        'status': 'available',
+        'is_published': true,
+      };
+
+      final exam = OnlineExamItem.fromJson(json);
+      expect(exam.id, equals('exam-99'));
+      expect(exam.title, equals('اختبار الفيزياء الفصلي'));
+      expect(exam.durationMinutes, equals(45));
+      expect(exam.totalScore, equals(30.0));
+      expect(exam.status, equals('available'));
+      expect(exam.isPublished, isTrue);
+    });
+
+    test('STU-06: TodayLessonSummary model parses from copilot today-lessons API', () {
+      final json = {
+        'period': 1,
+        'subject': 'الرياضيات',
+        'teacher': 'إبراهيم الحداد',
+        'time': '08:00 - 08:45',
+        'classroom': 'قاعة 101',
+      };
+
+      final lesson = TodayLessonSummary.fromJson(json);
+      expect(lesson.period, equals(1));
+      expect(lesson.subject, equals('الرياضيات'));
+      expect(lesson.classroom, equals('قاعة 101'));
+    });
   });
 }

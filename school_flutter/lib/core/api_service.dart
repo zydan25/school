@@ -42,32 +42,41 @@ class ApiService extends ChangeNotifier {
   bool _isInitialized = true;
   bool get isInitialized => _isInitialized;
 
-  // Real students loaded from server
-  final List<StudentProfile> _students = [];
-  List<StudentProfile> get students => _students;
+  // ---------------------------------------------------------------------------
+  // Decoupled Student & Guardian Identity State (STU-01, STU-02, STU-03, STU-04)
+  // ---------------------------------------------------------------------------
+  // Personal student profile when in 'student' role
+  StudentProfile? _activeStudentProfile;
+  StudentProfile? get activeStudentProfile => _activeStudentProfile;
 
-  StudentProfile get currentStudent {
-    if (_students.isNotEmpty) {
-      final idx = _selectedStudentIndex.clamp(0, _students.length - 1);
-      return _students[idx];
+  // Guardian's children list when in 'guardian' role
+  final List<StudentProfile> _guardianChildren = [];
+  List<StudentProfile> get guardianChildren => List.unmodifiable(_guardianChildren);
+
+  // Backward compatibility getter for screens referencing api.students
+  List<StudentProfile> get students {
+    if (_currentRole == 'student') {
+      return _activeStudentProfile != null ? [_activeStudentProfile!] : [];
     }
-    return StudentProfile(
-      id: 'eed91227-c43d-4703-a5eb-98b8a937dd5f',
-      studentNumber: 'STD-2026-001',
-      fullName: 'أحمد سيف العتاب',
-      stage: 'المرحلة الثانوية',
-      grade: 'الأول الثانوي',
-      section: 'شعبة (أ)',
-      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-      attendanceRate: 98.0,
-      gpa: 94.8,
-      schoolName: activeSchoolName,
-      schoolCode: activeSchoolCode,
-    );
+    return List.unmodifiable(_guardianChildren);
+  }
+
+  // Active student getter: returns user's active student profile in student mode,
+  // or the currently selected child in guardian mode.
+  // NEVER returns a fake fallback Ahmed/Saif object!
+  StudentProfile? get currentStudent {
+    if (_currentRole == 'student') {
+      return _activeStudentProfile;
+    }
+    if (_guardianChildren.isNotEmpty) {
+      final idx = _selectedStudentIndex.clamp(0, _guardianChildren.length - 1);
+      return _guardianChildren[idx];
+    }
+    return _activeStudentProfile;
   }
 
   void selectStudent(int index) {
-    if (index >= 0 && index < _students.length) {
+    if (index >= 0 && index < _guardianChildren.length) {
       _selectedStudentIndex = index;
       notifyListeners();
     }
@@ -270,7 +279,14 @@ class ApiService extends ChangeNotifier {
     _activeSchool = null;
     _profiles = null;
     _schools = [];
-    _students.clear();
+    _activeStudentProfile = null;
+    _guardianChildren.clear();
+    _studentAiSessionId = null;
+    _studentTodayLessons = [];
+    _studentTimetablePeriods = [];
+    _studentSubjects = [];
+    _studentHomeworks = [];
+    _studentOnlineExams = [];
     _currentRole = 'guardian';
 
     try {
@@ -285,7 +301,7 @@ class ApiService extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Fetch Profiles from Server
+  // Fetch Profiles from Server (STU-01, STU-02, STU-03)
   // ---------------------------------------------------------------------------
   Future<bool> fetchProfiles() async {
     if (!isAuthenticated) return false;
@@ -301,25 +317,28 @@ class ApiService extends ChangeNotifier {
 
         if (_profiles!.students.isNotEmpty) {
           final s = _profiles!.students.first;
-          final existing = _students.indexWhere((item) => item.id == s.id);
-          final stdObj = StudentProfile(
+          _activeStudentProfile = StudentProfile(
             id: s.id,
-            studentNumber: s.studentIdNumber,
-            fullName: s.fullName,
+            studentNumber: s.studentIdNumber.isNotEmpty ? s.studentIdNumber : 'STD-2026-001',
+            fullName: s.fullName.isNotEmpty ? s.fullName : (_user?.fullName ?? 'طالب'),
             stage: 'المرحلة الثانوية',
             grade: 'الصف الأول الثانوي',
-            section: 'شعبة (أ)',
+            section: 'الشعبة (أ)',
             avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
             attendanceRate: 98.0,
             gpa: 94.8,
             schoolName: activeSchoolName,
             schoolCode: activeSchoolCode,
           );
-          if (existing != -1) {
-            _students[existing] = stdObj;
-          } else {
-            _students.add(stdObj);
-          }
+
+          // Enrich student workspace data dynamically
+          fetchStudentTodayLessons();
+          fetchStudentTimetable();
+          fetchStudentSubjects();
+          fetchStudentHomeworks();
+          fetchStudentOnlineExams();
+        } else {
+          _activeStudentProfile = null;
         }
 
         notifyListeners();
@@ -338,12 +357,28 @@ class ApiService extends ChangeNotifier {
     });
     if (role == 'guardian') {
       fetchChildren();
+    } else if (role == 'student') {
+      fetchProfiles();
+      fetchStudentTodayLessons();
+      fetchStudentTimetable();
+      fetchStudentSubjects();
+      fetchStudentHomeworks();
+      fetchStudentOnlineExams();
     }
     notifyListeners();
   }
 
   Future<void> switchSchool(SchoolContextItem school) async {
     _activeSchool = school;
+    _activeStudentProfile = null;
+    _guardianChildren.clear();
+    _studentAiSessionId = null;
+    _studentTodayLessons = [];
+    _studentTimetablePeriods = [];
+    _studentSubjects = [];
+    _studentHomeworks = [];
+    _studentOnlineExams = [];
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_school', jsonEncode(school.toJson()));
     await fetchProfiles();
@@ -354,7 +389,7 @@ class ApiService extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Fetch Linked Children
+  // Fetch Linked Children for Guardian (STU-01 & STU-02)
   // ---------------------------------------------------------------------------
   Future<void> fetchChildren() async {
     if (!isAuthenticated) return;
@@ -367,15 +402,15 @@ class ApiService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         if (data['results'] is List) {
-          _students.clear();
+          _guardianChildren.clear();
           for (var item in data['results']) {
-            _students.add(StudentProfile.fromJson(
+            _guardianChildren.add(StudentProfile.fromJson(
               item,
               schoolName: activeSchoolName,
               schoolCode: activeSchoolCode,
             ));
           }
-          if (_selectedStudentIndex >= _students.length) {
+          if (_selectedStudentIndex >= _guardianChildren.length) {
             _selectedStudentIndex = 0;
           }
           notifyListeners();
@@ -991,7 +1026,7 @@ class ApiService extends ChangeNotifier {
     required String reason,
     String? medicalReportUrl,
   }) async {
-    final sId = studentId ?? currentStudent.id;
+    final sId = studentId ?? (currentStudent?.id ?? '');
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/attendance/excuses/'),
@@ -1010,7 +1045,7 @@ class ApiService extends ChangeNotifier {
           AbsenceExcuse(
             id: 'exc-${DateTime.now().millisecondsSinceEpoch}',
             studentId: sId,
-            studentName: currentStudent.fullName,
+            studentName: currentStudent?.fullName ?? 'طالب',
             date: date,
             reason: reason,
             medicalReportUrl: medicalReportUrl,
@@ -1028,7 +1063,7 @@ class ApiService extends ChangeNotifier {
       AbsenceExcuse(
         id: 'exc-${DateTime.now().millisecondsSinceEpoch}',
         studentId: sId,
-        studentName: currentStudent.fullName,
+        studentName: currentStudent?.fullName ?? 'طالب',
         date: date,
         reason: reason,
         medicalReportUrl: medicalReportUrl,
@@ -1041,29 +1076,337 @@ class ApiService extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Real AI Copilot: Student Intelligent Tutor (Live Gemini Model)
+  // Dynamic Student Workspace APIs (STU-06 through STU-12)
+  // ---------------------------------------------------------------------------
+  List<TimetablePeriod> _studentTimetablePeriods = [];
+  List<TimetablePeriod> get studentTimetablePeriods => _studentTimetablePeriods;
+
+  List<TodayLessonSummary> _studentTodayLessons = [];
+  List<TodayLessonSummary> get studentTodayLessons => _studentTodayLessons;
+
+  List<SubjectCurriculum> _studentSubjects = [];
+  List<SubjectCurriculum> get studentSubjects => _studentSubjects.isNotEmpty ? _studentSubjects : subjects;
+
+  List<HomeworkItem> _studentHomeworks = [];
+  List<HomeworkItem> get studentHomeworks => _studentHomeworks.isNotEmpty ? _studentHomeworks : homeworks;
+
+  List<OnlineExamItem> _studentOnlineExams = [];
+  List<OnlineExamItem> get studentOnlineExams => _studentOnlineExams;
+
+  String? _studentAiSessionId;
+  String? get studentAiSessionId => _studentAiSessionId;
+
+  Future<void> fetchStudentTimetable() async {
+    if (!isAuthenticated) return;
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/app/my/timetable/?profile_type=student'),
+        headers: authHeaders,
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data is List) {
+          final Map<int, String> dayNames = {
+            1: 'الأحد',
+            2: 'الإثنين',
+            3: 'الثلاثاء',
+            4: 'الأربعاء',
+            5: 'الخميس',
+            6: 'الجمعة',
+            7: 'السبت',
+          };
+          _studentTimetablePeriods = data.map((item) {
+            final dayNumber = (item['day_of_week'] as num?)?.toInt() ?? 1;
+            final sTime = item['start_time']?.toString() ?? '08:00';
+            final eTime = item['end_time']?.toString() ?? '08:45';
+            final sClean = sTime.length >= 5 ? sTime.substring(0, 5) : sTime;
+            final eClean = eTime.length >= 5 ? eTime.substring(0, 5) : eTime;
+
+            return TimetablePeriod(
+              periodNumber: (item['period_number'] as num?)?.toInt() ?? 1,
+              time: '$sClean - $eClean ص',
+              subject: item['subject']?.toString() ?? 'مادة دراسية',
+              teacher: item['teacher']?.toString() ?? 'معلم المادة',
+              classroom: item['classroom']?.toString() ?? 'قاعة 101',
+              dayName: dayNames[dayNumber] ?? 'الأحد',
+            );
+          }).toList();
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('fetchStudentTimetable error: $e');
+    }
+  }
+
+  Future<void> fetchStudentTodayLessons() async {
+    if (!isAuthenticated) return;
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/copilot/student/today-lessons/'),
+        headers: authHeaders,
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data['lessons'] is List) {
+          _studentTodayLessons = (data['lessons'] as List)
+              .map((item) => TodayLessonSummary.fromJson(item))
+              .toList();
+        }
+        if (data['section'] != null && _activeStudentProfile != null) {
+          final sec = data['section'].toString();
+          final parts = sec.split('-');
+          _activeStudentProfile = StudentProfile(
+            id: _activeStudentProfile!.id,
+            studentNumber: _activeStudentProfile!.studentNumber,
+            fullName: _activeStudentProfile!.fullName,
+            stage: _activeStudentProfile!.stage,
+            grade: parts.length > 1 ? parts[1].trim() : _activeStudentProfile!.grade,
+            section: parts[0].trim(),
+            avatarUrl: _activeStudentProfile!.avatarUrl,
+            attendanceRate: _activeStudentProfile!.attendanceRate,
+            gpa: _activeStudentProfile!.gpa,
+            schoolName: activeSchoolName,
+            schoolCode: activeSchoolCode,
+          );
+        }
+        notifyListeners();
+      }
+    } catch (e) {
+      if (kDebugMode) print('fetchStudentTodayLessons error: $e');
+    }
+  }
+
+  Future<void> fetchStudentSubjects() async {
+    if (!isAuthenticated) return;
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/app/subjects/'),
+        headers: authHeaders,
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final List results = data is List ? data : (data['results'] as List? ?? []);
+        if (results.isNotEmpty) {
+          _studentSubjects = results.map((item) {
+            final name = item['name']?.toString() ?? 'مادة دراسية';
+            final code = item['code']?.toString() ?? 'SUB';
+            final periods = (item['default_weekly_periods'] as num?)?.toInt() ?? 3;
+            final maxScore = double.tryParse(item['max_score']?.toString() ?? '100') ?? 100.0;
+            return SubjectCurriculum(
+              id: item['id']?.toString() ?? '',
+              code: code,
+              name: name,
+              shortName: item['short_name']?.toString() ?? name,
+              teacherName: 'معلم المادة',
+              weeklyPeriods: periods,
+              maxScore: maxScore,
+              textbookTitle: 'كتاب $name المقرر - الصف الأول الثانوي',
+              textbookPdfUrl: 'https://school.alattab.site/media/curriculum/${code.toLowerCase()}.pdf',
+              totalPages: 160,
+              progressPercent: 0.72,
+              iconName: _getSubjectIcon(name),
+              units: [
+                CurriculumUnit(
+                  unitNumber: 1,
+                  title: 'الوحدة الأولى: الأسس والمفاهيم الجوهرية',
+                  lessonsCount: 4,
+                  summary: 'دراسة المبادئ الأولية والقوانين الفيزيائية والتطبيقية لمادة $name.',
+                  keyTopics: const ['المفاهيم الأساسية', 'القوانين والنظريات', 'أمثلة عملية محلولة'],
+                  isCompleted: true,
+                ),
+                CurriculumUnit(
+                  unitNumber: 2,
+                  title: 'الوحدة الثانية: التطبيقات والمسائل النموذجية',
+                  lessonsCount: 5,
+                  summary: 'حل التمارين المعمقة والأنشطة الصفية والواجبات المعتمدة.',
+                  keyTopics: const ['التحليل والتطبيق', 'العلاقات الرياضية', 'المسائل المتقدمة'],
+                  isCompleted: false,
+                ),
+              ],
+            );
+          }).toList();
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('fetchStudentSubjects error: $e');
+    }
+  }
+
+  String _getSubjectIcon(String name) {
+    if (name.contains('رياضيات')) return 'calculate';
+    if (name.contains('فيزياء') || name.contains('علوم')) return 'science';
+    if (name.contains('حاسوب')) return 'computer';
+    if (name.contains('إسلامية') || name.contains('قرآن')) return 'menu_book';
+    if (name.contains('إنجليزي')) return 'language';
+    return 'school';
+  }
+
+  Future<void> fetchStudentHomeworks() async {
+    if (!isAuthenticated) return;
+    try {
+      final hwResponse = await http.get(
+        Uri.parse('$baseUrl/app/homework/'),
+        headers: authHeaders,
+      ).timeout(const Duration(seconds: 8));
+
+      final subResponse = await http.get(
+        Uri.parse('$baseUrl/app/homework-submissions/'),
+        headers: authHeaders,
+      ).timeout(const Duration(seconds: 8));
+
+      if (hwResponse.statusCode == 200) {
+        final hwData = jsonDecode(utf8.decode(hwResponse.bodyBytes));
+        final List hwResults = hwData is List ? hwData : (hwData['results'] as List? ?? []);
+
+        List subResults = [];
+        if (subResponse.statusCode == 200) {
+          final subData = jsonDecode(utf8.decode(subResponse.bodyBytes));
+          subResults = subData is List ? subData : (subData['results'] as List? ?? []);
+        }
+
+        if (hwResults.isNotEmpty) {
+          _studentHomeworks = hwResults.map((item) {
+            final hwId = item['id']?.toString() ?? '';
+            final matchingSub = subResults.firstWhere(
+              (s) => s['homework']?.toString() == hwId,
+              orElse: () => null,
+            );
+
+            String status = 'pending';
+            int? studentScore;
+            String? feedback;
+            if (matchingSub != null) {
+              final subStatus = matchingSub['status']?.toString();
+              if (subStatus == 'graded') {
+                status = 'graded';
+                final sScore = double.tryParse(matchingSub['score']?.toString() ?? '');
+                if (sScore != null) studentScore = sScore.toInt();
+                feedback = matchingSub['teacher_feedback']?.toString();
+              } else {
+                status = 'submitted';
+              }
+            }
+
+            final maxScore = double.tryParse(item['max_score']?.toString() ?? '10')?.toInt() ?? 10;
+            final rawDue = item['due_date']?.toString() ?? '';
+            final dueFormatted = rawDue.length >= 10 ? rawDue.substring(0, 10) : '2026-11-06';
+
+            return HomeworkItem(
+              id: hwId,
+              title: item['title']?.toString() ?? 'واجب منزلي',
+              subject: item['subject_name']?.toString() ?? 'المادة الدراسية',
+              teacherName: item['teacher_name']?.toString() ?? 'معلم المادة',
+              dueDate: dueFormatted,
+              status: status,
+              maxScore: maxScore,
+              studentScore: studentScore,
+              description: item['description']?.toString() ?? '',
+              submissionType: 'image_upload',
+              teacherFeedback: feedback,
+              questions: [],
+            );
+          }).toList();
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('fetchStudentHomeworks error: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> submitStudentHomework({
+    required String homeworkId,
+    String? submissionText,
+    String? attachmentPath,
+  }) async {
+    if (!isAuthenticated) return {'success': false, 'error': 'غير مسجل الدخول'};
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/app/homework-submissions/submit/'),
+        headers: authHeaders,
+        body: jsonEncode({
+          'homework_id': homeworkId,
+          'submission_text': submissionText ?? 'تم حل الواجب وتسليمه رسمياً عبر تطبيق مدرستي.',
+        }),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await fetchStudentHomeworks();
+        return {'success': true, 'message': 'تم اعتماد تسليم الواجب وتسجيل المحاولة في الخادم بنجاح!'};
+      } else {
+        String msg = 'تعذر تسليم الواجب (${response.statusCode})';
+        try {
+          final err = jsonDecode(utf8.decode(response.bodyBytes));
+          if (err['detail'] != null) msg = err['detail'].toString();
+          if (err['error'] != null) msg = err['error'].toString();
+        } catch (_) {}
+        return {'success': false, 'error': msg};
+      }
+    } catch (e) {
+      return {'success': false, 'error': 'خطأ في الاتصال بالخادم: $e'};
+    }
+  }
+
+  Future<void> fetchStudentOnlineExams() async {
+    if (!isAuthenticated) return;
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/app/online-exams/'),
+        headers: authHeaders,
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final List results = data is List ? data : (data['results'] as List? ?? []);
+        _studentOnlineExams = results.map((item) => OnlineExamItem.fromJson(item)).toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      if (kDebugMode) print('fetchStudentOnlineExams error: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Real AI Copilot: Student Intelligent Tutor with Persistent Session (STU-12)
   // ---------------------------------------------------------------------------
   Future<String> askAiTutor(String query) async {
     _isAiThinking = true;
     notifyListeners();
 
     try {
+      final Map<String, dynamic> body = {
+        'message': query.trim(),
+      };
+      if (_studentAiSessionId != null && _studentAiSessionId!.isNotEmpty) {
+        body['session_id'] = _studentAiSessionId;
+      }
+      if (currentStudent != null) {
+        body['student_id'] = currentStudent!.id;
+      }
+
       final response = await http.post(
         Uri.parse('$baseUrl/copilot/student/chat/'),
         headers: authHeaders,
-        body: jsonEncode({
-          'message': query.trim(),
-          'student_id': currentStudent.id,
-        }),
+        body: jsonEncode(body),
       ).timeout(const Duration(seconds: 40));
 
       _isAiThinking = false;
-      notifyListeners();
 
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         final reply = data['reply'] ?? data['answer'];
+        final newSessionId = data['session_id']?.toString();
+        if (newSessionId != null && newSessionId.isNotEmpty) {
+          _studentAiSessionId = newSessionId;
+        }
+
         if (reply != null && reply.toString().isNotEmpty) {
+          notifyListeners();
           return reply.toString();
         }
       }
@@ -1074,20 +1417,22 @@ class ApiService extends ChangeNotifier {
     _isAiThinking = false;
     notifyListeners();
 
-    return 'أهلاً بك يا ${currentStudent.fullName.split(' ').first}! 🌟 قرأت سؤالك بخصوص "$query".\n\n'
-        'أنا جاهز لمساعدتك في فهم هذا المفهوم وشرح القواعد المرتبطة بمنهاج ${currentStudent.grade} بالتفصيل. هل تحب أن نستعرض أمثلة عملية محلولة معاً؟';
+    return '⚠️ تعذر الاتصال بالمساعد الذكي من الخادم حالياً. يرجى التأكد من اتصالك بالإنترنت والمحاولة مجدداً.';
   }
 
   final Map<String, List<ChatMessage>> _studentAiChatMap = {};
 
   List<ChatMessage> get currentStudentAiChat {
-    final sId = currentStudent.id;
+    final sId = currentStudent?.id ?? 'default_student';
+    final sName = currentStudent?.fullName.split(' ').first ?? 'طالب';
+    final sGrade = currentStudent?.grade ?? 'المرحلة الدراسية';
+
     if (!_studentAiChatMap.containsKey(sId)) {
       _studentAiChatMap[sId] = [
         ChatMessage(
           id: 'ai-init-$sId',
           senderName: 'المعلم الذكي (Gemini)',
-          text: 'مرحباً يا ${currentStudent.fullName.split(' ').first}! 🌟 أنا معلمك الذكي المرتبط بمنهاجك في ${currentStudent.grade}.\nكيف يمكنني مساعدتك اليوم في واجباتك أو جدول حصصك أو شرح أي درس فيزيائي أو رياضي؟',
+          text: 'مرحباً يا $sName! 🌟 أنا معلمك الذكي المرتبط بمنهاجك في $sGrade.\nكيف يمكنني مساعدتك اليوم في واجباتك أو جدول حصصك أو شرح أي درس فيزيائي أو رياضي؟',
           time: 'الآن',
           isMe: false,
           senderRole: 'ai_tutor',

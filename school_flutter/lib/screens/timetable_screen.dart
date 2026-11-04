@@ -15,10 +15,26 @@ class TimetableScreen extends StatefulWidget {
 class _TimetableScreenState extends State<TimetableScreen> {
   String _selectedDay = 'الأحد';
   final List<String> _days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refreshTimetable();
+  }
+
+  Future<void> _refreshTimetable() async {
+    setState(() => _isLoading = true);
+    await widget.api.fetchStudentTimetable();
+    if (mounted) setState(() => _isLoading = false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final periods = widget.api.timetable.where((p) => p.dayName == _selectedDay).toList();
+    final allPeriods = widget.api.studentTimetablePeriods.isNotEmpty
+        ? widget.api.studentTimetablePeriods
+        : widget.api.timetable;
+    final periods = allPeriods.where((p) => p.dayName == _selectedDay).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -27,8 +43,17 @@ class _TimetableScreenState extends State<TimetableScreen> {
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: AppTheme.accent),
+            onPressed: _refreshTimetable,
+            tooltip: 'تحديث الجدول',
+          ),
+        ],
       ),
-      body: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: AppTheme.accent))
+          : Column(
         children: [
           // Days Bar
           Container(
