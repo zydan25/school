@@ -1,17 +1,58 @@
-# school_flutter
+# مدرستي - المنظومة المدرسية الذكية (Madrasati Smart School App)
 
-A new Flutter project.
+تطبيق رسمي متعدد المنصات (Flutter Web & Mobile) لمنظومة مدرستي الذكية، يربط الطلاب وأولياء الأمور والمعلمين وإدارة المدرسة مع نظام Django ERP الخلفي ونماذج الذكاء الاصطناعي (Google Gemini).
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## 🚀 المميزات الرئيسية
 
-A few resources to get you started if this is your first Flutter project:
+- **بوابة أمنية صارمة (AuthGate):** عزل تام للوصول؛ لا يتم فتح أي شاشة أو استعراض بيانات قبل المصادقة الحقيقية عبر الخادم (`POST /api/v1/auth/login/`).
+- **عزل كامل للأدوار ومساحات العمل (Role & Profile Isolation):**
+  - **مساحة الطالب (Student Workspace):** جدول الحصص اليومي، تسليم الواجبات ورفع صور الكشكول، كشف الدرجات المعتمدة، المناهج والكتب المقررة PDF، والمعلم الذكي (Gemini Copilot).
+  - **مساحة ولي الأمر (Guardian Workspace):** متابعة الأبناء، ربط طالب جديد عبر كود المدرسة وكود الطالب، إدارة الأجهزة المعتمدة، متابعة الحضور والغياب وتقديم الأعذار، وسندات الرسوم والمصروفات.
+  - **مساحة المعلم (Teacher Workspace):** رصد الدرجات المسطح للشعبة والمادة، مراجعة وتصحيح واجبات الكشكول المرفوعة بالصور، دفتر الدروس والتحضير اليومي، ومساعد المعلم الذكي لتوليد خطط الدروس وبنوك الأسئلة.
+  - **مساحة الإدارة (Admin/Director Workspace):** مؤشرات المدرسة، دليل الطلاب، هيئة التدريس والإسنادات، والتقويم المدرسي.
+- **تكامل ذكاء اصطناعي حقيقي (Live Gemini Copilot):**
+  - مساعد تفاعلي للطلاب يستند إلى سياق الطالب وبيانات مقرراته.
+  - مولد تربوي متقدم للخطط المنهجية والاختبارات القصيرة للمعلمين.
+- **إدارة جلسات آمنة ومستمرة:** تخزين مشفر ومحلي للجلسة عبر `SharedPreferences`، مع إرسال `Authorization: Bearer <token>` وترويسة `X-School-ID: <uuid>` مع كل طلب.
+- **واجهة مستخدم عربية حديثة:** خط Cairo الرسمي، دعم كامل للاتجاه من اليمين لليسار (RTL)، وبطاقات بيضاء ناصعة وظلال خفيفة متناسقة مع هوية مدرستي ومنصة جيب.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 🛠️ متطلبات التشغيل والتطوير
+
+- Flutter SDK `^3.5.0`
+- Dart SDK `^3.5.0`
+
+### تثبيت الحزم
+```bash
+flutter pub get
+```
+
+### الفحص والتحليل الساكن
+```bash
+flutter analyze
+```
+
+### تشغيل الاختبارات المؤتمتة
+```bash
+flutter test
+```
+
+### بناء نسخة الويب للإنتاج
+```bash
+flutter build web --release
+```
+
+### بناء تطبيق الأندرويد (APK)
+```bash
+flutter build apk --release
+```
+
+---
+
+## 🔒 السياسات الأمنية وعقود API
+- يعتمد التطبيق على عقود RESTful API الموثقة في `docs/api/README_AR.md`.
+- خلو تام من أي رموز Bearer أو كلمات مرور ثابتة في الكود المصدري.
+- إذن الإنترنت `android.permission.INTERNET` مفعل في Manifest الرئيسي لنسخ Release.

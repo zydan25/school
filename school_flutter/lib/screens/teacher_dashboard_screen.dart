@@ -6,7 +6,8 @@ import '../core/theme.dart';
 
 class TeacherDashboardScreen extends StatefulWidget {
   final ApiService api;
-  const TeacherDashboardScreen({super.key, required this.api});
+  final int initialTab;
+  const TeacherDashboardScreen({super.key, required this.api, this.initialTab = 0});
 
   @override
   State<TeacherDashboardScreen> createState() => _TeacherDashboardScreenState();
@@ -48,7 +49,11 @@ class _TeacherDashboardScreenState extends State<TeacherDashboardScreen> with Si
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(
+      length: 4,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 3),
+    );
   }
 
   @override

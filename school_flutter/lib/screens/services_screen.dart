@@ -10,18 +10,23 @@ class ServicesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppTheme.background,
       appBar: AppBar(
-        title: const Text('الخدمات المدرسية والمرافق'),
+        title: Text(
+          'الخدمات المدرسية والمرافق',
+          style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain),
+        ),
+        centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(18),
         physics: const BouncingScrollPhysics(),
         children: [
-          // Bus Transport Card
+          // 1. Bus Transport Card
           _buildServiceSection(
             title: 'خدمة النقل المدرسي (الحافلات)',
             subtitle: 'الحافلة رقم (12) - خط سير حدة والستين',
@@ -36,30 +41,31 @@ class ServicesScreen extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          // Clinic Card
+          // 2. School Library Card
           _buildServiceSection(
-            title: 'الصحة والعيادة المدرسية',
-            subtitle: 'الملف الصحي الدوري للطالب',
-            icon: Icons.local_hospital_rounded,
-            color: AppTheme.emerald,
+            title: 'المكتبة المدرسية ومصادر التعلم',
+            subtitle: 'استعارة المراجع والكتب الثقافية المعتمدة',
+            icon: Icons.local_library_rounded,
+            color: AppTheme.purple,
             items: [
-              _buildServiceDetail('فصيلة الدم', 'O+ (موجب)'),
-              _buildServiceDetail('آخر فحص طبي دوري', '15 أكتوبر 2026 - سليم ولله الحمد'),
-              _buildServiceDetail('الحساسية والاحتياطات', 'لا توجد أي حساسية دوائية مسجلة'),
+              _buildServiceDetail('المقررات المستلمة', 'المجموعة الكاملة للعام الدراسي 2026/2027'),
+              _buildServiceDetail('الكتب المعارة حالياً', 'كتاب: مقدمة في الخوارزميات والبرمجة'),
+              _buildServiceDetail('مواعيد المكتبة', 'يومياً خلال أوقات الفسحة والأنشطة'),
             ],
           ),
 
           const SizedBox(height: 16),
 
-          // Library Card
+          // 3. Student Activities & Sports Facility Card
           _buildServiceSection(
-            title: 'المكتبة والكتب المدرسية',
-            subtitle: 'استعارة المراجع والكتب الثقافية',
-            icon: Icons.local_library_rounded,
-            color: AppTheme.purple,
+            title: 'الأنشطة المدرسية والصالة الرياضية',
+            subtitle: 'الملاعب الرياضية والنوادي العلمية',
+            icon: Icons.sports_volleyball_rounded,
+            color: AppTheme.accent,
             items: [
-              _buildServiceDetail('الكتب المستلمة', 'المجموعة الكاملة للعام الدراسي 2026/2027'),
-              _buildServiceDetail('الكتب المعارة حالياً', 'كتاب: مقدمة في الخوارزميات والبرمجة'),
+              _buildServiceDetail('النادي المسجل به الطالب', 'نادي الروبوت والذكاء الاصطناعي'),
+              _buildServiceDetail('يوم النشاط الأسبوعي', 'كل ثلاثاء - الفترة المسائية 03:00 م'),
+              _buildServiceDetail('مشرف النشاط', 'أ. إبراهيم الحداد'),
             ],
           ),
         ],
@@ -104,7 +110,7 @@ class ServicesScreen extends StatelessWidget {
                     Text(
                       title,
                       style: GoogleFonts.cairo(
-                        fontSize: 15,
+                        fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: AppTheme.textMain,
                       ),
@@ -114,6 +120,7 @@ class ServicesScreen extends StatelessWidget {
                       style: GoogleFonts.cairo(
                         fontSize: 11,
                         color: AppTheme.textMuted,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -136,22 +143,8 @@ class ServicesScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.cairo(
-              fontSize: 12,
-              color: AppTheme.textMuted,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          Text(
-            value,
-            style: GoogleFonts.cairo(
-              fontSize: 12,
-              color: AppTheme.textMain,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(label, style: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMuted, fontWeight: FontWeight.bold)),
+          Text(value, style: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMain, fontWeight: FontWeight.w700)),
         ],
       ),
     );

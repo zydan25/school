@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
 import '../core/theme.dart';
-import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final ApiService api;
@@ -19,7 +18,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _errorMessage;
-  String _selectedRole = 'guardian';
 
   @override
   void dispose() {
@@ -30,42 +28,47 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _handleLogin() async {
+    final phone = _phoneController.text.trim();
+    final pass = _passwordController.text.trim();
+
+    if (phone.isEmpty || pass.isEmpty) {
+      setState(() => _errorMessage = 'يرجى إدخال رقم الهاتف وكلمة المرور');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
-    widget.api.switchRole(_selectedRole);
-
-    final success = await widget.api.login(
-      _phoneController.text.trim(),
-      _passwordController.text.trim(),
+    final result = await widget.api.login(
+      phone,
+      pass,
+      schoolCode: _schoolCodeController.text.trim(),
     );
 
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (success && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => HomeScreen(api: widget.api)),
-      );
-    } else {
-      setState(() => _errorMessage = 'بيانات الدخول غير صحيحة أو الخادم غير متاح');
+    if (result['success'] != true) {
+      setState(() {
+        _errorMessage = result['error'] ?? 'بيانات الدخول غير صحيحة أو الخادم غير متاح';
+      });
     }
   }
 
-  void _selectRoleAndAutofill(String role, String phone, String defaultName) {
+  void _autofillAccount(String phone, String password) {
     setState(() {
-      _selectedRole = role;
       _phoneController.text = phone;
-      _passwordController.text = 'School@123456';
+      _passwordController.text = password;
+      _errorMessage = null;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9), // Crisp modern slate backdrop
+      backgroundColor: AppTheme.background,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -97,7 +100,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     child: Column(
                       children: [
-                        // Crest / Shield Icon with gold accent
                         Container(
                           width: 68,
                           height: 68,
@@ -138,7 +140,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               const Icon(Icons.verified_rounded, color: AppTheme.amber, size: 14),
                               const SizedBox(width: 6),
                               Text(
-                                'البوابة الرسمية الموحدة • فرع 1234',
+                                'البوابة الرسمية الموحدة للمدارس',
                                 style: GoogleFonts.cairo(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
@@ -152,30 +154,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 20),
 
-                  // 2. Role Selector Tabs
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.borderLight),
-                      boxShadow: AppTheme.softShadow,
-                    ),
-                    child: Row(
-                      children: [
-                        _buildRoleTab('ولي أمر', 'guardian', Icons.family_restroom_rounded, '770000004'),
-                        _buildRoleTab('طالب', 'student', Icons.person_rounded, '770000005'),
-                        _buildRoleTab('معلم', 'teacher', Icons.cast_for_education_rounded, '770000003'),
-                        _buildRoleTab('إدارة', 'director', Icons.admin_panel_settings_rounded, '770000001'),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  // 3. Login Inputs Card
+                  // 2. Login Inputs Card
                   Container(
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
@@ -187,8 +168,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // School Code Field
-                        _buildFieldLabel('كود المدرسة المرخص', Icons.corporate_fare_rounded, AppTheme.accent),
+                        _buildFieldLabel('كود المدرسة', Icons.corporate_fare_rounded, AppTheme.accent),
                         const SizedBox(height: 6),
                         _buildTextField(
                           controller: _schoolCodeController,
@@ -198,20 +178,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
                         const SizedBox(height: 16),
 
-                        // Phone / Username Field
-                        _buildFieldLabel('رقم الهاتف أو الهوية', Icons.phone_android_rounded, AppTheme.indigo),
+                        _buildFieldLabel('رقم الهاتف المسجل', Icons.phone_android_rounded, AppTheme.indigo),
                         const SizedBox(height: 6),
                         _buildTextField(
                           controller: _phoneController,
-                          hint: 'رقم الهاتف المسجل (مثال: 770000004)',
+                          hint: 'رقم الهاتف (مثال: 770000004)',
                           icon: Icons.account_circle_outlined,
                           keyboardType: TextInputType.phone,
                         ),
 
                         const SizedBox(height: 16),
 
-                        // Password Field
-                        _buildFieldLabel('كلمة المرور السرية', Icons.lock_outline_rounded, AppTheme.jaibRed),
+                        _buildFieldLabel('كلمة المرور', Icons.lock_outline_rounded, AppTheme.jaibRed),
                         const SizedBox(height: 6),
                         _buildTextField(
                           controller: _passwordController,
@@ -279,7 +257,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       const Icon(Icons.lock_open_rounded, size: 18),
                                       const SizedBox(width: 8),
                                       Text(
-                                        'دخول مساحة العمل الرسمية',
+                                        'تسجيل الدخول للمنظومة',
                                         style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.w800),
                                       ),
                                     ],
@@ -292,7 +270,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                   const SizedBox(height: 18),
 
-                  // 4. Vibrant Demo Quick-Login Cards
+                  // 3. Test Helper Accounts (Direct real authentication against database)
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
@@ -315,12 +293,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: const Icon(Icons.bolt_rounded, color: AppTheme.amber, size: 16),
                             ),
                             const SizedBox(width: 8),
-                            Text(
-                              'الدخول الفوري بنقرة واحدة (حسابات تجريبية):',
-                              style: GoogleFonts.cairo(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: AppTheme.textMain,
+                            Expanded(
+                              child: Text(
+                                'الحسابات المعتمدة في الخادم (للاختبار السريع):',
+                                style: GoogleFonts.cairo(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.textMain,
+                                ),
                               ),
                             ),
                           ],
@@ -331,10 +311,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             Expanded(
                               child: _buildQuickActionCard(
                                 title: 'ولي الأمر',
-                                subtitle: 'د. سيف العتاب',
+                                subtitle: 'سيف العتاب',
                                 phone: '770000004',
-                                role: 'guardian',
-                                color: AppTheme.emerald,
+                                color: AppTheme.purple,
                                 icon: Icons.family_restroom_rounded,
                               ),
                             ),
@@ -344,7 +323,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 title: 'الطالب',
                                 subtitle: 'أحمد العتاب',
                                 phone: '770000005',
-                                role: 'student',
                                 color: AppTheme.accent,
                                 icon: Icons.school_rounded,
                               ),
@@ -359,8 +337,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 title: 'المعلم',
                                 subtitle: 'أ. إبراهيم الحداد',
                                 phone: '770000003',
-                                role: 'teacher',
-                                color: AppTheme.purple,
+                                color: AppTheme.emerald,
                                 icon: Icons.menu_book_rounded,
                               ),
                             ),
@@ -370,7 +347,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                 title: 'مدير المدرسة',
                                 subtitle: 'أ. عبدالرحمن',
                                 phone: '770000001',
-                                role: 'director',
                                 color: AppTheme.amber,
                                 icon: Icons.stars_rounded,
                               ),
@@ -395,50 +371,13 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildRoleTab(String label, String role, IconData icon, String defaultPhone) {
-    final isSelected = _selectedRole == role;
-    return Expanded(
-      child: InkWell(
-        onTap: () => _selectRoleAndAutofill(role, defaultPhone, label),
-        borderRadius: BorderRadius.circular(12),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: isSelected ? AppTheme.primaryNavy : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: isSelected ? Colors.white : AppTheme.textMuted,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: GoogleFonts.cairo(
-                  fontSize: 11,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                  color: isSelected ? Colors.white : AppTheme.textMuted,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFieldLabel(String text, IconData icon, Color iconColor) {
+  Widget _buildFieldLabel(String label, IconData icon, Color color) {
     return Row(
       children: [
-        Icon(icon, size: 14, color: iconColor),
+        Icon(icon, size: 14, color: color),
         const SizedBox(width: 6),
         Text(
-          text,
+          label,
           style: GoogleFonts.cairo(
             fontSize: 12,
             fontWeight: FontWeight.bold,
@@ -457,30 +396,24 @@ class _LoginScreenState extends State<LoginScreen> {
     Widget? suffixIcon,
     TextInputType keyboardType = TextInputType.text,
   }) {
-    return TextField(
-      controller: controller,
-      obscureText: obscure,
-      keyboardType: keyboardType,
-      style: GoogleFonts.cairo(fontSize: 13, color: AppTheme.textMain),
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMuted),
-        prefixIcon: Icon(icon, size: 18, color: AppTheme.textMuted),
-        suffixIcon: suffixIcon,
-        filled: true,
-        fillColor: const Color(0xFFF8FAFC),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppTheme.borderLight),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppTheme.borderLight),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppTheme.accent, width: 1.5),
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.borderLight),
+      ),
+      child: TextField(
+        controller: controller,
+        obscureText: obscure,
+        keyboardType: keyboardType,
+        style: GoogleFonts.cairo(fontSize: 13, color: AppTheme.textMain, fontWeight: FontWeight.w600),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMuted),
+          prefixIcon: Icon(icon, color: AppTheme.textMuted, size: 18),
+          suffixIcon: suffixIcon,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         ),
       ),
     );
@@ -490,60 +423,60 @@ class _LoginScreenState extends State<LoginScreen> {
     required String title,
     required String subtitle,
     required String phone,
-    required String role,
     required Color color,
     required IconData icon,
   }) {
-    return InkWell(
-      onTap: () {
-        _selectRoleAndAutofill(role, phone, title);
-        _handleLogin();
-      },
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _autofillAccount(phone, 'School@123456'),
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: color, size: 16),
               ),
-              child: Icon(icon, color: color, size: 14),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.cairo(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: color,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.cairo(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
                     ),
-                  ),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.cairo(
-                      fontSize: 10,
-                      color: AppTheme.textMain,
-                      fontWeight: FontWeight.w600,
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.cairo(
+                        fontSize: 10,
+                        color: AppTheme.textMuted,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

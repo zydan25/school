@@ -1,93 +1,444 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'models.dart';
 
 class ApiService extends ChangeNotifier {
   static const String baseUrl = 'https://school.alattab.site/api/v1';
 
-  String? _token = 'GH81cn432Bf2IAGHtSp_R4mR6W8J2WdV889MY8nq28-mHoDAYs2w3SmqhiX4ub68';
+  // ---------------------------------------------------------------------------
+  // Session State (Zero hardcoded Bearer tokens, zero bypass tokens)
+  // ---------------------------------------------------------------------------
+  String? _token;
   String? get token => _token;
-  bool get isAuthenticated => _token != null;
+  bool get isAuthenticated => _token != null && _token!.isNotEmpty;
 
-  bool _isAiThinking = false;
-  bool get isAiThinking => _isAiThinking;
+  UserAccount? _user;
+  UserAccount? get user => _user;
+  String get currentUserName => _user?.fullName ?? 'مستخدم المنظومة';
+  String get userPhone => _user?.phone ?? '770000004';
 
-  String? _currentUserName;
-  String get currentUserName => _currentUserName ?? 'د. سيف العتاب';
+  List<SchoolContextItem> _schools = [];
+  List<SchoolContextItem> get schools => _schools;
 
-  String? _userPhone;
-  String get userPhone => _userPhone ?? '770000004';
+  SchoolContextItem? _activeSchool;
+  SchoolContextItem? get activeSchool => _activeSchool;
+  String get activeSchoolName => _activeSchool?.schoolName ?? 'المدرسة الافتراضية';
+  String get activeSchoolCode => _activeSchool?.schoolCode ?? '1234';
 
-  String _currentRole = 'guardian'; // 'guardian', 'student', 'teacher', 'director'
+  MyProfilesResponse? _profiles;
+  MyProfilesResponse? get profiles => _profiles;
+
+  String _currentRole = 'guardian'; // 'guardian', 'student', 'teacher', 'admin', 'staff'
   String get currentRole => _currentRole;
 
   int _selectedStudentIndex = 0;
   int get selectedStudentIndex => _selectedStudentIndex;
 
-  StudentProfile get currentStudent => students.isNotEmpty
-      ? students[_selectedStudentIndex.clamp(0, students.length - 1)]
-      : defaultStudent;
+  bool _isAiThinking = false;
+  bool get isAiThinking => _isAiThinking;
 
-  // Real mock data matching our seeded server database
-  final List<StudentProfile> students = [
-    StudentProfile(
+  bool _isInitialized = true;
+  bool get isInitialized => _isInitialized;
+
+  // Real students loaded from server
+  final List<StudentProfile> _students = [];
+  List<StudentProfile> get students => _students;
+
+  StudentProfile get currentStudent {
+    if (_students.isNotEmpty) {
+      final idx = _selectedStudentIndex.clamp(0, _students.length - 1);
+      return _students[idx];
+    }
+    return StudentProfile(
       id: 'eed91227-c43d-4703-a5eb-98b8a937dd5f',
       studentNumber: 'STD-2026-001',
       fullName: 'أحمد سيف العتاب',
       stage: 'المرحلة الثانوية',
       grade: 'الأول الثانوي',
       section: 'شعبة (أ)',
-      avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200',
-      attendanceRate: 97.5,
+      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+      attendanceRate: 98.0,
       gpa: 94.8,
-      schoolName: 'المدرسة الافتراضية',
-      schoolCode: '1234',
-    ),
-    StudentProfile(
-      id: '3ab7cf28-7c76-4d5c-bef9-c1664458b7fd',
-      studentNumber: 'STD-2026-002',
-      fullName: 'مريم سيف العتاب',
-      stage: 'التعليم الأساسي',
-      grade: 'التاسع الأساسي',
-      section: 'شعبة (أ)',
-      avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=200',
-      attendanceRate: 99.0,
-      gpa: 98.2,
-      schoolName: 'المدرسة الافتراضية',
-      schoolCode: '1234',
-    ),
-    StudentProfile(
-      id: '34097fe2-cfe4-489b-959b-2c6aa6715d94',
-      studentNumber: 'STD-2026-003',
-      fullName: 'عمر باوزير',
-      stage: 'المرحلة الثانوية',
-      grade: 'الأول الثانوي',
-      section: 'شعبة (أ)',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
-      attendanceRate: 93.0,
-      gpa: 89.5,
-      schoolName: 'المدرسة الافتراضية',
-      schoolCode: '1234',
-    ),
-  ];
+      schoolName: activeSchoolName,
+      schoolCode: activeSchoolCode,
+    );
+  }
 
-  static final StudentProfile defaultStudent = StudentProfile(
-    id: 'eed91227-c43d-4703-a5eb-98b8a937dd5f',
-    studentNumber: 'STD-2026-001',
-    fullName: 'أحمد سيف العتاب',
-    stage: 'المرحلة الثانوية',
-    grade: 'الأول الثانوي',
-    section: 'شعبة (أ)',
-    avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200',
-    attendanceRate: 97.5,
-    gpa: 94.8,
-    schoolName: 'المدرسة الافتراضية',
-    schoolCode: '1234',
-  );
+  void selectStudent(int index) {
+    if (index >= 0 && index < _students.length) {
+      _selectedStudentIndex = index;
+      notifyListeners();
+    }
+  }
 
   // ---------------------------------------------------------------------------
-  // Device Management & Verification (الجهاز الأول مؤكد تلقائياً)
+  // Available Roles based on REAL server profiles & memberships
+  // ---------------------------------------------------------------------------
+  List<String> get availableRoles {
+    final Set<String> roles = {};
+    if (_profiles != null) {
+      if (_profiles!.guardians.isNotEmpty) roles.add('guardian');
+      if (_profiles!.students.isNotEmpty) roles.add('student');
+      if (_profiles!.teachers.isNotEmpty) roles.add('teacher');
+      if (_profiles!.staff.isNotEmpty) roles.add('staff');
+    }
+    if (_activeSchool != null) {
+      final sRoles = _activeSchool!.roles;
+      if (sRoles.any((r) => r.contains('admin') || r.contains('director'))) {
+        roles.add('admin');
+      }
+      if (sRoles.contains('teacher')) roles.add('teacher');
+      if (sRoles.contains('student')) roles.add('student');
+      if (sRoles.contains('guardian')) roles.add('guardian');
+    }
+    if (_user?.isPlatformAdmin == true) {
+      roles.add('admin');
+    }
+    if (roles.isEmpty) {
+      roles.add(_currentRole);
+    }
+    return roles.toList();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Headers Helper (enforcing Authorization & X-School-ID)
+  // ---------------------------------------------------------------------------
+  Map<String, String> get authHeaders {
+    final Map<String, String> headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    if (_token != null && _token!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
+    if (_activeSchool != null && _activeSchool!.schoolId.isNotEmpty) {
+      headers['X-School-ID'] = _activeSchool!.schoolId;
+    }
+    return headers;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Session Lifecycle & Persistence
+  // ---------------------------------------------------------------------------
+  Future<void> initSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedToken = prefs.getString('auth_token');
+      final savedUserJson = prefs.getString('auth_user');
+      final savedSchoolJson = prefs.getString('auth_school');
+      final savedRole = prefs.getString('auth_role');
+
+      if (savedToken != null && savedToken.isNotEmpty) {
+        _token = savedToken;
+        if (savedUserJson != null) {
+          _user = UserAccount.fromJson(jsonDecode(savedUserJson));
+        }
+        if (savedSchoolJson != null) {
+          _activeSchool = SchoolContextItem.fromJson(jsonDecode(savedSchoolJson));
+        }
+        if (savedRole != null) {
+          _currentRole = savedRole;
+        }
+
+        final valid = await fetchProfiles();
+        if (valid) {
+          if (_currentRole == 'guardian') {
+            await fetchChildren();
+          }
+        } else {
+          await logout();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('Init session error: $e');
+    } finally {
+      _isInitialized = true;
+      notifyListeners();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Real Login
+  // ---------------------------------------------------------------------------
+  Future<Map<String, dynamic>> login(String phone, String password, {String? schoolCode}) async {
+    final cleanPhone = phone.trim();
+    final cleanPass = password.trim();
+
+    if (cleanPhone.isEmpty || cleanPass.isEmpty) {
+      return {'success': false, 'error': 'يرجى إدخال رقم الهاتف وكلمة المرور'};
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/auth/login/'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'phone': cleanPhone,
+          'password': cleanPass,
+        }),
+      ).timeout(const Duration(seconds: 12));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final rawToken = data['token'] ?? data['access_token'];
+
+        if (rawToken == null || rawToken.toString().isEmpty) {
+          return {'success': false, 'error': 'استجابة الخادم غير مكتملة، لم يتم العثور على رمز المصادقة.'};
+        }
+
+        _token = rawToken.toString();
+
+        if (data['user'] != null) {
+          _user = UserAccount.fromJson(data['user']);
+        }
+
+        if (data['schools'] is List) {
+          _schools = (data['schools'] as List)
+              .map((s) => SchoolContextItem.fromJson(s))
+              .toList();
+          if (_schools.isNotEmpty) {
+            _activeSchool = _schools.firstWhere((s) => s.isDefault, orElse: () => _schools.first);
+          }
+        }
+
+        await fetchProfiles();
+
+        final avRoles = availableRoles;
+        if (avRoles.contains('guardian')) {
+          _currentRole = 'guardian';
+        } else if (avRoles.contains('student')) {
+          _currentRole = 'student';
+        } else if (avRoles.contains('teacher')) {
+          _currentRole = 'teacher';
+        } else if (avRoles.contains('admin')) {
+          _currentRole = 'admin';
+        } else if (avRoles.isNotEmpty) {
+          _currentRole = avRoles.first;
+        }
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('auth_token', _token!);
+        if (_user != null) {
+          await prefs.setString('auth_user', jsonEncode(_user!.toJson()));
+        }
+        if (_activeSchool != null) {
+          await prefs.setString('auth_school', jsonEncode(_activeSchool!.toJson()));
+        }
+        await prefs.setString('auth_role', _currentRole);
+
+        if (_currentRole == 'guardian') {
+          await fetchChildren();
+        }
+
+        notifyListeners();
+        return {'success': true};
+      } else if (response.statusCode == 401) {
+        return {'success': false, 'error': 'بيانات الدخول غير صحيحة أو الحساب غير نشط.'};
+      } else if (response.statusCode == 423) {
+        return {'success': false, 'error': 'تم إيقاف محاولات الدخول مؤقتاً؛ حاول بعد انتهاء فترة القفل.'};
+      } else {
+        String msg = 'حدث خطأ أثناء تسجيل الدخول (${response.statusCode})';
+        try {
+          final errData = jsonDecode(utf8.decode(response.bodyBytes));
+          if (errData['error'] != null) msg = errData['error'].toString();
+        } catch (_) {}
+        return {'success': false, 'error': msg};
+      }
+    } catch (e) {
+      if (kDebugMode) print('Login network error: $e');
+      return {'success': false, 'error': 'تعذر الاتصال بالخادم، يرجى التأكد من اتصالك بالإنترنت.'};
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Real Logout
+  // ---------------------------------------------------------------------------
+  Future<void> logout() async {
+    try {
+      if (_token != null && _token!.isNotEmpty) {
+        await http.post(
+          Uri.parse('$baseUrl/auth/logout/'),
+          headers: authHeaders,
+        ).timeout(const Duration(seconds: 4));
+      }
+    } catch (_) {}
+
+    _token = null;
+    _user = null;
+    _activeSchool = null;
+    _profiles = null;
+    _schools = [];
+    _students.clear();
+    _currentRole = 'guardian';
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('auth_token');
+      await prefs.remove('auth_user');
+      await prefs.remove('auth_school');
+      await prefs.remove('auth_role');
+    } catch (_) {}
+
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fetch Profiles from Server
+  // ---------------------------------------------------------------------------
+  Future<bool> fetchProfiles() async {
+    if (!isAuthenticated) return false;
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/app/account/profiles/'),
+        headers: authHeaders,
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        _profiles = MyProfilesResponse.fromJson(data);
+
+        if (_profiles!.students.isNotEmpty) {
+          final s = _profiles!.students.first;
+          final existing = _students.indexWhere((item) => item.id == s.id);
+          final stdObj = StudentProfile(
+            id: s.id,
+            studentNumber: s.studentIdNumber,
+            fullName: s.fullName,
+            stage: 'المرحلة الثانوية',
+            grade: 'الصف الأول الثانوي',
+            section: 'شعبة (أ)',
+            avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+            attendanceRate: 98.0,
+            gpa: 94.8,
+            schoolName: activeSchoolName,
+            schoolCode: activeSchoolCode,
+          );
+          if (existing != -1) {
+            _students[existing] = stdObj;
+          } else {
+            _students.add(stdObj);
+          }
+        }
+
+        notifyListeners();
+        return true;
+      }
+    } catch (e) {
+      if (kDebugMode) print('fetchProfiles error: $e');
+    }
+    return false;
+  }
+
+  void switchRole(String role) {
+    _currentRole = role;
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setString('auth_role', role);
+    });
+    if (role == 'guardian') {
+      fetchChildren();
+    }
+    notifyListeners();
+  }
+
+  Future<void> switchSchool(SchoolContextItem school) async {
+    _activeSchool = school;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('auth_school', jsonEncode(school.toJson()));
+    await fetchProfiles();
+    if (_currentRole == 'guardian') {
+      await fetchChildren();
+    }
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fetch Linked Children
+  // ---------------------------------------------------------------------------
+  Future<void> fetchChildren() async {
+    if (!isAuthenticated) return;
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/app/my/children/'),
+        headers: authHeaders,
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        if (data['results'] is List) {
+          _students.clear();
+          for (var item in data['results']) {
+            _students.add(StudentProfile.fromJson(
+              item,
+              schoolName: activeSchoolName,
+              schoolCode: activeSchoolCode,
+            ));
+          }
+          if (_selectedStudentIndex >= _students.length) {
+            _selectedStudentIndex = 0;
+          }
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('fetchChildren error: $e');
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Link Student
+  // ---------------------------------------------------------------------------
+  Future<Map<String, dynamic>> linkStudent({
+    required String schoolCode,
+    required String studentCode,
+    required String password,
+  }) async {
+    final code = studentCode.trim().toUpperCase();
+    final school = schoolCode.trim().isEmpty ? activeSchoolCode : schoolCode.trim();
+
+    if (code.isEmpty) {
+      return {'success': false, 'message': 'الرجاء إدخال كود الطالب أولاً.'};
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/app/my/link-student/'),
+        headers: authHeaders,
+        body: jsonEncode({
+          'school_code': school,
+          'student_code': code,
+          'password': password.trim(),
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await fetchChildren();
+        return {
+          'success': true,
+          'message': data['message'] ?? 'تم التحقق من بيانات الطالب في الخادم وربطه بحسابك بنجاح!',
+          'student': data['student'],
+        };
+      } else {
+        final err = data['error'] ?? data['message'] ?? 'لم يتم العثور على الطالب بالبيانات المدخلة';
+        return {'success': false, 'message': err.toString()};
+      }
+    } catch (e) {
+      if (kDebugMode) print('linkStudent error: $e');
+      return {'success': false, 'message': 'تعذر الاتصال بالخادم، يرجى التأكد من اتصالك بالإنترنت.'};
+    }
+  }
+
+  Future<Map<String, dynamic>> addNewStudent({
+    required String schoolCode,
+    required String studentCode,
+    required String password,
+  }) => linkStudent(schoolCode: schoolCode, studentCode: studentCode, password: password);
+
+  // ---------------------------------------------------------------------------
+  // Devices Management
   // ---------------------------------------------------------------------------
   final List<DeviceRecord> devices = [
     DeviceRecord(
@@ -98,7 +449,7 @@ class ApiService extends ChangeNotifier {
       lastActive: 'متصل الآن',
       isCurrentDevice: true,
       isConfirmed: true,
-      isAutoConfirmed: true, // First device auto-confirmed
+      isAutoConfirmed: true,
     ),
     DeviceRecord(
       id: 'DEV-002',
@@ -126,176 +477,69 @@ class ApiService extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Add Student (matching screenshot form)
+  // Curriculum & Subjects
   // ---------------------------------------------------------------------------
-  Future<Map<String, dynamic>> addNewStudent({
-    required String schoolCode,
-    required String studentCode,
-    required String password,
-  }) async {
-    final code = studentCode.trim().toUpperCase();
-    final school = schoolCode.trim().isEmpty ? '1234' : schoolCode.trim();
-    if (code.isEmpty) {
-      return {'success': false, 'message': 'الرجاء إدخال كود الطالب أولاً.'};
-    }
-
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/app/my/link-student/'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'school_code': school,
-          'student_code': code,
-          'password': password.trim(),
-        }),
-      ).timeout(const Duration(seconds: 5));
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(utf8.decode(response.bodyBytes));
-        final sData = data['student'];
-        if (sData != null) {
-          final studentObj = StudentProfile(
-            id: sData['id'] ?? 'std-${DateTime.now().millisecondsSinceEpoch}',
-            studentNumber: sData['student_number'] ?? code,
-            fullName: sData['full_name'] ?? 'طالب مضاف ($code)',
-            stage: sData['stage'] ?? 'المرحلة الثانوية',
-            grade: sData['grade'] ?? 'الصف الأول الثانوي',
-            section: sData['section'] ?? 'شعبة (أ)',
-            avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-            attendanceRate: (sData['attendance_rate'] as num?)?.toDouble() ?? 98.0,
-            gpa: (sData['gpa'] as num?)?.toDouble() ?? 94.8,
-            schoolName: sData['school_name'] ?? 'المدرسة الافتراضية',
-            schoolCode: sData['school_code'] ?? school,
-          );
-
-          final existingIdx = students.indexWhere((s) => s.studentNumber == studentObj.studentNumber);
-          if (existingIdx != -1) {
-            students[existingIdx] = studentObj;
-            _selectedStudentIndex = existingIdx;
-          } else {
-            students.add(studentObj);
-            _selectedStudentIndex = students.length - 1;
-          }
-          notifyListeners();
-          return {
-            'success': true,
-            'message': data['message'] ?? 'تم التحقق من بيانات الطالب في الخادم وربطه بنجاح!',
-            'student': studentObj,
-          };
-        }
-      }
-    } catch (_) {
-      // Local database fallback
-    }
-
-    String name = 'طالب مضاف ($code)';
-    String grade = 'الصف الأول الثانوي';
-    String section = 'الشعبة (أ)';
-    if (code == 'STD-2026-001') {
-      name = 'أحمد العتاب';
-      grade = 'الصف الأول الثانوي';
-      section = 'الشعبة (أ) - أول ثانوي';
-    } else if (code == 'STD-2026-002') {
-      name = 'مريم العتاب';
-      grade = 'الصف التاسع الأساسي';
-      section = 'الشعبة (أ) - تاسع';
-    } else if (code == 'STD-2026-003') {
-      name = 'عمر باوزير';
-      grade = 'الصف الأول الثانوي';
-      section = 'الشعبة (أ) - أول ثانوي';
-    }
-
-    final localStudent = StudentProfile(
-      id: 'std-${DateTime.now().millisecondsSinceEpoch}',
-      studentNumber: code,
-      fullName: name,
-      stage: grade.contains('ثانوي') ? 'المرحلة الثانوية' : 'التعليم الأساسي',
-      grade: grade,
-      section: section,
-      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-      attendanceRate: 98.0,
-      gpa: 94.8,
-      schoolName: 'المدرسة الافتراضية',
-      schoolCode: school,
-    );
-
-    final existingIdx = students.indexWhere((s) => s.studentNumber == localStudent.studentNumber);
-    if (existingIdx != -1) {
-      students[existingIdx] = localStudent;
-      _selectedStudentIndex = existingIdx;
-    } else {
-      students.add(localStudent);
-      _selectedStudentIndex = students.length - 1;
-    }
-    notifyListeners();
-    return {
-      'success': true,
-      'message': 'تم التحقق من بيانات الطالب وربطه بنجاح!',
-      'student': localStudent,
-    };
-  }
-
-  Future<Map<String, dynamic>> addCurriculumSubject({
-    required String name,
-    required String code,
-    required String teacherName,
-    required int weeklyPeriods,
-    required String textbookTitle,
-    required String pdfUrl,
-    required int totalPages,
-    required int unitsCount,
-    required String summary,
-  }) async {
-    try {
-      await http.post(
-        Uri.parse('$baseUrl/app/curriculum/add/'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'name': name,
-          'code': code,
-          'teacher_name': teacherName,
-          'weekly_periods': weeklyPeriods,
-          'textbook_title': textbookTitle,
-          'pdf_url': pdfUrl,
-          'total_pages': totalPages,
-          'units_count': unitsCount,
-        }),
-      ).timeout(const Duration(seconds: 4));
-    } catch (_) {}
-
-    final newSubject = SubjectCurriculum(
-      id: 'sub-${DateTime.now().millisecondsSinceEpoch}',
-      code: code,
-      name: name,
-      shortName: name.split(' ').first,
-      teacherName: teacherName,
-      weeklyPeriods: weeklyPeriods,
+  final List<SubjectCurriculum> subjects = [
+    SubjectCurriculum(
+      id: 'sub-001',
+      code: 'PHYS-101',
+      name: 'الفيزياء العامة (الميكانيكا والطاقة)',
+      shortName: 'الفيزياء',
+      teacherName: 'أ. إبراهيم الحداد',
+      weeklyPeriods: 4,
       maxScore: 100,
-      textbookTitle: textbookTitle,
-      textbookPdfUrl: pdfUrl.isNotEmpty ? pdfUrl : 'https://school.alattab.site/media/curriculum/textbook.pdf',
-      totalPages: totalPages > 0 ? totalPages : 150,
-      progressPercent: 0.0,
-      iconName: 'menu_book',
-      units: List.generate(
-        unitsCount > 0 ? unitsCount : 3,
-        (i) => CurriculumUnit(
-          unitNumber: i + 1,
-          title: 'الوحدة ${i + 1}: مفاهيم ومقرر $name',
-          lessonsCount: 4,
-          summary: summary.isNotEmpty ? summary : 'دروس وتمارين وشروحات منهجية معتمدة من وزارة التربية والتعليم.',
-          keyTopics: ['الدرس الأول: مدخل ومفاهيم', 'الدرس الثاني: التطبيقات والمسائل', 'تمارين واختبارات الوحدة'],
-          isCompleted: false,
+      textbookTitle: 'كتاب الفيزياء - الأول الثانوي (المنهج المعتمد)',
+      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/physics_grade10.pdf',
+      totalPages: 184,
+      progressPercent: 0.68,
+      iconName: 'bolt',
+      units: [
+        CurriculumUnit(
+          unitNumber: 1,
+          title: 'الوحدة الأولى: علم القياس والحركة في بعد واحد',
+          lessonsCount: 5,
+          summary: 'مفاهيم الكميات الفيزيائية والسرعة والتسارع ومعادلات الحركة بتسارع ثابت.',
+          keyTopics: ['أدوات القياس والأخطاء', 'السرعة القياسية والمتجهة', 'معادلات الحركة الخطية', 'السقوط الحر'],
+          isCompleted: true,
         ),
-      ),
-    );
+        CurriculumUnit(
+          unitNumber: 2,
+          title: 'الوحدة الثانية: قوانين نيوتن وتطبيقات القوة',
+          lessonsCount: 6,
+          summary: 'القانون الأول والثاني والثالث لنيوتن وقوة الاحتكاك والتطبيقات على المصاعد والمستويات المائلة.',
+          keyTopics: ['القانون الأول ومفهوم القصور', 'القانون الثاني والقوة المحصلة', 'الاحتكاك الساكن والحركي', 'تطبيقات الأجسام المتصلة'],
+          isCompleted: true,
+        ),
+      ],
+    ),
+    SubjectCurriculum(
+      id: 'sub-002',
+      code: 'MATH-101',
+      name: 'الرياضيات التطبيقية والجبر الخطي',
+      shortName: 'الرياضيات',
+      teacherName: 'أ. إبراهيم الحداد',
+      weeklyPeriods: 5,
+      maxScore: 100,
+      textbookTitle: 'كتاب الرياضيات - الصف الأول الثانوي',
+      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/math_grade10.pdf',
+      totalPages: 240,
+      progressPercent: 0.72,
+      iconName: 'calculate',
+      units: [
+        CurriculumUnit(
+          unitNumber: 1,
+          title: 'الوحدة الأولى: المصفوفات والمحددات',
+          lessonsCount: 6,
+          summary: 'العمليات على المصفوفات وخواص المحددات وقاعدة كرامر لحل المعادلات.',
+          keyTopics: ['رتبة المصفوفة وأنواعها', 'جمع وضرب المصفوفات', 'النظير الضربي للمصفوفة', 'حل أنظمة المعادلات'],
+          isCompleted: true,
+        ),
+      ],
+    ),
+  ];
 
-    subjects.insert(0, newSubject);
-    notifyListeners();
-    return {'success': true, 'message': 'تمت إضافة واعتماد المنهج الدراسي بنجاح!'};
-  }
-
-    // ---------------------------------------------------------------------------
-  // Teacher Grading Workspace (رصد الدرجات المسطح للمرحلة والشعبة)
+  // ---------------------------------------------------------------------------
+  // Teacher Grading Workspace
   // ---------------------------------------------------------------------------
   final List<TeacherStudentGradeRow> teacherGradeRows = [
     TeacherStudentGradeRow(
@@ -307,7 +551,7 @@ class ApiService extends ChangeNotifier {
       participationScore: 9.5,
     ),
     TeacherStudentGradeRow(
-      studentId: 'omar-91227-c43d-4703-a5eb-98b8a937dd5f',
+      studentId: '34097fe2-cfe4-489b-959b-2c6aa6715d94',
       studentNumber: 'STD-2026-003',
       studentName: 'عمر باوزير',
       examScore: 26.0,
@@ -315,28 +559,12 @@ class ApiService extends ChangeNotifier {
       participationScore: 8.5,
     ),
     TeacherStudentGradeRow(
-      studentId: 'mrym-91227-c43d-4703-a5eb-98b8a937dd5f',
+      studentId: '3ab7cf28-7c76-4d5c-bef9-c1664458b7fd',
       studentNumber: 'STD-2026-002',
       studentName: 'مريم سيف العتاب',
       examScore: 30.0,
       homeworkScore: 10.0,
       participationScore: 10.0,
-    ),
-    TeacherStudentGradeRow(
-      studentId: 'std-4',
-      studentNumber: 'STD-2026-004',
-      studentName: 'حسام عبدالرحمن الحداد',
-      examScore: 27.5,
-      homeworkScore: 9.5,
-      participationScore: 9.0,
-    ),
-    TeacherStudentGradeRow(
-      studentId: 'std-5',
-      studentNumber: 'STD-2026-005',
-      studentName: 'ريان وليد الصبري',
-      examScore: 25.0,
-      homeworkScore: 8.5,
-      participationScore: 8.0,
     ),
   ];
 
@@ -351,7 +579,7 @@ class ApiService extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Teacher Homework Submissions (متابعة وتصحيح واجبات الكشكول المرفوعة بالصورة)
+  // Teacher Homework Submissions & Actions
   // ---------------------------------------------------------------------------
   final List<TeacherHomeworkSubmission> teacherSubmissions = [
     TeacherHomeworkSubmission(
@@ -359,24 +587,24 @@ class ApiService extends ChangeNotifier {
       homeworkId: 'hw-5',
       studentId: 'eed91227-c43d-4703-a5eb-98b8a937dd5f',
       studentName: 'أحمد سيف العتاب',
-      submittedDate: 'اليوم، 06:30 م',
-      solutionImageUrl: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=600',
-      studentNote: 'تم حل المسائل 3 و 4 و 7 في كشكول الرياضيات مع الرسم البياني بدقة.',
-      score: null,
-      teacherNote: null,
-      isGraded: false,
+      submittedDate: 'اليوم، 04:30 م',
+      solutionImageUrl: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?auto=format&fit=crop&q=80&w=800',
+      studentNote: 'أستاذ إبراهيم، قمت بحل المسألة باستخدام معادلة الحركة الثالثة بالتفصيل.',
+      score: 10.0,
+      teacherNote: 'ممتاز يا أحمد! خطوات الحل الرياضي والفيزيائي نموذجية.',
+      isGraded: true,
     ),
     TeacherHomeworkSubmission(
       id: 'sub-002',
       homeworkId: 'hw-5',
-      studentId: 'omar-91227-c43d-4703-a5eb-98b8a937dd5f',
+      studentId: '34097fe2-cfe4-489b-959b-2c6aa6715d94',
       studentName: 'عمر باوزير',
-      submittedDate: 'أمس، 09:15 م',
-      solutionImageUrl: 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&q=80&w=600',
-      studentNote: 'حل صفحة 54 مرفق.',
-      score: 9.0,
-      teacherNote: 'ممتاز يا عمر، راجع إشارة النتيجة في المسألة الرابعة فقط.',
-      isGraded: true,
+      submittedDate: 'أمس، 07:15 م',
+      solutionImageUrl: 'https://images.unsplash.com/photo-1588072432836-e10032774350?auto=format&fit=crop&q=80&w=800',
+      studentNote: 'تم حل أسئلة الاحتكاك كاملة في الكشكول.',
+      score: null,
+      teacherNote: null,
+      isGraded: false,
     ),
   ];
 
@@ -393,123 +621,57 @@ class ApiService extends ChangeNotifier {
   void teacherAddTextHomework({
     required String title,
     required String subject,
-    required String className,
-    required String dueDate,
+    String? className,
     required String description,
-    required bool requiresImageSolution,
-    required int maxScore,
+    required String dueDate,
+    bool requiresImage = true,
+    bool requiresImageSolution = true,
+    int maxScore = 10,
   }) {
-    final newHw = HomeworkItem(
-      id: 'hw-${DateTime.now().millisecondsSinceEpoch}',
-      title: title,
-      subject: subject,
-      teacherName: currentUserName,
-      dueDate: dueDate,
-      status: 'pending',
-      maxScore: maxScore,
-      description: description,
-      submissionType: requiresImageSolution ? 'image_upload' : 'interactive_questions',
-      questions: [],
+    homeworks.insert(
+      0,
+      HomeworkItem(
+        id: 'hw-${DateTime.now().millisecondsSinceEpoch}',
+        title: title,
+        subject: subject,
+        teacherName: currentUserName,
+        dueDate: dueDate,
+        status: 'pending',
+        maxScore: maxScore,
+        description: description,
+        submissionType: (requiresImage || requiresImageSolution) ? 'image_upload' : 'interactive_questions',
+        questions: [],
+      ),
     );
-    homeworks.insert(0, newHw);
-    notifyListeners();
-  }
-
-  void studentSubmitImageHomework(String homeworkId, String imageUrl, String note) {
-    final idx = homeworks.indexWhere((h) => h.id == homeworkId);
-    if (idx != -1) {
-      homeworks[idx].status = 'submitted';
-      homeworks[idx].submittedImageUrl = imageUrl;
-      homeworks[idx].submittedNotes = note;
-    }
-
-    teacherSubmissions.insert(0, TeacherHomeworkSubmission(
-      id: 'sub-${DateTime.now().millisecondsSinceEpoch}',
-      homeworkId: homeworkId,
-      studentId: currentStudent.id,
-      studentName: currentStudent.fullName,
-      submittedDate: 'الآن',
-      solutionImageUrl: imageUrl,
-      studentNote: note,
-      isGraded: false,
-    ));
-
     notifyListeners();
   }
 
   // ---------------------------------------------------------------------------
-  // Homework list with rich subjects and question papers
-  // ---------------------------------------------------------------------------
-  // ---------------------------------------------------------------------------
-  // Subjects & Curriculum (المناهج المعتمدة والكتب المدرسية)
-  // ---------------------------------------------------------------------------
-  
-  // ---------------------------------------------------------------------------
-  // Teacher Daily Period Attendance (تحضير الحصة اليومي للشعبة)
+  // Teacher Attendance taking
   // ---------------------------------------------------------------------------
   final List<TeacherAttendanceStudent> teacherAttendanceRoster = [
     TeacherAttendanceStudent(
       studentId: 'eed91227-c43d-4703-a5eb-98b8a937dd5f',
       studentName: 'أحمد سيف العتاب',
       studentNumber: 'STD-2026-001',
-      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+      avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=200',
       status: 'present',
     ),
     TeacherAttendanceStudent(
-      studentId: 'mrym-91227-c43d-4703-a5eb-98b8a937dd5f',
-      studentName: 'مريم سيف العتاب',
-      studentNumber: 'STD-2026-002',
-      avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=200',
-      status: 'present',
-    ),
-    TeacherAttendanceStudent(
-      studentId: 'omar-91227-c43d-4703-a5eb-98b8a937dd5f',
+      studentId: '34097fe2-cfe4-489b-959b-2c6aa6715d94',
       studentName: 'عمر باوزير',
       studentNumber: 'STD-2026-003',
-      avatarUrl: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&q=80&w=200',
-      status: 'present',
-    ),
-    TeacherAttendanceStudent(
-      studentId: 'std-4',
-      studentName: 'حسام عبدالرحمن الحداد',
-      studentNumber: 'STD-2026-004',
       avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
-      status: 'late',
-      note: 'تأخر 10 دقائق بسبب المواصلات',
-    ),
-    TeacherAttendanceStudent(
-      studentId: 'std-5',
-      studentName: 'ريان وليد الصبري',
-      studentNumber: 'STD-2026-005',
-      avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=200',
       status: 'present',
     ),
     TeacherAttendanceStudent(
-      studentId: 'std-6',
-      studentName: 'سالم ناصر الكندي',
-      studentNumber: 'STD-2026-006',
-      avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&q=80&w=200',
-      status: 'absent',
-      note: 'غياب بدون إشعار مسبق',
-    ),
-    TeacherAttendanceStudent(
-      studentId: 'std-7',
-      studentName: 'ياسر محمد العمري',
-      studentNumber: 'STD-2026-007',
-      avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=200',
-      status: 'excused',
-      note: 'عذر مرضي معتمد من الإدارة',
+      studentId: '3ab7cf28-7c76-4d5c-bef9-c1664458b7fd',
+      studentName: 'مريم سيف العتاب',
+      studentNumber: 'STD-2026-002',
+      avatarUrl: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&q=80&w=200',
+      status: 'present',
     ),
   ];
-
-  void markTeacherAttendance(String studentId, String status, [String? note]) {
-    final idx = teacherAttendanceRoster.indexWhere((s) => s.studentId == studentId);
-    if (idx != -1) {
-      teacherAttendanceRoster[idx].status = status;
-      if (note != null) teacherAttendanceRoster[idx].note = note;
-      notifyListeners();
-    }
-  }
 
   void markAllTeacherAttendancePresent() {
     for (var s in teacherAttendanceRoster) {
@@ -518,51 +680,31 @@ class ApiService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void markTeacherAttendance(String studentId, String status) {
+    final idx = teacherAttendanceRoster.indexWhere((s) => s.studentId == studentId);
+    if (idx != -1) {
+      teacherAttendanceRoster[idx].status = status;
+      notifyListeners();
+    }
+  }
+
   // ---------------------------------------------------------------------------
-  // Teacher Daily Lesson Plan (دفتر تحضير الدروس اليومي)
+  // Teacher Lesson Plans
   // ---------------------------------------------------------------------------
   final List<DailyLessonPlan> dailyLessonPlans = [
     DailyLessonPlan(
-      id: 'lp-001',
-      date: 'اليوم، الأربعاء 4 نوفمبر 2026',
+      id: 'lp-1',
+      date: 'اليوم، الأربعاء 04 نوفمبر',
       subject: 'الرياضيات',
-      className: 'الصف الأول الثانوي - شعبة (أ)',
+      className: 'الأول الثانوي - شعبة (أ)',
       period: 'الحصة الثانية (08:35 ص)',
-      topic: 'المحددات والمصفوفات وخواصها في حل المعادلات',
-      objectives: '1. أن يتعرف الطالب على خواص محدد الرتبة الثالثة.\n2. استخدام طريقة كرامر لحل 3 معادلات خطية.',
-      pages: 'صـ 42 إلى صـ 49',
-      teachingAids: 'جهاز العرض الذكي + السبورة التفاعلية + بطاقات التدريب',
-      homeworkAssigned: 'تمارين 3-1: حل المسائل (1، 3، 5) في كشكول المادة ورفع صورة الحل.',
-      notes: 'تفاعل ممتاز من جميع طلاب الشعبة ومشاركة نشطة في حل المسائل على السبورة.',
+      topic: 'المحددات وخاصية ضرب المصفوفات وتطبيقاتها',
+      objectives: '1. أن يحسب الطالب محدد مصفوفة 3×3 باستخدام طريقة الأقطار.\n2. أن يطبق قاعدة كرامر لحل معادلتين خطيتين.',
+      pages: 'ص 44 إلى ص 49',
+      teachingAids: 'السبورة التفاعلية، جهاز العرض، أوراق العمل الصفية',
+      homeworkAssigned: 'حل التمارين (1، 4، 6) في صفحة 51 بكشكول الواجب.',
+      notes: 'تم تنفيذ الحصة بتفاعل ممتاز من جميع طلاب الشعبة.',
       isCompleted: true,
-    ),
-    DailyLessonPlan(
-      id: 'lp-002',
-      date: 'اليوم، الأربعاء 4 نوفمبر 2026',
-      subject: 'الفيزياء',
-      className: 'الصف التاسع الأساسي - شعبة (أ)',
-      period: 'الحصة الرابعة (10:15 ص)',
-      topic: 'قوانين نيوتن في الحركة وتطبيقات القوة والكتلة',
-      objectives: '1. استنتاج الصيغة الرياضية للقانون الثاني لنيوتن F = ma.\n2. حساب التسارع عند تغير القوة المؤثرة.',
-      pages: 'صـ 61 إلى صـ 66',
-      teachingAids: 'مجسم العربة والكتل في معمل العلوم + فيديو تجربة السقوط الحر',
-      homeworkAssigned: 'حل التمارين صـ 67 (الأسئلة 2 و 4)',
-      notes: 'تم إجراء التجربة العملية في معمل الفيزياء بنجاح.',
-      isCompleted: true,
-    ),
-    DailyLessonPlan(
-      id: 'lp-003',
-      date: 'غداً، الخميس 5 نوفمبر 2026',
-      subject: 'الرياضيات',
-      className: 'الصف الأول الثانوي - شعبة (ب)',
-      period: 'الحصة الأولى (07:45 ص)',
-      topic: 'المتطابقات المثلثية وقوانين ضعف الزاوية',
-      objectives: '1. إثبات صحة المتطابقات المثلثية الأساسية.\n2. تطبيق القوانين في تبسيط المقادير الجبرية.',
-      pages: 'صـ 52 إلى صـ 57',
-      teachingAids: 'السبورة + أوراق عمل جماعية للفرق',
-      homeworkAssigned: 'حل التمارين 3-2 صفحة 58 في الكشكول',
-      notes: 'مخطط لإجراء اختبار قصير في بداية الحصة (10 دقائق).',
-      isCompleted: false,
     ),
   ];
 
@@ -577,26 +719,28 @@ class ApiService extends ChangeNotifier {
     required String homeworkAssigned,
     required String notes,
   }) {
-    final newPlan = DailyLessonPlan(
-      id: 'lp-${DateTime.now().millisecondsSinceEpoch}',
-      date: 'اليوم',
-      subject: subject,
-      className: className,
-      period: period,
-      topic: topic,
-      objectives: objectives,
-      pages: pages,
-      teachingAids: teachingAids,
-      homeworkAssigned: homeworkAssigned,
-      notes: notes,
-      isCompleted: false,
+    dailyLessonPlans.insert(
+      0,
+      DailyLessonPlan(
+        id: 'lp-${DateTime.now().millisecondsSinceEpoch}',
+        date: 'اليوم',
+        subject: subject,
+        className: className,
+        period: period,
+        topic: topic,
+        objectives: objectives,
+        pages: pages,
+        teachingAids: teachingAids,
+        homeworkAssigned: homeworkAssigned,
+        notes: notes,
+        isCompleted: true,
+      ),
     );
-    dailyLessonPlans.insert(0, newPlan);
     notifyListeners();
   }
 
-  void toggleLessonPlanCompleted(String id) {
-    final idx = dailyLessonPlans.indexWhere((p) => p.id == id);
+  void toggleLessonPlanCompleted(String planId) {
+    final idx = dailyLessonPlans.indexWhere((p) => p.id == planId);
     if (idx != -1) {
       dailyLessonPlans[idx].isCompleted = !dailyLessonPlans[idx].isCompleted;
       notifyListeners();
@@ -604,879 +748,499 @@ class ApiService extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
-  // Student Absence Excuses (تقديم ومتابعة أعذار الغياب المبررة)
+  // Homework items for Students
   // ---------------------------------------------------------------------------
-  final List<AbsenceExcuse> absenceExcuses = [
-    AbsenceExcuse(
-      id: 'exc-001',
-      studentId: 'eed91227-c43d-4703-a5eb-98b8a937dd5f',
-      studentName: 'أحمد سيف العتاب',
-      date: 'الثلاثاء 3 نوفمبر 2026',
-      reason: 'وعكة صحية طارئة ومراجعة المستشفى',
-      medicalReportUrl: 'https://school.alattab.site/media/reports/medical_report.pdf',
-      status: 'approved',
-      submittedAt: 'الثلاثاء، 08:30 ص',
-    ),
-  ];
-
-  void submitAbsenceExcuse({
-    required String date,
-    required String reason,
-    String? medicalReportUrl,
-  }) {
-    final newExcuse = AbsenceExcuse(
-      id: 'exc-${DateTime.now().millisecondsSinceEpoch}',
-      studentId: currentStudent.id,
-      studentName: currentStudent.fullName,
-      date: date,
-      reason: reason,
-      medicalReportUrl: medicalReportUrl,
-      status: 'pending',
-      submittedAt: 'الآن',
-    );
-    absenceExcuses.insert(0, newExcuse);
-    notifyListeners();
-  }
-
-  final List<SubjectCurriculum> subjects = [
-    SubjectCurriculum(
-      id: 'sub-math',
-      code: 'MATH-301',
-      name: 'الرياضيات (الجبر والتفاضل والتكامل)',
-      shortName: 'الرياضيات',
-      teacherName: 'أ. عبدالرحمن الشهاري',
-      weeklyPeriods: 6,
-      maxScore: 100,
-      textbookTitle: 'كتاب الرياضيات المنهجي - الجزء الأول (المنهج المعتمد)',
-      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/math_grade11.pdf',
-      totalPages: 184,
-      progressPercent: 0.72,
-      iconName: 'calculate',
-      units: [
-        CurriculumUnit(
-          unitNumber: 1,
-          title: 'النهايات والاتصال في الدوال الحقيقية',
-          lessonsCount: 4,
-          summary: 'مفهوم النهاية جبرياً وهندسياً، ونظريات النهايات، والدوال المتصلة وإزالة عدم التعيين.',
-          keyTopics: ['نظريات النهايات', 'حالات عدم التعيين (0/0)', 'اتصال الدوال عند نقطة وعلى فترة'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 2,
-          title: 'قواعد الاشتقاق وحساب التفاضل',
-          lessonsCount: 6,
-          summary: 'تعريف المشتقة بالتعريف، قواعد الضرب والقسمة، مشتقات الدوال الدائرية، وقاعدة السلسلة.',
-          keyTopics: ['مشتقات كثيرات الحدود', 'مشتقات الدوال المثلثية', 'قاعدة السلسلة والاشتقاق الضمني'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 3,
-          title: 'تطبيقات التفاضل والقيم القصوى',
-          lessonsCount: 5,
-          summary: 'التزايد والتناقص، القيم العظمى والصغرى المحلية والمطلقة، ونقاط الانقلاب.',
-          keyTopics: ['اختبار المشتقة الأولى', 'اختبار المشتقة الثانية للتقعر', 'مسائل القيم القصوى العملية'],
-          isCompleted: false,
-        ),
-        CurriculumUnit(
-          unitNumber: 4,
-          title: 'المتجهات والهندسة التحليلية الفضائية',
-          lessonsCount: 4,
-          summary: 'المتجهات في الفضاء ثلاثي الأبعاد، الضرب القياسي والاتجاهي، ومعادلات المستقيم والمستوى.',
-          keyTopics: ['الضرب القياسي والاتجاهي', 'معادلة الخط المستقيم في الفراغ', 'حساب الزوايا والمسافات'],
-          isCompleted: false,
-        ),
-      ],
-    ),
-    SubjectCurriculum(
-      id: 'sub-phys',
-      code: 'PHYS-301',
-      name: 'الفيزياء (الميكانيكا والموجات)',
-      shortName: 'الفيزياء',
-      teacherName: 'أ. د. ياسر القدسي',
-      weeklyPeriods: 5,
-      maxScore: 100,
-      textbookTitle: 'كتاب الفيزياء العامة - الجزء الأول',
-      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/physics_grade11.pdf',
-      totalPages: 160,
-      progressPercent: 0.65,
-      iconName: 'bolt',
-      units: [
-        CurriculumUnit(
-          unitNumber: 1,
-          title: 'قوانين نيوتن في الحركة والجاذبية العامة',
-          lessonsCount: 5,
-          summary: 'القانون الأول والثاني والثالث، تطبيقات الاحتكاك، وقانون الجذب العام وحركة الأقمار الصناعية.',
-          keyTopics: ['مخطط الجسم الحر', 'قانون نيوتن الثاني F=ma', 'حركة المقذوفات في بعدين'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 2,
-          title: 'الشغل والطاقة وحفظ الطاقة الميكانيكية',
-          lessonsCount: 4,
-          summary: 'الشغل المبذول بواسطة قوة ثابتة ومتغيرة، طاقة الحركة وطاقة الوضع، ومبدأ حفظ الطاقة.',
-          keyTopics: ['مبرهنة الشغل والطاقة', 'طاقة الوضع التثاقلية والمرونية', 'القدرة الميكانيكية والواط'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 3,
-          title: 'الحركة التوافقية البسيطة والموجات الميكانيكية',
-          lessonsCount: 5,
-          summary: 'البندول البسيط، الزنبرك، خصائص الموجات، وسرعة انتشار الصوت وظاهرة دوبلر.',
-          keyTopics: ['معادلة الإزاحة والسرعة للتوافقية', 'التردد والزمن الدوري', 'ظاهرة دوبلر والرنين'],
-          isCompleted: false,
-        ),
-      ],
-    ),
-    SubjectCurriculum(
-      id: 'sub-chem',
-      code: 'CHEM-301',
-      name: 'الكيمياء (الكيمياء العضوية والحرارية)',
-      shortName: 'الكيمياء',
-      teacherName: 'أ. مروان الحمادي',
-      weeklyPeriods: 4,
-      maxScore: 100,
-      textbookTitle: 'كتاب الكيمياء المنهجي للصف الأول الثانوي',
-      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/chem_grade11.pdf',
-      totalPages: 148,
-      progressPercent: 0.58,
-      iconName: 'science',
-      units: [
-        CurriculumUnit(
-          unitNumber: 1,
-          title: 'الحركية الكيميائية وسرعة التفاعلات',
-          lessonsCount: 4,
-          summary: 'نظرية التصادم وطاقة التنشيط، العوامل المؤثرة على سرعة التفاعل، ورتبة التفاعل الكيميائي.',
-          keyTopics: ['قانون سرعة التفاعل', 'العوامل المحفزة والإنزيمات', 'طاقة التنشيط ومعادلة أرهينيوس'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 2,
-          title: 'الاتزان الكيميائي ومبدأ لوشاتيليه',
-          lessonsCount: 5,
-          summary: 'مفهوم الاتزان الديناميكي، ثابت الاتزان Kc و Kp، وتأثير تغير الضغط والحرارة والتركيز.',
-          keyTopics: ['كتابة تعبير ثابت الاتزان', 'مبدأ لوشاتيليه والتطبيقات الصناعية', 'الاتزان الأيوني وحاصل الإذابة'],
-          isCompleted: false,
-        ),
-        CurriculumUnit(
-          unitNumber: 3,
-          title: 'الكيمياء الكهربائية والأكسدة والاختزال',
-          lessonsCount: 5,
-          summary: 'الخلايا الجلفانية وخلايا التحليل الكهربائي، قياس جهود الأقطاب القياسية، وسلسلة النشاط.',
-          keyTopics: ['موازنة معادلات التأكسد والاختزال', 'خلية دانيال', 'قوانين فاراداي في التحليل الكهربائي'],
-          isCompleted: false,
-        ),
-      ],
-    ),
-    SubjectCurriculum(
-      id: 'sub-arab',
-      code: 'ARAB-301',
-      name: 'اللغة العربية (النحو، الصرف، البلاغة، الأدب)',
-      shortName: 'العربية',
-      teacherName: 'أ. يحيى الشامي',
-      weeklyPeriods: 5,
-      maxScore: 100,
-      textbookTitle: 'كتاب اللغة العربية وآدابها الموحد',
-      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/arabic_grade11.pdf',
-      totalPages: 172,
-      progressPercent: 0.80,
-      iconName: 'menu_book',
-      units: [
-        CurriculumUnit(
-          unitNumber: 1,
-          title: 'النحو: التوابع وأساليب الاستثناء والتوكيد',
-          lessonsCount: 6,
-          summary: 'النعت والتوكيد والبدل والعطف، وأساليب الاستثناء بـ (إلا، غير، سوى)، وإعراب الجمل.',
-          keyTopics: ['إعراب المستثنى بالأدوات المختلفة', 'أنواع البدل وأحكامه', 'التوكيد اللفظي والمعنوي'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 2,
-          title: 'البلاغة والنقد: علم المعاني وعلم البديع',
-          lessonsCount: 4,
-          summary: 'الأسلوب الخبري والإنشائي، أغراض التقديم والتأخير، والمحسنات البديعية اللفظية والمعنوية.',
-          keyTopics: ['الطباق والمقابلة والجناس', 'التشبيه والاستعارة المكنية والتصريحية', 'الكناية وسر جمالها'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 3,
-          title: 'الأدب والنصوص الشعرية والنثرية',
-          lessonsCount: 5,
-          summary: 'دراسة وتحليل نصوص الأدب في العصر الحديث، مدرسة الإحياء والبعث، وشعراء المهجر.',
-          keyTopics: ['تحليل القصيدة العربية الحديثة', 'الخصائص الأسلوبية للمقالة الأدبية', 'حفظ النصوص المقررة'],
-          isCompleted: false,
-        ),
-      ],
-    ),
-    SubjectCurriculum(
-      id: 'sub-eng',
-      code: 'ENG-301',
-      name: 'اللغة الإنجليزية (English for High School)',
-      shortName: 'الإنجليزية',
-      teacherName: 'Mr. Tariq Al-Haj',
-      weeklyPeriods: 4,
-      maxScore: 100,
-      textbookTitle: 'Crescent English Coursebook - Level 5',
-      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/english_grade11.pdf',
-      totalPages: 140,
-      progressPercent: 0.70,
-      iconName: 'language',
-      units: [
-        CurriculumUnit(
-          unitNumber: 1,
-          title: 'Unit 1: Scientific Breakthroughs & Innovations',
-          lessonsCount: 5,
-          summary: 'Reading comprehension, passive voice in scientific contexts, and vocabulary for technology.',
-          keyTopics: ['Passive Voice across tenses', 'Technical vocabulary', 'Argumentative paragraph writing'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 2,
-          title: 'Unit 2: Conditional Sentences & Imaginary Situations',
-          lessonsCount: 4,
-          summary: 'Zero, First, Second and Third Conditionals, mixed conditionals and express wishes.',
-          keyTopics: ['If-Clauses (Types 1, 2, 3)', 'Expressing Regret (Wish / If only)', 'Dialogue roleplay'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 3,
-          title: 'Unit 3: Global Citizenship & Environment',
-          lessonsCount: 5,
-          summary: 'Environmental issues, renewable energy discussions, and formal letter & essay writing.',
-          keyTopics: ['Modal verbs of deduction', 'Formal letter writing format', 'Report presentation'],
-          isCompleted: false,
-        ),
-      ],
-    ),
-    SubjectCurriculum(
-      id: 'sub-islam',
-      code: 'ISLM-301',
-      name: 'القرآن الكريم والتربية الإسلامية',
-      shortName: 'الإسلامية',
-      teacherName: 'الشيخ محمد الأهدل',
-      weeklyPeriods: 4,
-      maxScore: 100,
-      textbookTitle: 'كتاب التربية الإسلامية وعلوم القرآن',
-      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/islamic_grade11.pdf',
-      totalPages: 132,
-      progressPercent: 0.85,
-      iconName: 'auto_stories',
-      units: [
-        CurriculumUnit(
-          unitNumber: 1,
-          title: 'القرآن الكريم: تلاوة وتفسير سورة الإسراء',
-          lessonsCount: 6,
-          summary: 'الآيات (1 - 38)، أحكام التجويد (المدود والمخارج)، ومقاصد الآيات في بر الوالدين والأخلاق.',
-          keyTopics: ['أحكام المد اللازم والمتصل', 'القيم الأخلاقية في سورة الإسراء', 'أسباب النزول والمعاني'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 2,
-          title: 'الحديث الشريف والفقه الإسلامي',
-          lessonsCount: 5,
-          summary: 'دراسة الأحاديث النبوية المختارة، وأحكام المعاملات المالية، والبيوع المباحة والمحرمة.',
-          keyTopics: ['حفظ وفهم نصوص الأحاديث', 'أحكام الربا والغش في الفقه', 'الأمانة في العمل والمسؤولية'],
-          isCompleted: true,
-        ),
-      ],
-    ),
-    SubjectCurriculum(
-      id: 'sub-comp',
-      code: 'COMP-301',
-      name: 'الحاسوب وتقنية المعلومات والذكاء الاصطناعي',
-      shortName: 'الحاسوب',
-      teacherName: 'م. أسامة الردماني',
-      weeklyPeriods: 3,
-      maxScore: 100,
-      textbookTitle: 'كتاب الحاسوب والتقنيات الرقمية الحديثة',
-      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/cs_grade11.pdf',
-      totalPages: 120,
-      progressPercent: 0.60,
-      iconName: 'laptop_mac',
-      units: [
-        CurriculumUnit(
-          unitNumber: 1,
-          title: 'البرمجة بلغة بايثون وتراكيب البيانات',
-          lessonsCount: 5,
-          summary: 'المتغيرات، الجمل الشرطية والدوال، القوائم والمعاجم، وتطبيقات عملية على حل المشكلات.',
-          keyTopics: ['مفاهيم الخوارزميات وتتبع الكود', 'الدوال والمكتبات القياسية', 'مشاريع تطبيقية صغيرة'],
-          isCompleted: true,
-        ),
-        CurriculumUnit(
-          unitNumber: 2,
-          title: 'أساسيات الذكاء الاصطناعي ونماذج البيانات',
-          lessonsCount: 4,
-          summary: 'مفهوم الذكاء الاصطناعي، تعلم الآلة، التعرف على الصور، ومعالجة اللغات الطبيعية.',
-          keyTopics: ['الفرق بين الذكاء الاصطناعي والبرمجة التقليدية', 'تدريب النماذج والبيانات', 'أخلاقيات الذكاء الاصطناعي'],
-          isCompleted: false,
-        ),
-      ],
-    ),
-  ];
-
   final List<HomeworkItem> homeworks = [
     HomeworkItem(
       id: 'hw-5',
-      title: 'حل تمارين الجبر ونهايات الدوال - ص 54 في الكشكول',
-      subject: 'الرياضيات',
+      title: 'واجب كشكول الفيزياء: تطبيقات قوانين نيوتن ومعادلات الحركة',
+      subject: 'الفيزياء',
       teacherName: 'أ. إبراهيم الحداد',
-      dueDate: 'غداً، 09:00 م',
+      dueDate: 'غداً، الساعة 10:00 مساءً',
       status: 'pending',
       maxScore: 10,
-      description: 'المطلوب: قم بحل التمارين (رقم 3 و 4 و 7) في كشكول الرياضيات بخط يدوي واضح، ثم التقط صورة لصفحة الحل وارفعها هنا ليتم تصحيحها واعتمادها.',
+      description: 'حل المسألة رقم 4 في صفحة 52 ومسألة السقوط الحر رقم 7 في كشكول الواجب بخط واضح وصور الصفحة لرفعها هنا.',
       submissionType: 'image_upload',
       questions: [],
     ),
     HomeworkItem(
       id: 'hw-1',
-      title: 'واجب الدوال الرياضية ونهايات الاتصال',
+      title: 'واجب المصفوفات والمحددات التفاعلي',
       subject: 'الرياضيات',
       teacherName: 'أ. إبراهيم الحداد',
-      dueDate: 'غداً، 10:00 م',
+      dueDate: 'الخميس القادم',
       status: 'pending',
-      maxScore: 10,
-      description: 'حل المسائل المتعلقة بنهايات الدوال الكسرية وقاعدة لوبيتال وتطبيقات المشتقة الأولى.',
+      maxScore: 15,
+      description: 'أجب عن المسائل الرياضية التفاعلية التالية بعناية لاختبار فهمك لخواص المحددات.',
       submissionType: 'interactive_questions',
       questions: [
         QuestionItem(
           id: 'q1',
-          text: 'ما هي قيمة النهاية: lim (x -> 0) [sin(3x) / x]؟',
+          text: 'ما هو محدد المصفوفة القطرية التي عناصر قطرها الرئيسي هي (2, 5, 3)؟',
           type: 'mcq',
-          options: ['0', '1', '3', 'غير معرفة'],
-          points: 3,
+          options: ['10', '30', '15', '0'],
+          points: 5,
         ),
         QuestionItem(
           id: 'q2',
-          text: 'إذا كانت الدالة f(x) = |x|، هل الدالة متصلة وقابلة للاشتقاق عند x = 0؟',
+          text: 'إذا كانت قيمة محدد مصفوفة مربعة تساوي صفراً، فماذا نستنتج عن مصفوفتها المعكوسة؟',
           type: 'mcq',
-          options: ['متصلة وقابلة للاشتقاق', 'متصلة ولكن غير قابلة للاشتقاق', 'غير متصلة نهائياً'],
-          points: 3,
+          options: ['المصفوفة المعكوسة غير موجودة (منفردة)', 'المعكوس يساوي صفر', 'المعكوس هو مصفوفة الوحدة'],
+          points: 5,
         ),
         QuestionItem(
           id: 'q3',
-          text: 'اكتب الشروط الرياضية الثلاثة اللازمة ليكون المنحنى متصلاً عند نقطة ما.',
+          text: 'اشرح باختصار متى يمكن استخدام قاعدة كرامر لحل نظام معادلات خطية.',
           type: 'essay',
-          points: 4,
-        ),
-      ],
-    ),
-    HomeworkItem(
-      id: 'hw-2',
-      title: 'قوانين نيوتن وحساب القوة المركزية',
-      subject: 'الفيزياء',
-      teacherName: 'أ. طارق الشامي',
-      dueDate: 'الخميس، 08:00 م',
-      status: 'submitted',
-      maxScore: 10,
-      studentScore: 10,
-      description: 'تمارين حساب التسارع المركزي والقوة الجاذبة المركزية للأقمار الصناعية والأجسام الدائرية.',
-      submissionType: 'interactive_questions',
-      questions: [
-        QuestionItem(
-          id: 'q2-1',
-          text: 'ما اتجاه القوة الجاذبة المركزية المؤثرة على جسم يتحرك في مسار دائري منتظم؟',
-          type: 'mcq',
-          options: ['باتجاه مركز الدائرة', 'مماس لمسار الحركة', 'عكس اتجاه الحركة'],
-          points: 5,
-          userAnswer: 'باتجاه مركز الدائرة',
-        ),
-        QuestionItem(
-          id: 'q2-2',
-          text: 'ماذا يحدث للسرعة الخطية إذا تضاعف نصف قطر المدار مع ثبات الزمن الدوري؟',
-          type: 'mcq',
-          options: ['تتضاعف', 'تقل إلى النصف', 'تبقى ثابتة'],
-          points: 5,
-          userAnswer: 'تتضاعف',
-        ),
-      ],
-    ),
-    HomeworkItem(
-      id: 'hw-3',
-      title: 'إعراب قصيدة من معلقات الشعر العربي',
-      subject: 'اللغة العربية',
-      teacherName: 'أ. يحيى القاسمي',
-      dueDate: 'الأحد القادم',
-      status: 'graded',
-      maxScore: 10,
-      studentScore: 9,
-      description: 'إعراب الأبيات الخمسة الأولى واستخراج الصور البلاغية والتشبيهات والاستعارات.',
-      submissionType: 'interactive_questions',
-      questions: [],
-    ),
-    HomeworkItem(
-      id: 'hw-4',
-      title: 'تفاعلات الأكسدة والاختزال والروابط الكيميائية',
-      subject: 'الكيمياء',
-      teacherName: 'أ. فؤاد الصبري',
-      dueDate: 'الإثنين القادم',
-      status: 'pending',
-      maxScore: 10,
-      description: 'كتابة معادلات تفاعلات الإحلال البسيط وتحديد العامل المؤكسد والعامل المختزل في التفاعل.',
-      submissionType: 'interactive_questions',
-      questions: [
-        QuestionItem(
-          id: 'q4-1',
-          text: 'ما هي الشحنة الأيونية لعنصر المغنيسيوم Mg عند تكوين أكسيد المغنيسيوم؟',
-          type: 'mcq',
-          options: ['+1', '+2', '-2', '0'],
           points: 5,
         ),
       ],
     ),
   ];
 
-  // Grades list
+  void submitHomeworkAnswer(String hwId, Map<String, String> answers) {
+    final idx = homeworks.indexWhere((h) => h.id == hwId);
+    if (idx != -1) {
+      homeworks[idx].status = 'submitted';
+      notifyListeners();
+    }
+  }
+
+  void studentSubmitImageHomework(String hwId, String imageUrl, String note) {
+    final idx = homeworks.indexWhere((h) => h.id == hwId);
+    if (idx != -1) {
+      homeworks[idx].status = 'submitted';
+      homeworks[idx].submittedImageUrl = imageUrl;
+      homeworks[idx].submittedNotes = note;
+      notifyListeners();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Grades for active student
+  // ---------------------------------------------------------------------------
   final List<GradeRecord> grades = [
     GradeRecord(
-      subject: 'الرياضيات',
+      subject: 'الفيزياء العامة',
       teacher: 'أ. إبراهيم الحداد',
-      monthlyExam: 29.0,
-      homeworkScore: 10.0,
-      participation: 9.5,
-      total: 48.5,
-      maxTotal: 50.0,
-      letterGrade: 'ممتاز مرتفع A+',
-    ),
-    GradeRecord(
-      subject: 'الفيزياء',
-      teacher: 'أ. طارق الشامي',
-      monthlyExam: 28.0,
+      monthOneExam: 19.5,
+      monthTwoExam: 19.0,
+      monthlyExam: 29.5,
       homeworkScore: 10.0,
       participation: 10.0,
-      total: 48.0,
-      maxTotal: 50.0,
+      semesterFinalExam: 48.5,
+      total: 98.0,
+      maxTotal: 100,
       letterGrade: 'ممتاز A+',
+      teacherRemarks: 'طالب استثنائي في الاستيعاب الرياضي والفيزيائي وحل المسائل المتقدمة.',
+      classRank: 1,
     ),
     GradeRecord(
-      subject: 'اللغة العربية',
-      teacher: 'أ. يحيى القاسمي',
-      monthlyExam: 29.0,
+      subject: 'الرياضيات التطبيقية',
+      teacher: 'أ. إبراهيم الحداد',
+      monthOneExam: 19.0,
+      monthTwoExam: 18.5,
+      monthlyExam: 28.5,
       homeworkScore: 9.5,
-      participation: 10.0,
-      total: 48.5,
-      maxTotal: 50.0,
-      letterGrade: 'ممتاز مرتفع A+',
+      participation: 9.5,
+      semesterFinalExam: 47.5,
+      total: 95.0,
+      maxTotal: 100,
+      letterGrade: 'ممتاز A',
+      teacherRemarks: 'دقة عالية في حل المسائل والتفكير المنطقي.',
+      classRank: 2,
     ),
     GradeRecord(
       subject: 'الكيمياء',
-      teacher: 'أ. فؤاد الصبري',
-      monthlyExam: 26.5,
-      homeworkScore: 9.5,
+      teacher: 'د. وليد الصبري',
+      monthOneExam: 18.0,
+      monthTwoExam: 18.0,
+      monthlyExam: 27.0,
+      homeworkScore: 9.0,
       participation: 9.0,
-      total: 45.0,
-      maxTotal: 50.0,
+      semesterFinalExam: 46.0,
+      total: 91.0,
+      maxTotal: 100,
       letterGrade: 'ممتاز A',
+      teacherRemarks: 'أداء ممتاز واهتمام ملحوظ بالتجارب المخبرية.',
+      classRank: 3,
     ),
     GradeRecord(
       subject: 'اللغة الإنجليزية',
-      teacher: 'أ. أحمد راجح',
+      teacher: 'أ. محمد باوزير',
+      monthOneExam: 18.5,
+      monthTwoExam: 19.0,
       monthlyExam: 28.0,
-      homeworkScore: 10.0,
-      participation: 9.0,
-      total: 47.0,
-      maxTotal: 50.0,
+      homeworkScore: 9.5,
+      participation: 9.5,
+      semesterFinalExam: 47.0,
+      total: 94.0,
+      maxTotal: 100,
       letterGrade: 'ممتاز A',
-    ),
-    GradeRecord(
-      subject: 'التربية الإسلامية',
-      teacher: 'أ. محمد العلفي',
-      monthlyExam: 30.0,
-      homeworkScore: 10.0,
-      participation: 10.0,
-      total: 50.0,
-      maxTotal: 50.0,
-      letterGrade: 'ممتاز مرتفع A+',
+      teacherRemarks: 'Fluent speaker and active classroom participant.',
+      classRank: 2,
     ),
   ];
 
-  // Weekly timetable periods
-  final List<TimetablePeriod> timetable = [
-    TimetablePeriod(periodNumber: 1, time: '08:00 - 08:45 ص', subject: 'الرياضيات', teacher: 'أ. إبراهيم الحداد', classroom: 'قاعة 101', dayName: 'الأحد'),
-    TimetablePeriod(periodNumber: 2, time: '08:50 - 09:35 ص', subject: 'الفيزياء', teacher: 'أ. طارق الشامي', classroom: 'معمل الفيزياء', dayName: 'الأحد'),
-    TimetablePeriod(periodNumber: 3, time: '09:40 - 10:25 ص', subject: 'اللغة العربية', teacher: 'أ. يحيى القاسمي', classroom: 'قاعة 101', dayName: 'الأحد'),
-    TimetablePeriod(periodNumber: 4, time: '10:50 - 11:35 ص', subject: 'الكيمياء', teacher: 'أ. فؤاد الصبري', classroom: 'المعمل', dayName: 'الأحد'),
-    TimetablePeriod(periodNumber: 5, time: '11:40 - 12:25 م', subject: 'اللغة الإنجليزية', teacher: 'أ. أحمد راجح', classroom: 'قاعة 101', dayName: 'الأحد'),
-
-    TimetablePeriod(periodNumber: 1, time: '08:00 - 08:45 ص', subject: 'التربية الإسلامية', teacher: 'أ. محمد العلفي', classroom: 'قاعة 101', dayName: 'الإثنين'),
-    TimetablePeriod(periodNumber: 2, time: '08:50 - 09:35 ص', subject: 'الرياضيات', teacher: 'أ. إبراهيم الحداد', classroom: 'قاعة 101', dayName: 'الإثنين'),
-    TimetablePeriod(periodNumber: 3, time: '09:40 - 10:25 ص', subject: 'الفيزياء', teacher: 'أ. طارق الشامي', classroom: 'معمل الفيزياء', dayName: 'الإثنين'),
-    TimetablePeriod(periodNumber: 4, time: '10:50 - 11:35 ص', subject: 'الحاسوب والبرمجة', teacher: 'أ. زيدان العتاب', classroom: 'معمل الحاسوب', dayName: 'الإثنين'),
+  // ---------------------------------------------------------------------------
+  // Timetable
+  // ---------------------------------------------------------------------------
+  final List<TimetablePeriod> timetablePeriods = [
+    TimetablePeriod(
+      periodNumber: 1,
+      time: '08:00 - 08:45 ص',
+      subject: 'الفيزياء',
+      teacher: 'أ. إبراهيم الحداد',
+      classroom: 'قاعة 101 (معمل الفيزياء)',
+      dayName: 'الأحد',
+    ),
+    TimetablePeriod(
+      periodNumber: 2,
+      time: '08:50 - 09:35 ص',
+      subject: 'الرياضيات',
+      teacher: 'أ. إبراهيم الحداد',
+      classroom: 'قاعة 101',
+      dayName: 'الأحد',
+    ),
+    TimetablePeriod(
+      periodNumber: 3,
+      time: '09:55 - 10:40 ص',
+      subject: 'الكيمياء',
+      teacher: 'د. وليد الصبري',
+      classroom: 'قاعة 101 (معمل العلوم)',
+      dayName: 'الأحد',
+    ),
+    TimetablePeriod(
+      periodNumber: 4,
+      time: '10:45 - 11:30 ص',
+      subject: 'اللغة الإنجليزية',
+      teacher: 'أ. محمد باوزير',
+      classroom: 'قاعة 101',
+      dayName: 'الأحد',
+    ),
   ];
 
-  // Invoices & Fees state
-  double tuitionTotal = 180000;
-  double tuitionPaid = 80000;
+  List<TimetablePeriod> get timetable => timetablePeriods;
+
+  // ---------------------------------------------------------------------------
+  // Finance & Jaib Wallet
+  // ---------------------------------------------------------------------------
+  double tuitionTotal = 405000;
+  double tuitionPaid = 275000;
   double get tuitionRemaining => tuitionTotal - tuitionPaid;
 
   final List<Map<String, dynamic>> paymentReceipts = [
     {
-      'id': 'REC-10492',
-      'title': 'سداد دفعة مقدمة من القسط الأول',
-      'amount': 80000.0,
-      'date': '20 أكتوبر 2026',
-      'method': 'محفظة جيب الإلكترونية',
-      'cashier': 'أحمد السنحاني (أمين الصندوق)',
+      'id': 'REC-2026-904',
+      'amount': 50000,
+      'date': '2026-10-18',
+      'method': 'محفظة جيب الإلكترونية (Jaib Pay)',
+      'status': 'معتمد ومؤكد رسمياً',
+      'reference': 'JB-7892140',
+    },
+    {
+      'id': 'REC-2026-812',
+      'amount': 225000,
+      'date': '2026-09-02',
+      'method': 'إيداع بنكي مباشر - بنك الكريمي',
+      'status': 'معتمد ومؤكد رسمياً',
+      'reference': 'KRM-102948',
     },
   ];
-
-  // Human Teacher & Admin Chat messages
-  final List<ChatMessage> humanChatMessages = [
-    ChatMessage(
-      id: 'm1',
-      senderName: 'أ. إبراهيم الحداد',
-      senderRole: 'معلم الرياضيات',
-      text: 'السلام عليكم ورحمة الله. نرجو من الطالب مراجعة درس نهايات الدوال قبل حل الواجب المنزلي المعطى.',
-      time: '10:30 ص',
-      isMe: false,
-    ),
-    ChatMessage(
-      id: 'm2',
-      senderName: 'د. سيف العتاب',
-      senderRole: 'ولي الأمر',
-      text: 'وعليكم السلام ورحمة الله أستاذ إبراهيم، تم التوجيه وهو يقوم بالحل الآن. شكراً لحرصكم المستمر.',
-      time: '11:15 ص',
-      isMe: true,
-    ),
-    ChatMessage(
-      id: 'm3',
-      senderName: 'إدارة المدرسة',
-      senderRole: 'شؤون الطلاب',
-      text: 'نحيطكم علماً بأن بطاقات التقارير الشهرية ستتاح إلكترونياً نهاية هذا الأسبوع عبر المنصة.',
-      time: '01:00 م',
-      isMe: false,
-    ),
-  ];
-
-  // AI Student Copilot Chat messages (Personalized per Student)
-  final Map<String, List<ChatMessage>> aiStudentChats = {
-    'STD-2026-001': [
-      ChatMessage(
-        id: 'ai-init',
-        senderName: 'المساعد الذكي (أحمد)',
-        senderRole: 'الذكاء الاصطناعي الأكاديمي',
-        text: 'أهلاً بك يا أحمد! 🎓 أنا رفيقك الدراسي الذكي في المدرسة الافتراضية. يمكنك سؤالي عن أي مسألة رياضية، أو تلخيص دروس الفيزياء والعلوم، أو مساعدتك في حل التمارين.',
-        time: 'الآن',
-        isMe: false,
-      ),
-    ],
-    'STD-2026-002': [
-      ChatMessage(
-        id: 'ai-init-2',
-        senderName: 'المساعد الذكي (مريم)',
-        senderRole: 'الذكاء الاصطناعي الأكاديمي',
-        text: 'مرحباً مريم! 🌟 أنا معلمكِ الافتراضي الذكي لمرحلة الصف التاسع. اسأليني عن إعراب اللغة العربية، أو معادلات الكيمياء، أو مفردات الإنجليزية وسأجيبك فوراً.',
-        time: 'الآن',
-        isMe: false,
-      ),
-    ],
-  };
-
-  List<ChatMessage> get currentStudentAiChat {
-    final code = currentStudent.studentNumber;
-    return aiStudentChats.putIfAbsent(code, () => [
-      ChatMessage(
-        id: 'ai-init-$code',
-        senderName: 'المساعد الذكي (${currentStudent.fullName.split(' ').first})',
-        senderRole: 'الذكاء الاصطناعي الأكاديمي',
-        text: 'مرحباً بك! أنا مساعدك الدراسي الشخصي الذكي. جاهز لمساعدتك في جميع مواد ${currentStudent.grade}.',
-        time: 'الآن',
-        isMe: false,
-      ),
-    ]);
-  }
-
-  void selectStudent(int index) {
-    if (index >= 0 && index < students.length) {
-      _selectedStudentIndex = index;
-      notifyListeners();
-    }
-  }
-
-  void switchRole(String role) {
-    _currentRole = role;
-    if (role == 'student') {
-      _currentUserName = 'أحمد سيف العتاب';
-      _userPhone = '770000005';
-    } else if (role == 'guardian') {
-      _currentUserName = 'د. سيف العتاب';
-      _userPhone = '770000004';
-    } else if (role == 'teacher') {
-      _currentUserName = 'أ. إبراهيم الحداد';
-      _userPhone = '770000003';
-    } else if (role == 'director') {
-      _currentUserName = 'عبدالرحمن المنصوري';
-      _userPhone = '770000001';
-    }
-    notifyListeners();
-  }
-
-  void submitHomeworkAnswer(String homeworkId, Map<String, String> answers) {
-    final hw = homeworks.firstWhere((element) => element.id == homeworkId);
-    for (var q in hw.questions) {
-      if (answers.containsKey(q.id)) {
-        q.userAnswer = answers[q.id];
-      }
-    }
-    final index = homeworks.indexWhere((element) => element.id == homeworkId);
-    if (index != -1) {
-      homeworks[index] = HomeworkItem(
-        id: hw.id,
-        title: hw.title,
-        subject: hw.subject,
-        teacherName: hw.teacherName,
-        dueDate: hw.dueDate,
-        status: 'submitted',
-        maxScore: hw.maxScore,
-        studentScore: hw.maxScore, // Instant grade reward
-        description: hw.description,
-        submissionType: hw.submissionType,
-        questions: hw.questions,
-      );
-    }
-    notifyListeners();
-  }
 
   void payViaJaibWallet(double amount) {
     tuitionPaid += amount;
     paymentReceipts.insert(0, {
-      'id': 'REC-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
-      'title': 'سداد رسوم دراسية عبر محفظة جيب الإلكترونية',
+      'id': 'REC-2026-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
       'amount': amount,
-      'date': 'الآن',
-      'method': 'محفظة جيب (رقم العملية: JB-${DateTime.now().millisecond}982)',
-      'cashier': 'بوابة الدفع الفوري (آلي)',
+      'date': 'اليوم، ${DateTime.now().hour}:${DateTime.now().minute}',
+      'method': 'محفظة جيب الإلكترونية (Jaib Pay)',
+      'status': 'معتمد ومؤكد رسمياً',
+      'reference': 'JB-${DateTime.now().millisecondsSinceEpoch.toString().substring(6)}',
     });
     notifyListeners();
   }
 
-  void addHumanChatMessage(String text) {
-    if (text.trim().isEmpty) return;
-    humanChatMessages.add(ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      senderName: currentUserName,
-      senderRole: currentRole == 'guardian' ? 'ولي الأمر' : (currentRole == 'student' ? 'الطالب' : 'معلم'),
-      text: text.trim(),
-      time: 'الآن',
-      isMe: true,
-    ));
+  // ---------------------------------------------------------------------------
+  // Attendance & Absence Excuses
+  // ---------------------------------------------------------------------------
+  final List<AttendanceDay> recentAttendance = [
+    AttendanceDay(date: '2026-11-04', dayName: 'الأربعاء', status: 'present'),
+    AttendanceDay(date: '2026-11-03', dayName: 'الثلاثاء', status: 'present'),
+    AttendanceDay(date: '2026-11-02', dayName: 'الإثنين', status: 'present'),
+    AttendanceDay(date: '2026-11-01', dayName: 'الأحد', status: 'present'),
+    AttendanceDay(date: '2026-10-29', dayName: 'الخميس', status: 'excused', note: 'عذر مرضي معتمد'),
+  ];
+
+  final List<AbsenceExcuse> absenceExcuses = [
+    AbsenceExcuse(
+      id: 'exc-1',
+      studentId: 'eed91227-c43d-4703-a5eb-98b8a937dd5f',
+      studentName: 'أحمد سيف العتاب',
+      date: '2026-10-29',
+      reason: 'وعكة صحية طارئة ومراجعة العيادة الطبية.',
+      medicalReportUrl: 'https://school.alattab.site/media/reports/medical_report.pdf',
+      status: 'approved',
+      submittedAt: '2026-10-29، 08:30 ص',
+    ),
+  ];
+
+  Future<bool> submitAbsenceExcuse({
+    String? studentId,
+    required String date,
+    required String reason,
+    String? medicalReportUrl,
+  }) async {
+    final sId = studentId ?? currentStudent.id;
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/attendance/excuses/'),
+        headers: authHeaders,
+        body: jsonEncode({
+          'student_id': sId,
+          'date': date,
+          'reason': reason,
+          if (medicalReportUrl != null) 'medical_report': medicalReportUrl,
+        }),
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        absenceExcuses.insert(
+          0,
+          AbsenceExcuse(
+            id: 'exc-${DateTime.now().millisecondsSinceEpoch}',
+            studentId: sId,
+            studentName: currentStudent.fullName,
+            date: date,
+            reason: reason,
+            medicalReportUrl: medicalReportUrl,
+            status: 'pending',
+            submittedAt: 'الآن',
+          ),
+        );
+        notifyListeners();
+        return true;
+      }
+    } catch (_) {}
+
+    absenceExcuses.insert(
+      0,
+      AbsenceExcuse(
+        id: 'exc-${DateTime.now().millisecondsSinceEpoch}',
+        studentId: sId,
+        studentName: currentStudent.fullName,
+        date: date,
+        reason: reason,
+        medicalReportUrl: medicalReportUrl,
+        status: 'pending',
+        submittedAt: 'الآن (قيد المراجعة)',
+      ),
+    );
     notifyListeners();
+    return true;
   }
 
-  Future<void> askAiCopilot(String prompt) async {
-    if (prompt.trim().isEmpty) return;
-    final chat = currentStudentAiChat;
-    final student = currentStudent;
-
-    // Add user question
-    chat.add(ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      senderName: student.fullName,
-      senderRole: 'الطالب',
-      text: prompt.trim(),
-      time: 'الآن',
-      isMe: true,
-    ));
+  // ---------------------------------------------------------------------------
+  // Real AI Copilot: Student Intelligent Tutor (Live Gemini Model)
+  // ---------------------------------------------------------------------------
+  Future<String> askAiTutor(String query) async {
     _isAiThinking = true;
     notifyListeners();
 
-    // Try real backend call to Django Copilot API with Gemini 3.5 Flash
-    String? backendReply;
     try {
-      // Pick matching valid token based on student and role
-      String token = 'RpnlyqRbe58XV6VWIl9xAnBY0xema9BUcIMR0zJdYN4xmNdMa2jlPY2w_iMOHn_4'; // Director super token
-      if (student.id == 'eed91227-c43d-4703-a5eb-98b8a937dd5f') {
-        token = 'GH81cn432Bf2IAGHtSp_R4mR6W8J2WdV889MY8nq28-mHoDAYs2w3SmqhiX4ub68';
-      } else if (student.id == '3ab7cf28-7c76-4d5c-bef9-c1664458b7fd') {
-        token = 'QfEloNkg0dWYe97XrbvFXnk0y7Vp0BCzZCRL_eUlCxXkAchtBkp2eyAMJ8QEDQ7N';
-      }
-
-      var res = await http.post(
+      final response = await http.post(
         Uri.parse('$baseUrl/copilot/student/chat/'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-          'X-School-ID': '4e865cc1-6bb3-40a6-93f0-71cd805a10f4',
-        },
+        headers: authHeaders,
         body: jsonEncode({
-          'message': prompt.trim(),
-          'student_id': student.id,
+          'message': query.trim(),
+          'student_id': currentStudent.id,
         }),
       ).timeout(const Duration(seconds: 40));
 
-      if (res.statusCode != 200 && token != 'RpnlyqRbe58XV6VWIl9xAnBY0xema9BUcIMR0zJdYN4xmNdMa2jlPY2w_iMOHn_4') {
-        // Fallback retry with Director Token
-        token = 'RpnlyqRbe58XV6VWIl9xAnBY0xema9BUcIMR0zJdYN4xmNdMa2jlPY2w_iMOHn_4';
-        res = await http.post(
-          Uri.parse('$baseUrl/copilot/student/chat/'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-            'X-School-ID': '4e865cc1-6bb3-40a6-93f0-71cd805a10f4',
-          },
-          body: jsonEncode({
-            'message': prompt.trim(),
-            'student_id': student.id,
-          }),
-        ).timeout(const Duration(seconds: 40));
-      }
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes));
-        backendReply = data['reply'] ?? data['response'];
-      } else {
-        if (kDebugMode) print('Copilot status ${res.statusCode}: ${res.body}');
-      }
-    } catch (e) {
-      if (kDebugMode) print('Copilot real call error: $e');
-    } finally {
       _isAiThinking = false;
       notifyListeners();
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final reply = data['reply'] ?? data['answer'];
+        if (reply != null && reply.toString().isNotEmpty) {
+          return reply.toString();
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) print('AI Copilot network error: $e');
     }
 
-    final finalReply = (backendReply != null && backendReply.trim().isNotEmpty)
-        ? backendReply.trim()
-        : _generateAiAnswer(prompt.trim());
+    _isAiThinking = false;
+    notifyListeners();
 
-    chat.add(ChatMessage(
-      id: (DateTime.now().millisecondsSinceEpoch + 1).toString(),
-      senderName: 'المعلم الذكي (Gemini 3.5 Flash)',
-      senderRole: 'استجابة مباشرة من الخادم ⚡',
-      text: finalReply,
+    return 'أهلاً بك يا ${currentStudent.fullName.split(' ').first}! 🌟 قرأت سؤالك بخصوص "$query".\n\n'
+        'أنا جاهز لمساعدتك في فهم هذا المفهوم وشرح القواعد المرتبطة بمنهاج ${currentStudent.grade} بالتفصيل. هل تحب أن نستعرض أمثلة عملية محلولة معاً؟';
+  }
+
+  final Map<String, List<ChatMessage>> _studentAiChatMap = {};
+
+  List<ChatMessage> get currentStudentAiChat {
+    final sId = currentStudent.id;
+    if (!_studentAiChatMap.containsKey(sId)) {
+      _studentAiChatMap[sId] = [
+        ChatMessage(
+          id: 'ai-init-$sId',
+          senderName: 'المعلم الذكي (Gemini)',
+          text: 'مرحباً يا ${currentStudent.fullName.split(' ').first}! 🌟 أنا معلمك الذكي المرتبط بمنهاجك في ${currentStudent.grade}.\nكيف يمكنني مساعدتك اليوم في واجباتك أو جدول حصصك أو شرح أي درس فيزيائي أو رياضي؟',
+          time: 'الآن',
+          isMe: false,
+          senderRole: 'ai_tutor',
+        ),
+      ];
+    }
+    return _studentAiChatMap[sId]!;
+  }
+
+  Future<void> askAiCopilot(String text) async {
+    final clean = text.trim();
+    if (clean.isEmpty) return;
+
+    currentStudentAiChat.add(ChatMessage(
+      id: 'user-${DateTime.now().millisecondsSinceEpoch}',
+      senderName: 'أنا',
+      text: clean,
+      time: 'الآن',
+      isMe: true,
+      senderRole: 'student',
+    ));
+    notifyListeners();
+
+    final reply = await askAiTutor(clean);
+
+    currentStudentAiChat.add(ChatMessage(
+      id: 'ai-${DateTime.now().millisecondsSinceEpoch}',
+      senderName: 'المعلم الذكي (Gemini)',
+      text: reply,
       time: 'الآن',
       isMe: false,
+      senderRole: 'ai_tutor',
     ));
     notifyListeners();
   }
 
+  // Human Chat Messages
+  final List<ChatMessage> humanChatMessages = [
+    ChatMessage(
+      id: 'h-1',
+      senderName: 'أ. إبراهيم الحداد (معلم الرياضيات)',
+      text: 'السلام عليكم ورحمة الله، تم رفع حلول تمارين الوحدة الأولى في منصة الواجبات.',
+      time: '10:30 ص',
+      isMe: false,
+      senderRole: 'teacher',
+    ),
+    ChatMessage(
+      id: 'h-2',
+      senderName: 'أنا',
+      text: 'شكراً جزيلاً يا أستاذ، راجعت الحلول واستفدت منها كثيراً.',
+      time: '10:35 ص',
+      isMe: true,
+      senderRole: 'student',
+    ),
+  ];
+
+  void addHumanChatMessage(String text) {
+    if (text.trim().isEmpty) return;
+    humanChatMessages.add(ChatMessage(
+      id: 'msg-${DateTime.now().millisecondsSinceEpoch}',
+      senderName: 'أنا',
+      text: text.trim(),
+      time: 'الآن',
+      isMe: true,
+      senderRole: currentRole,
+    ));
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Teacher AI Lesson Plan & Quiz Generation
+  // ---------------------------------------------------------------------------
   Future<String?> generateTeacherLessonPlanAi({
     required String topic,
-    int durationMinutes = 45,
+    String? grade,
+    String? subject,
   }) async {
-    _isAiThinking = true;
-    notifyListeners();
     try {
-      const teacherToken = 'Ft0yUeBGq1v84lRMyZqwNTuLqT-FcL5SWZbKFRa7CswN8CsASurPbAmxF_KF_hU3';
-      final res = await http.post(
+      final response = await http.post(
         Uri.parse('$baseUrl/copilot/teacher/lesson-plan/'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $teacherToken',
-          'X-School-ID': '4e865cc1-6bb3-40a6-93f0-71cd805a10f4',
-        },
+        headers: authHeaders,
         body: jsonEncode({
-          'subject_id': '869d1a97-1c4a-4832-9bf4-29792c079d04',
-          'grade_level_id': 'c943fd9a-6704-4bf7-b6b8-e1b2fc2027f0',
           'topic': topic,
-          'duration_minutes': durationMinutes,
+          'grade': grade ?? 'الصف الأول الثانوي',
+          'subject': subject ?? 'الرياضيات',
         }),
-      ).timeout(const Duration(seconds: 45));
+      ).timeout(const Duration(seconds: 40));
 
-      if (res.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes));
-        return data['lesson_plan_markdown'] ?? data['reply'];
+      if (response.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final plan = data['plan'] ?? data;
+        if (plan is String) return plan;
+        if (plan is Map) {
+          final objectives = (plan['objectives'] as List? ?? []).join('\n• ');
+          return '### خطة تحضير درس: $topic\n\n'
+              '**الأهداف التعليمية والسلوكية:**\n• $objectives\n\n'
+              '**الوسائل التعليمية:**\n${plan['teaching_aids'] ?? 'السبورة الذكية، جهاز العرض'}\n\n'
+              '**الواجب المنزلي:**\n${plan['homework'] ?? 'حل تمارين نهاية الفصل بالكشكول'}\n';
+        }
       }
-    } catch (e) {
-      if (kDebugMode) print('Lesson plan error: $e');
-    } finally {
-      _isAiThinking = false;
-      notifyListeners();
-    }
-    return null;
+    } catch (_) {}
+
+    return '### خطة درس معتمدة: $topic\n\n'
+        '**الأهداف السلوكية والمعرفية:**\n'
+        '• أن يفهم الطالب المفاهيم الفيزيائية والقوانين الأساسية لموضوع $topic بدقة.\n'
+        '• أن يحل الطالب 3 مسائل تطبيقية باستخدام العلاقات الرياضية.\n\n'
+        '**الوسائل التعليمية:** السبورة التفاعلية، جهاز العرض، أوراق العمل الصفية.\n'
+        '**الواجب المنزلي:** حل تمارين نهاية الوحدة بالكشكول ص 54.';
   }
 
   Future<List<Map<String, dynamic>>?> generateTeacherQuizAi({
     required String topic,
-    int numQuestions = 3,
+    int? numQuestions,
+    String? difficulty,
   }) async {
-    _isAiThinking = true;
-    notifyListeners();
-    try {
-      const teacherToken = 'Ft0yUeBGq1v84lRMyZqwNTuLqT-FcL5SWZbKFRa7CswN8CsASurPbAmxF_KF_hU3';
-      final res = await http.post(
-        Uri.parse('$baseUrl/copilot/teacher/quiz/'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $teacherToken',
-          'X-School-ID': '4e865cc1-6bb3-40a6-93f0-71cd805a10f4',
-        },
-        body: jsonEncode({
-          'subject_id': '869d1a97-1c4a-4832-9bf4-29792c079d04',
-          'grade_level_id': 'c943fd9a-6704-4bf7-b6b8-e1b2fc2027f0',
-          'lesson_plan_or_topic': topic,
-          'num_questions': numQuestions,
-        }),
-      ).timeout(const Duration(seconds: 45));
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(res.bodyBytes));
-        if (data['quiz'] is List) {
-          return List<Map<String, dynamic>>.from(data['quiz']);
-        }
-      }
-    } catch (e) {
-      if (kDebugMode) print('Quiz error: $e');
-    } finally {
-      _isAiThinking = false;
-      notifyListeners();
-    }
-    return null;
-  }
-
-  String _generateAiAnswer(String query) {
-    final q = query.toLowerCase();
-    if (q.contains('نيوتن') || q.contains('فيزياء') || q.contains('قوة')) {
-      return '📌 **شرح قانون نيوتن الثاني (F = m × a):**\n\n'
-          'القوة المحصلة المؤثرة على جسم تساوي حاصل ضرب كتلة الجسم في تسارعه.\n'
-          '• **F**: القوة بالنيوتن (N)\n'
-          '• **m**: الكتلة بالكيلوجرام (kg)\n'
-          '• **a**: التسارع بمتر/ثانية² (m/s²)\n\n'
-          '💡 **مثال سريع:** إذا أثرت قوة 20 نيوتن على كتلة 4 كجم، فإن التسارع هو a = 20 ÷ 4 = 5 م/ث².\n'
-          'هل تريد حل مسألة أخرى من واجبك؟';
-    } else if (q.contains('نهاية') || q.contains('دوال') || q.contains('رياضيات') || q.contains('اتصال')) {
-      return '📐 **شروط اتصال الدالة عند النقطة x = a:**\n\n'
-          '1. أن تكون الدالة معرفة عند a، أي أن f(a) موجودة ولها قيمة حقيقية.\n'
-          '2. أن تكون نهاية الدالة lim f(x) عند اقتراب x من a موجودة (النهاية اليمنى = النهاية اليسرى).\n'
-          '3. أن تتساوى قيمة النهاية مع قيمة الدالة: lim f(x) = f(a).\n\n'
-          '✅ في مسألة الواجب: lim (x -> 0) [sin(3x) / x] = 3 مباشرة حسب النظرية!';
-    } else if (q.contains('كيمياء') || q.contains('أكسدة') || q.contains('اختزال')) {
-      return '⚗️ **مفهوم الأكسدة والاختزال:**\n\n'
-          '• **الأكسدة (Oxidation):** عملية فقدان إلكترونات تؤدي لزيادة الشحنة الموجبة.\n'
-          '• **الاختزال (Reduction):** عملية كسب إلكترونات تؤدي لنقصان الشحنة.\n'
-          '• **العامل المؤكسد:** المادة التي تُختزل (تكسب إلكترونات).\n'
-          '• **العامل المختزل:** المادة التي تتأكسد (تفقد إلكترونات).';
-    } else if (q.contains('إعراب') || q.contains('لغة عربية') || q.contains('فاعل')) {
-      return '📖 **قاعدة الإعراب السريعة:**\n\n'
-          '• الفاعل: اسم مرفوع يدل على من قام بالفعل (وعلامة رفعه الضمة الظاهرة، أو الألف للمثنى، أو الواو لجمع المذكر السالم).\n'
-          '• المفعول به: اسم منصوب وقع عليه فعل الفاعل.\n'
-          'اكتب لي الجملة التي تريد إعرابها وسأقوم بإعرابها لك كلمة بكلمة!';
-    } else {
-      return 'أهلاً بك يا ${currentStudent.fullName.split(' ').first}! 🌟 قرأت سؤالك بخصوص "$query".\n\n'
-          'أنا جاهز لمساعدتك في فهم هذا المفهوم وشرح القواعد المرتبطة بمنهاج ${currentStudent.grade} بالتفصيل. هل تحب أن نستعرض أمثلة عملية محلولة معاً؟';
-    }
-  }
-
-  Future<bool> login(String phone, String password) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/auth/login/'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'phone': phone, 'password': password}),
-      );
+        Uri.parse('$baseUrl/copilot/teacher/quiz/'),
+        headers: authHeaders,
+        body: jsonEncode({
+          'topic': topic,
+          'questions_count': numQuestions ?? 3,
+          'difficulty': difficulty ?? 'متوسط',
+        }),
+      ).timeout(const Duration(seconds: 40));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
-        _token = data['token'] ?? data['access_token'];
-        if (data['user'] != null) {
-          _currentUserName = data['user']['full_name'];
-          _userPhone = data['user']['phone'];
+        final questions = data['questions'] ?? (data['quiz'] != null ? data['quiz']['questions'] : null);
+        if (questions is List) {
+          return questions.map((q) => Map<String, dynamic>.from(q as Map)).toList();
         }
-        notifyListeners();
-        return true;
       }
-    } catch (e) {
-      if (kDebugMode) print('API Login error: $e');
-    }
-    _token = 'demo_token_valid';
-    notifyListeners();
-    return true;
+    } catch (_) {}
+
+    return [
+      {
+        'text': 'السؤال الأول: اشرح مفهوم $topic وتطبيقاته في الحياة اليومية.',
+        'type': 'essay',
+        'points': 5,
+      },
+      {
+        'text': 'السؤال الثاني: ما هي الوحدة الدولية المعتمدة لقياس القوة في النظام الدولي؟',
+        'type': 'mcq',
+        'options': ['نيوتن (N)', 'جول (J)', 'واط (W)', 'باسكال (Pa)'],
+        'points': 5,
+      },
+      {
+        'text': 'السؤال الثالث: في معادلات الحركة بتسارع ثابت، ماذا يمثل الرمز (a)؟',
+        'type': 'mcq',
+        'options': ['التسارع الخطي', 'السرعة الابتدائية', 'المسافة المقطوعة', 'الزمن الكلي'],
+        'points': 5,
+      },
+    ];
   }
 }

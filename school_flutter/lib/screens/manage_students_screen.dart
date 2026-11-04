@@ -48,7 +48,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
 
     setState(() => _isSubmitting = true);
 
-    final result = await widget.api.addNewStudent(
+    final result = await widget.api.linkStudent(
       schoolCode: _schoolCodeController.text.trim(),
       studentCode: code,
       password: _passwordController.text.trim(),

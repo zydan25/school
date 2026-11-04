@@ -1,3 +1,201 @@
+// -----------------------------------------------------------------------------
+// Core Domain Models for Madrasati Flutter App
+// -----------------------------------------------------------------------------
+
+class UserAccount {
+  final String id;
+  final String phone;
+  final String fullName;
+  final String email;
+  final bool isPlatformAdmin;
+  final bool phoneVerified;
+
+  UserAccount({
+    required this.id,
+    required this.phone,
+    required this.fullName,
+    required this.email,
+    required this.isPlatformAdmin,
+    required this.phoneVerified,
+  });
+
+  factory UserAccount.fromJson(Map<String, dynamic> json) {
+    return UserAccount(
+      id: json['id']?.toString() ?? '',
+      phone: json['phone']?.toString() ?? '',
+      fullName: json['full_name']?.toString() ?? json['name']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      isPlatformAdmin: json['is_platform_admin'] == true,
+      phoneVerified: json['phone_verified'] == true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'phone': phone,
+    'full_name': fullName,
+    'email': email,
+    'is_platform_admin': isPlatformAdmin,
+    'phone_verified': phoneVerified,
+  };
+}
+
+class SchoolContextItem {
+  final String schoolId;
+  final String schoolCode;
+  final String schoolName;
+  final List<String> roles;
+  final bool isDefault;
+
+  SchoolContextItem({
+    required this.schoolId,
+    required this.schoolCode,
+    required this.schoolName,
+    required this.roles,
+    required this.isDefault,
+  });
+
+  factory SchoolContextItem.fromJson(Map<String, dynamic> json) {
+    final rawRoles = json['roles'];
+    List<String> parsedRoles = [];
+    if (rawRoles is List) {
+      parsedRoles = rawRoles.map((r) => r.toString()).toList();
+    }
+    return SchoolContextItem(
+      schoolId: json['school_id']?.toString() ?? '',
+      schoolCode: json['school_code']?.toString() ?? '',
+      schoolName: json['school_name']?.toString() ?? 'المدرسة الافتراضية',
+      roles: parsedRoles,
+      isDefault: json['is_default'] == true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'school_id': schoolId,
+    'school_code': schoolCode,
+    'school_name': schoolName,
+    'roles': roles,
+    'is_default': isDefault,
+  };
+}
+
+class MyProfilesResponse {
+  final List<TeacherProfileItem> teachers;
+  final List<GuardianProfileItem> guardians;
+  final List<StudentProfileItem> students;
+  final List<StaffProfileItem> staff;
+
+  MyProfilesResponse({
+    required this.teachers,
+    required this.guardians,
+    required this.students,
+    required this.staff,
+  });
+
+  factory MyProfilesResponse.fromJson(Map<String, dynamic> json) {
+    return MyProfilesResponse(
+      teachers: (json['teachers'] as List? ?? [])
+          .map((i) => TeacherProfileItem.fromJson(i))
+          .toList(),
+      guardians: (json['guardians'] as List? ?? [])
+          .map((i) => GuardianProfileItem.fromJson(i))
+          .toList(),
+      students: (json['students'] as List? ?? [])
+          .map((i) => StudentProfileItem.fromJson(i))
+          .toList(),
+      staff: (json['staff'] as List? ?? [])
+          .map((i) => StaffProfileItem.fromJson(i))
+          .toList(),
+    );
+  }
+}
+
+class TeacherProfileItem {
+  final String id;
+  final String employeeNumber;
+  final String specialization;
+
+  TeacherProfileItem({
+    required this.id,
+    required this.employeeNumber,
+    required this.specialization,
+  });
+
+  factory TeacherProfileItem.fromJson(Map<String, dynamic> json) {
+    return TeacherProfileItem(
+      id: json['id']?.toString() ?? '',
+      employeeNumber: json['employee_number']?.toString() ?? '',
+      specialization: json['specialization']?.toString() ?? '',
+    );
+  }
+}
+
+class GuardianProfileItem {
+  final String id;
+  final String relationshipType;
+  final int childrenCount;
+
+  GuardianProfileItem({
+    required this.id,
+    required this.relationshipType,
+    required this.childrenCount,
+  });
+
+  factory GuardianProfileItem.fromJson(Map<String, dynamic> json) {
+    return GuardianProfileItem(
+      id: json['id']?.toString() ?? '',
+      relationshipType: json['relationship_type']?.toString() ?? 'father',
+      childrenCount: (json['children_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class StudentProfileItem {
+  final String id;
+  final String studentIdNumber;
+  final String fullName;
+  final String sectionId;
+
+  StudentProfileItem({
+    required this.id,
+    required this.studentIdNumber,
+    required this.fullName,
+    required this.sectionId,
+  });
+
+  factory StudentProfileItem.fromJson(Map<String, dynamic> json) {
+    return StudentProfileItem(
+      id: json['id']?.toString() ?? '',
+      studentIdNumber: json['student_id_number']?.toString() ?? '',
+      fullName: json['full_name']?.toString() ?? '',
+      sectionId: json['section_id']?.toString() ?? '',
+    );
+  }
+}
+
+class StaffProfileItem {
+  final String id;
+  final String employeeNumber;
+  final String jobTitle;
+  final String role;
+
+  StaffProfileItem({
+    required this.id,
+    required this.employeeNumber,
+    required this.jobTitle,
+    required this.role,
+  });
+
+  factory StaffProfileItem.fromJson(Map<String, dynamic> json) {
+    return StaffProfileItem(
+      id: json['id']?.toString() ?? '',
+      employeeNumber: json['employee_number']?.toString() ?? '',
+      jobTitle: json['job_title']?.toString() ?? '',
+      role: json['role']?.toString() ?? '',
+    );
+  }
+}
+
 class StudentProfile {
   final String id;
   final String studentNumber;
@@ -24,6 +222,22 @@ class StudentProfile {
     required this.schoolName,
     required this.schoolCode,
   });
+
+  factory StudentProfile.fromJson(Map<String, dynamic> json, {String schoolName = 'المدرسة الافتراضية', String schoolCode = '1234'}) {
+    return StudentProfile(
+      id: json['id']?.toString() ?? '',
+      studentNumber: json['student_id_number']?.toString() ?? json['student_number']?.toString() ?? '',
+      fullName: json['name']?.toString() ?? json['full_name']?.toString() ?? 'طالب',
+      stage: json['stage']?.toString() ?? (json['grade']?.toString().contains('ثانوي') == true ? 'المرحلة الثانوية' : 'التعليم الأساسي'),
+      grade: json['grade']?.toString() ?? 'الصف الأول الثانوي',
+      section: json['section']?.toString() ?? 'الشعبة (أ)',
+      avatarUrl: json['avatar_url']?.toString() ?? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
+      attendanceRate: (json['attendance_rate'] as num?)?.toDouble() ?? 98.0,
+      gpa: (json['gpa'] as num?)?.toDouble() ?? 94.8,
+      schoolName: json['school_name']?.toString() ?? schoolName,
+      schoolCode: json['school_code']?.toString() ?? schoolCode,
+    );
+  }
 }
 
 class DeviceRecord {
@@ -255,9 +469,6 @@ class ChatMessage {
   });
 }
 
-// -----------------------------------------------------------------------------
-// Subjects & Curriculum (المواد الدراسية والمناهج المعتمدة)
-// -----------------------------------------------------------------------------
 class SubjectCurriculum {
   final String id;
   final String code;
@@ -308,10 +519,6 @@ class CurriculumUnit {
   });
 }
 
-
-// -----------------------------------------------------------------------------
-// Teacher Dashboard Models (التحضير اليومي ودفتر الدروس)
-// -----------------------------------------------------------------------------
 class TeacherAttendanceStudent {
   final String studentId;
   final String studentName;
