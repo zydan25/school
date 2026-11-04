@@ -30,7 +30,7 @@ class HealthView(APIView):
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, version):
+    def get(self, request, *args, **kwargs):
         from apps.api.v1.serializers import UserProfileSerializer
 
         data = UserProfileSerializer(
@@ -47,7 +47,7 @@ class CurrentUserView(APIView):
         )
         return Response(data)
 
-    def patch(self, request, version):
+    def patch(self, request, *args, **kwargs):
         from apps.api.v1.serializers import UserProfileSerializer
 
         serializer = UserProfileSerializer(
@@ -73,31 +73,37 @@ class CurrentUserView(APIView):
 class AvailableSchoolsView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, version):
+    def get(self, request, *args, **kwargs):
         from apps.accounts.models import SchoolMembership
         from apps.accounts.services import is_platform_operator
         from apps.tenants.models import School
         if is_platform_operator(request.user):
             schools = School.objects.filter(status=School.Status.ACTIVE)
-        else:
-            memberships = SchoolMembership.objects.filter(
-                user=request.user, status=SchoolMembership.Status.ACTIVE,
-                school__status=School.Status.ACTIVE,
-            ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())).select_related("school")
             return Response({"results": [
-                {"id": str(item.school_id), "code": item.school.code, "name": item.school.name, "is_default": item.is_default}
-                for item in memberships
+                {"id": str(item.pk), "code": item.code, "name": item.name, "roles": ["admin"], "is_default": False}
+                for item in schools
             ]})
+
+        memberships = SchoolMembership.objects.filter(
+            user=request.user, status=SchoolMembership.Status.ACTIVE,
+            school__status=School.Status.ACTIVE,
+        ).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now())).select_related("school")
         return Response({"results": [
-            {"id": str(item.pk), "code": item.code, "name": item.name, "is_default": False}
-            for item in schools
+            {
+                "id": str(item.school_id),
+                "code": item.school.code,
+                "name": item.school.name,
+                "roles": list(item.get_role_codes()),
+                "is_default": item.is_default,
+            }
+            for item in memberships
         ]})
 
 
 class SwitchSchoolContextView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, version):
+    def post(self, request, *args, **kwargs):
         from apps.tenants.services import resolve_school_for_user
         code = (request.data.get("school_code") or "").strip()
         if not code:

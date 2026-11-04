@@ -282,7 +282,7 @@ class SchoolMembership(UUIDTimestampedModel):
     def get_role_codes(self) -> set[str]:
         """إرجاع أكواد الأدوار الصالحة للعضوية لمطابقة الصلاحيات."""
         today = timezone.localdate()
-        return set(
+        codes = set(
             self.role_assignments.filter(
                 role__is_active=True,
                 valid_from__lte=today,
@@ -290,6 +290,19 @@ class SchoolMembership(UUIDTimestampedModel):
                 Q(valid_until__isnull=True) | Q(valid_until__gte=today)
             ).values_list("role__code", flat=True)
         )
+        if "student" not in codes:
+            from apps.students.models import Student
+            if Student.objects.filter(user=self.user, school=self.school, is_archived=False).exists():
+                codes.add("student")
+        if "guardian" not in codes:
+            from apps.students.models import Guardian
+            if Guardian.objects.filter(user=self.user, school=self.school, is_archived=False).exists():
+                codes.add("guardian")
+        if "teacher" not in codes:
+            from apps.staff.models import Teacher
+            if Teacher.objects.filter(user=self.user, school=self.school, is_archived=False).exists():
+                codes.add("teacher")
+        return codes
 
     def activate(self):
         self.status = self.Status.ACTIVE

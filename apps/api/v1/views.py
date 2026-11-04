@@ -3673,11 +3673,11 @@ class PushDeviceViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return PushDevice.objects.filter(user=self.request.user).order_by("-last_seen_at")
 
-    def list(self, request):
+    def list(self, request, *args, **kwargs):
         devices = PushDevice.objects.filter(user=request.user).order_by("-last_seen_at")
         return Response(PushDeviceSerializer(devices, many=True).data)
 
-    def create(self, request):
+    def create(self, request, *args, **kwargs):
         serializer = PushDeviceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
@@ -3722,12 +3722,12 @@ class PushDeviceViewSet(viewsets.ModelViewSet):
 class NotificationPreferenceViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
-    def list(self, request):
+    def list(self, request, *args, **kwargs):
         school = school_for(request)
         qs = NotificationPreference.objects.filter(user=request.user).filter(Q(school=school) | Q(school__isnull=True)).order_by("category", "channel")
         return Response(NotificationPreferenceSerializer(qs, many=True).data)
 
-    def create(self, request):
+    def create(self, request, *args, **kwargs):
         school = school_for(request)
         serializer = NotificationPreferenceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -3739,7 +3739,7 @@ class NotificationPreferenceViewSet(viewsets.ViewSet):
         )
         return Response(NotificationPreferenceSerializer(pref).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
-    def partial_update(self, request, pk=None):
+    def partial_update(self, request, pk=None, *args, **kwargs):
         pref = get_object_or_404(NotificationPreference, pk=pk, user=request.user)
         if pref.school_id and pref.school_id != school_for(request).pk:
             raise Http404
@@ -3772,18 +3772,18 @@ class SchoolConversationViewSet(viewsets.ViewSet):
             participants__is_archived=False,
         ).distinct().prefetch_related("participants__user", "messages")
 
-    def list(self, request):
+    def list(self, request, *args, **kwargs):
         qs = self.get_queryset()
         status_filter = request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter)
         return Response(SchoolConversationSerializer(qs[:100], many=True, context={"request": request}).data)
 
-    def retrieve(self, request, pk=None):
+    def retrieve(self, request, pk=None, *args, **kwargs):
         conv = get_object_or_404(self.get_queryset(), pk=pk)
         return Response(SchoolConversationSerializer(conv, context={"request": request}).data)
 
-    def create(self, request):
+    def create(self, request, *args, **kwargs):
         school = self.get_school()
         serializer = ConversationCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
