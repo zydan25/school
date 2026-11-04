@@ -3,6 +3,8 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from apps.api.v1.views import (
+    LinkStudentAPIView,
+    AddCurriculumAPIView,
     AcceptInvitationAPIView,
     AcademicTermViewSet,
     AcademicYearViewSet,
@@ -141,6 +143,8 @@ urlpatterns = [
     path("account/invitations/accept/", AcceptInvitationAPIView.as_view(), name="app-invitation-accept"),
     path("account/invitations/<uuid:invitation_id>/revoke/", RevokeInvitationAPIView.as_view(), name="app-invitation-revoke"),
     path("my/children/", GuardianChildrenAPIView.as_view(), name="app-my-children"),
+    path("my/link-student/", LinkStudentAPIView.as_view(), name="app-link-student"),
+    path("curriculum/add/", AddCurriculumAPIView.as_view(), name="app-add-curriculum"),
     path("my/timetable/", MyWeeklyTimetableAPIView.as_view(), name="app-my-timetable"),
     path("homework-submissions/<uuid:submission_id>/attachment/", HomeworkAttachmentDownloadAPIView.as_view(), name="app-homework-attachment"),
     path("conversations/<uuid:conversation_id>/messages/<uuid:message_id>/", ConversationMessageDetailAPIView.as_view(), name="app-conversation-message-detail"),

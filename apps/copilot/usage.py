@@ -85,7 +85,7 @@ def run_budgeted_ai_call(
     into the usage ledger; only bounded source identifiers are stored.
     """
     estimated_input_tokens = _estimate_tokens(input_text)
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
     with transaction.atomic():
         try:

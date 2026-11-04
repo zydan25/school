@@ -70,7 +70,7 @@ def generate_lesson_plan(
 """
 
     client = get_gemini_client()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
     if hasattr(client, "models"):
         # new google-genai SDK
@@ -128,7 +128,7 @@ def generate_quiz(
 """
 
     client = get_gemini_client()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
     if hasattr(client, "models"):
         response = client.models.generate_content(
@@ -195,7 +195,7 @@ def auto_grade_essay(
 """
 
     client = get_gemini_client()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
     if hasattr(client, "models"):
         response = client.models.generate_content(

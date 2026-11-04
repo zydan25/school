@@ -228,8 +228,8 @@ class GenerateLessonPlanView(APIView):
             return Response(result, status=status.HTTP_200_OK)
         except AIUsageLimitExceeded as exc:
             return _ai_error_response(exc)
-        except Exception:
-            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي."}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception as exc:
+            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي.", "details": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class GenerateQuizView(APIView):
@@ -269,8 +269,8 @@ class GenerateQuizView(APIView):
             return Response({"quiz": quiz}, status=status.HTTP_200_OK)
         except AIUsageLimitExceeded as exc:
             return _ai_error_response(exc)
-        except Exception:
-            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي."}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception as exc:
+            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي.", "details": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class AutoGradeEssayView(APIView):
@@ -310,8 +310,8 @@ class AutoGradeEssayView(APIView):
             return Response(evaluation, status=status.HTTP_200_OK)
         except AIUsageLimitExceeded as exc:
             return _ai_error_response(exc)
-        except Exception:
-            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي."}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception as exc:
+            return Response({"error": "تعذر تنفيذ طلب الذكاء الاصطناعي.", "details": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
 
 
 class StudentChatView(APIView):

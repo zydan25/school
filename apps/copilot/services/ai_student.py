@@ -273,7 +273,7 @@ def process_student_message(
 """
 
     client = get_gemini_client()
-    model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
     prompt = f"{system_prompt}\n\nسؤال الطالب: {user_message_text}"
 
