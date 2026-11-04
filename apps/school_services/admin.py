@@ -14,6 +14,8 @@ from apps.school_services.models import (
     LibraryBook,
     StudentBookDistribution,
     StudentBusSubscription,
+    StudentHealthProfile,
+    ClinicVisit,
 )
 
 
@@ -195,3 +197,19 @@ class BookRequisitionItemAdmin(AuditedAdminMixin, ModelAdmin):
         if obj is None or obj.requisition.status != BookRequisitionOrder.Status.DRAFT:
             return False
         return super().has_delete_permission(request, obj)
+
+
+@admin.register(StudentHealthProfile)
+class StudentHealthProfileAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("student", "blood_type", "emergency_contact_name", "emergency_contact_phone", "school")
+    list_filter = ("school", "blood_type")
+    search_fields = ("student__user__first_name", "student__user__last_name", "emergency_contact_name", "emergency_contact_phone")
+    raw_id_fields = ("student", "school", "branch")
+
+
+@admin.register(ClinicVisit)
+class ClinicVisitAdmin(AuditedAdminMixin, ModelAdmin):
+    list_display = ("student", "visit_date", "temperature", "sent_home", "parent_notified", "attended_by", "school")
+    list_filter = ("school", "sent_home", "parent_notified", "visit_date")
+    search_fields = ("student__user__first_name", "student__user__last_name", "symptoms", "diagnosis")
+    raw_id_fields = ("student", "school", "branch")

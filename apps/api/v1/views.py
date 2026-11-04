@@ -218,7 +218,7 @@ class BranchViewSet(TenantModelViewSet):
 class MyProfilesAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         school = school_for(request)
         return Response({
             "teachers": [
@@ -336,7 +336,7 @@ class MembershipRoleViewSet(viewsets.ModelViewSet):
 class SchoolInvitationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         school = school_for(request)
         require_school_role_or_permission(request, school, ADMIN_ROLES)
         qs = SchoolInvitation.objects.filter(school=school).prefetch_related("roles").order_by("-created_at")
@@ -345,7 +345,7 @@ class SchoolInvitationAPIView(APIView):
             qs = qs.filter(status=status_filter)
         return Response(InvitationSerializer(qs[:100], many=True).data)
 
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         school = school_for(request)
         require_school_role_or_permission(request, school, ADMIN_ROLES)
         email = (request.data.get("email") or "").strip().lower()
@@ -447,7 +447,7 @@ class SchoolInvitationAPIView(APIView):
 class RevokeInvitationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, invitation_id):
+    def post(self, request, invitation_id, *args, **kwargs):
         school = school_for(request)
         require_school_role_or_permission(request, school, ADMIN_ROLES)
         with transaction.atomic():
@@ -465,7 +465,7 @@ class RevokeInvitationAPIView(APIView):
 class AcceptInvitationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def post(self, request):
+    def post(self, request, *args, **kwargs):
         token = (request.data.get("token") or "").strip()
         if not token:
             raise ValidationError({"token": "رمز الدعوة مطلوب."})
@@ -481,7 +481,7 @@ class AcceptInvitationAPIView(APIView):
 class GuardianChildrenAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         school = school_for(request)
         guardian = user_guardian_profiles(request.user, school).first()
         if guardian:
@@ -2790,7 +2790,7 @@ class DailyLessonLogViewSet(TenantModelViewSet):
 class MyWeeklyTimetableAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    def get(self, request, *args, **kwargs):
         school = school_for(request)
         student = user_student_profiles(request.user, school).first()
         teacher = user_teacher_profiles(request.user, school).filter(is_active_teaching=True).first()
@@ -3938,7 +3938,7 @@ class ConversationMessageDetailAPIView(APIView):
         )
         return school, conversation, participant, message
 
-    def patch(self, request, conversation_id, message_id):
+    def patch(self, request, conversation_id, message_id, *args, **kwargs):
         school, conversation, participant, message = self._get_message(
             request, conversation_id, message_id,
         )
@@ -3956,7 +3956,7 @@ class ConversationMessageDetailAPIView(APIView):
         message.save(update_fields=["body", "edited_at", "updated_at"])
         return Response(ConversationMessageSerializer(message).data)
 
-    def delete(self, request, conversation_id, message_id):
+    def delete(self, request, conversation_id, message_id, *args, **kwargs):
         school, conversation, participant, message = self._get_message(
             request, conversation_id, message_id,
         )
@@ -3976,7 +3976,7 @@ class ConversationMessageDetailAPIView(APIView):
 class ConversationAttachmentDownloadAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, message_id):
+    def get(self, request, message_id, *args, **kwargs):
         school = school_for(request)
         message = get_object_or_404(
             ConversationMessage.objects.select_related("conversation"),
@@ -3995,7 +3995,7 @@ class ConversationAttachmentDownloadAPIView(APIView):
 class HomeworkAttachmentDownloadAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, submission_id):
+    def get(self, request, submission_id, *args, **kwargs):
         school = school_for(request)
         submission = get_object_or_404(
             HomeworkSubmission.objects.select_related("homework", "student"),

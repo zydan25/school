@@ -1500,3 +1500,25 @@ class SchoolMessagingGatewayAdmin(SchoolScopedAdmin):
     list_filter = ("channel", "provider", "auto_ai_reply", "is_active")
     search_fields = ("name", "sender_id", "api_endpoint_url")
     readonly_fields = ("id", "created_at", "updated_at")
+
+
+# -----------------------------------------------------------------------------
+# Health Profiles & Clinic Visits in School Admin
+# -----------------------------------------------------------------------------
+from apps.school_services.models import StudentHealthProfile, ClinicVisit
+
+
+@admin.register(StudentHealthProfile, site=school_admin_site)
+class SchoolStudentHealthProfileAdmin(SchoolScopedAdmin):
+    list_display = ("student", "blood_type", "emergency_contact_name", "emergency_contact_phone")
+    list_filter = ("blood_type",)
+    search_fields = ("student__first_name", "student__last_name", "emergency_contact_name", "emergency_contact_phone")
+    raw_id_fields = ("student",)
+
+
+@admin.register(ClinicVisit, site=school_admin_site)
+class SchoolClinicVisitAdmin(SchoolScopedAdmin):
+    list_display = ("student", "visit_date", "temperature", "sent_home", "parent_notified", "attended_by")
+    list_filter = ("sent_home", "parent_notified", "visit_date")
+    search_fields = ("student__first_name", "student__last_name", "symptoms", "diagnosis")
+    raw_id_fields = ("student",)
