@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api_service.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
-import 'manage_students_screen.dart';
+import 'my_students_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final ApiService api;
@@ -16,6 +16,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   int _gridColumns = 3;
+  String _visualTheme = 'abwaab'; // 'abwaab' (default modern edtech) or 'jaib' (fintech)
   bool _pinLockEnabled = false;
   bool _biometricsEnabled = false;
   bool _notifyHomework = true;
@@ -34,6 +35,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final prefs = await SharedPreferences.getInstance();
       setState(() {
         _gridColumns = prefs.getInt('home_grid_columns') ?? 3;
+        _visualTheme = prefs.getString('app_visual_theme') ?? 'abwaab';
         _pinLockEnabled = prefs.getBool('app_pin_enabled') ?? false;
         _biometricsEnabled = prefs.getBool('biometric_enabled') ?? false;
         _notifyHomework = prefs.getBool('notify_homework') ?? true;
@@ -44,6 +46,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     } catch (_) {
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _updateVisualTheme(String theme) async {
+    setState(() => _visualTheme = theme);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('app_visual_theme', theme);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              theme == 'abwaab'
+                  ? 'تم تفعيل ثيم أبواب التعليمي العصري بنجاح 🎓'
+                  : 'تم تفعيل ثيم جيب المالي 💼',
+              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: const Color(0xFF0F172A),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> _updateGridColumns(int cols) async {
@@ -249,8 +273,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildMyStudentsShortcut(),
           const SizedBox(height: 18),
 
-          // 3. UI Appearance & Grid Columns Settings
-          _buildSectionHeader('تخصيص الواجهة وشبكة الخدمات', Icons.dashboard_customize_rounded),
+          // 3. Visual Theme Switcher (Abwaab Modern EdTech vs Jaib Fintech)
+          _buildSectionHeader('ثيم ومظهر التطبيق الشامل', Icons.palette_rounded),
+          const SizedBox(height: 8),
+          _buildCardContainer([
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'اختر الثيم المفضل للواجهات والأيقونات',
+                    style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'الثيم يغير شكل الهيدر، الألوان، البطائق الملونة، الأيقونات، وطريقة عرض المواد التعليمية.',
+                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildGridOptionTile(
+                          title: 'ثيم أبواب التعليمي',
+                          subtitle: 'عصري هادئ بألوان باستيل وشرح المواد (الموصى به)',
+                          icon: Icons.school_rounded,
+                          isSelected: _visualTheme == 'abwaab',
+                          onTap: () => _updateVisualTheme('abwaab'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _buildGridOptionTile(
+                          title: 'ثيم جيب المالي',
+                          subtitle: 'شبكة 3 بطائق سريعة وأزرار خدمات',
+                          icon: Icons.account_balance_wallet_rounded,
+                          isSelected: _visualTheme == 'jaib',
+                          onTap: () => _updateVisualTheme('jaib'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ]),
+          const SizedBox(height: 18),
+
+          // 4. UI Appearance & Grid Columns Settings
+          _buildSectionHeader('تخصيص شبكة الخدمات والأعمدة', Icons.dashboard_customize_rounded),
           const SizedBox(height: 8),
           _buildCardContainer([
             Padding(
@@ -534,7 +606,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return InkWell(
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api, initialTab: 1)),
+        MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
       ),
       borderRadius: BorderRadius.circular(16),
       child: Container(

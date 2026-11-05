@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api_service.dart';
+import '../core/models.dart';
 import '../core/theme.dart';
 import 'homework_screen.dart';
 import 'grades_screen.dart';
@@ -11,8 +12,10 @@ import 'finance_screen.dart';
 import 'chat_screen.dart';
 import 'notices_screen.dart';
 import 'services_screen.dart';
-import 'manage_students_screen.dart';
+import 'my_students_screen.dart';
+import 'add_student_screen.dart';
 import 'subjects_screen.dart';
+import 'subject_detail_screen.dart';
 import 'teacher_dashboard_screen.dart';
 import 'online_exams_screen.dart';
 import 'settings_screen.dart';
@@ -26,7 +29,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _gridColumns = 3; // Default 3 columns (Jaib fintech style from screenshot)
+  int _gridColumns = 3; // Default 3 columns
+  String _visualTheme = 'abwaab'; // 'abwaab' (modern educational) or 'jaib' (fintech)
   int _selectedBottomNavIndex = 0;
 
   @override
@@ -39,8 +43,12 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final cols = prefs.getInt('home_grid_columns');
-      if (cols != null && (cols == 2 || cols == 3)) {
-        if (mounted) setState(() => _gridColumns = cols);
+      final theme = prefs.getString('app_visual_theme') ?? 'abwaab';
+      if (mounted) {
+        setState(() {
+          if (cols != null && (cols == 2 || cols == 3)) _gridColumns = cols;
+          _visualTheme = theme;
+        });
       }
     } catch (_) {}
   }
@@ -249,38 +257,44 @@ class _HomeScreenState extends State<HomeScreen> {
         final role = widget.api.currentRole;
         final roleColor = _getRoleColor(role);
 
+        final isAbwaabStudent = role == 'student' && _visualTheme == 'abwaab';
+
         return Scaffold(
-          backgroundColor: const Color(0xFFF8FAFC),
-          floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-          floatingActionButton: Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF0F172A).withValues(alpha: 0.35),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
+          backgroundColor: isAbwaabStudent ? Colors.white : const Color(0xFFF8FAFC),
+          floatingActionButtonLocation: isAbwaabStudent ? null : FloatingActionButtonLocation.centerDocked,
+          floatingActionButton: isAbwaabStudent
+              ? null
+              : Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0F172A),
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.35),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => ChatScreen(api: widget.api)),
+                      ),
+                      customBorder: const CircleBorder(),
+                      child: const Center(
+                        child: Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white, size: 30),
+                      ),
+                    ),
+                  ),
                 ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => ChatScreen(api: widget.api)),
-                ),
-                customBorder: const CircleBorder(),
-                child: const Center(
-                  child: Icon(Icons.keyboard_arrow_up_rounded, color: Colors.white, size: 30),
-                ),
-              ),
-            ),
-          ),
-          bottomNavigationBar: _buildJaibBottomBar(context, role),
+          bottomNavigationBar: isAbwaabStudent
+              ? _buildAbwaabBottomBar(context)
+              : _buildJaibBottomBar(context, role),
           body: SafeArea(
             child: CustomScrollView(
               physics: const BouncingScrollPhysics(),
@@ -317,6 +331,168 @@ class _HomeScreenState extends State<HomeScreen> {
         : 'مرحباً';
     final activeStudent = widget.api.currentStudent;
 
+    // 1. Abwaab Educational Theme Header for Student (Matching media_1793903260375_62df2b21.jpg)
+    if (role == 'student' && _visualTheme == 'abwaab' && activeStudent != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Right: Avatar with online dot, Greeting, Name, Edit Box + Grade + Yemen Flag
+            Row(
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Image.network(
+                        activeStudent.avatarUrl,
+                        width: 46,
+                        height: 46,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          width: 46,
+                          height: 46,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          child: const Icon(Icons.school, color: Color(0xFF0284C7)),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF16A34A),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _getTimeGreeting(),
+                      style: GoogleFonts.cairo(
+                        fontSize: 11.5,
+                        color: const Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      activeStudent.fullName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.cairo(
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF0F172A),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
+                        );
+                      },
+                      borderRadius: BorderRadius.circular(6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(2),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0xFF0284C7), width: 1.2),
+                            ),
+                            child: const Icon(Icons.edit_note_rounded, size: 12, color: Color(0xFF0284C7)),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            ' ${activeStudent.grade} ',
+                            style: GoogleFonts.cairo(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF334155),
+                            ),
+                          ),
+                          const Text('🇾🇪', style: TextStyle(fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+
+            // Left: Blue Bell in circular soft blue + Streak flame + 3-dots Menu
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Circular soft blue notification bell matching media_1793903260375_62df2b21.jpg
+                InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => NoticesScreen(api: widget.api)),
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFEBF5FF),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.notifications_rounded, color: Color(0xFF0284C7), size: 22),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+
+                // Streak Flame matching media_1793903260375_62df2b21.jpg
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('🔥', style: TextStyle(fontSize: 14)),
+                    const SizedBox(width: 2),
+                    Text(
+                      '0',
+                      style: GoogleFonts.cairo(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 4),
+
+                // 3-dots Menu
+                IconButton(
+                  icon: const Icon(Icons.more_vert, color: Color(0xFF0F172A), size: 22),
+                  onPressed: () => _showOptionsMenuDialog(context),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 2. Default Header Bar (Fintech / Jaib style)
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -388,7 +564,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onTap: () async {
                       await Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api, initialTab: 1)),
+                        MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
                       );
                     },
                     borderRadius: BorderRadius.circular(6),
@@ -539,7 +715,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.pop(ctx);
                   await Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api, initialTab: 1)),
+                    MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
                   );
                 },
               ),
@@ -554,7 +730,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Navigator.pop(ctx);
                   await Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api, initialTab: 1)),
+                    MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
                   );
                 },
               ),
@@ -789,7 +965,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   onPressed: () async {
                     await Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api, initialTab: 1)),
+                      MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
                     );
                   },
                   style: ElevatedButton.styleFrom(
@@ -849,7 +1025,7 @@ class _HomeScreenState extends State<HomeScreen> {
               color: const Color(0xFF7C3AED),
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api)),
+                MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
               ),
             ),
             _buildServiceTile(
@@ -986,7 +1162,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ElevatedButton.icon(
                   onPressed: () => Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api)),
+                    MaterialPageRoute(builder: (_) => AddStudentScreen(api: widget.api)),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.screenshotBlue,
@@ -1001,6 +1177,10 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ];
+    }
+
+    if (_visualTheme == 'abwaab') {
+      return _buildStudentAbwaabDashboard(context, student);
     }
 
     final todayLessons = widget.api.studentTodayLessons;
@@ -1236,6 +1416,491 @@ class _HomeScreenState extends State<HomeScreen> {
       // Recent Activity / Operations Section matching Jaib screenshot
       _buildRecentActivitiesSection(context, 'student'),
     ];
+  }
+
+  // ---------------------------------------------------------------------------
+  // 2.b STUDENT ABWAAB MODERN EDUCATIONAL DASHBOARD (Matching media_1793903260375_62df2b21.jpg)
+  // ---------------------------------------------------------------------------
+  Widget _buildCalendar31Icon() {
+    return Container(
+      width: 36,
+      height: 38,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: const Color(0xFFF97316), width: 1.8),
+      ),
+      child: Column(
+        children: [
+          Container(
+            height: 9,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF97316),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
+            ),
+          ),
+          const Expanded(
+            child: Center(
+              child: Text(
+                '31',
+                style: TextStyle(
+                  color: Color(0xFFF97316),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  height: 1.1,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrangeCalculatorIcon() {
+    return Container(
+      width: 38,
+      height: 48,
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF97316),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFF97316).withValues(alpha: 0.25),
+            blurRadius: 6,
+            offset: const Offset(1, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            height: 10,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: GridView.count(
+              crossAxisCount: 3,
+              mainAxisSpacing: 3,
+              crossAxisSpacing: 3,
+              physics: const NeverScrollableScrollPhysics(),
+              children: List.generate(
+                6,
+                (_) => Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlueBookEIcon() {
+    return Container(
+      width: 36,
+      height: 48,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0284C7),
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0284C7).withValues(alpha: 0.25),
+            blurRadius: 6,
+            offset: const Offset(1, 2),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: 4,
+            top: 0,
+            bottom: 0,
+            child: Container(width: 2.5, color: const Color(0xFF0369A1)),
+          ),
+          const Center(
+            child: Text(
+              'E',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRedBookAIcon() {
+    return Container(
+      width: 36,
+      height: 48,
+      decoration: BoxDecoration(
+        color: const Color(0xFFDC2626),
+        borderRadius: BorderRadius.circular(6),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFDC2626).withValues(alpha: 0.25),
+            blurRadius: 6,
+            offset: const Offset(1, 2),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            left: 4,
+            top: 0,
+            bottom: 0,
+            child: Container(width: 2.5, color: const Color(0xFFB91C1C)),
+          ),
+          const Center(
+            child: Text(
+              'أ',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPurpleAtomIcon() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: const BoxDecoration(
+        color: Color(0xFFF3E8FF),
+        shape: BoxShape.circle,
+      ),
+      child: const Center(
+        child: Icon(Icons.science_rounded, color: Color(0xFF9333EA), size: 34),
+      ),
+    );
+  }
+
+  Widget _buildEmeraldFlaskIcon() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: const BoxDecoration(
+        color: Color(0xFFECFDF5),
+        shape: BoxShape.circle,
+      ),
+      child: const Center(
+        child: Icon(Icons.biotech_rounded, color: Color(0xFF059669), size: 34),
+      ),
+    );
+  }
+
+  Widget _buildGoldenQuranIcon() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: const BoxDecoration(
+        color: Color(0xFFFEF9C3),
+        shape: BoxShape.circle,
+      ),
+      child: const Center(
+        child: Icon(Icons.auto_stories_rounded, color: Color(0xFFD97706), size: 34),
+      ),
+    );
+  }
+
+  List<Widget> _buildStudentAbwaabDashboard(BuildContext context, StudentProfile student) {
+    final pastelSubjects = [
+      {
+        'title': 'رياضيات',
+        'bgColor': const Color(0xFFFEF0D6), // soft peach/yellow
+        'iconWidget': _buildOrangeCalculatorIcon(),
+      },
+      {
+        'title': 'انجليزي',
+        'bgColor': const Color(0xFFE8F2FD), // soft sky-blue
+        'iconWidget': _buildBlueBookEIcon(),
+      },
+      {
+        'title': 'قواعد اللغة العربية\nوتطبيقاتها',
+        'bgColor': const Color(0xFFFDECEE), // soft pink
+        'iconWidget': _buildRedBookAIcon(),
+      },
+      {
+        'title': 'فيزياء',
+        'bgColor': const Color(0xFFF3E8FF), // soft purple
+        'iconWidget': _buildPurpleAtomIcon(),
+      },
+      {
+        'title': 'كيمياء',
+        'bgColor': const Color(0xFFECFDF5), // soft emerald
+        'iconWidget': _buildEmeraldFlaskIcon(),
+      },
+      {
+        'title': 'القرآن الكريم',
+        'bgColor': const Color(0xFFFEF9C3), // soft amber
+        'iconWidget': _buildGoldenQuranIcon(),
+      },
+    ];
+
+    return [
+      // 1. Standalone "جدول الأسبوع" Card matching media_1793903260375_62df2b21.jpg
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+          child: InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => TimetableScreen(api: widget.api)),
+            ),
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F5FA),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildCalendar31Icon(),
+                  const SizedBox(height: 6),
+                  Text(
+                    'جدول الأسبوع',
+                    style: GoogleFonts.cairo(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+
+      // 2. Standalone 3 Cards Row ("اسأل معلم", "حصص مباشرة", "دوري أبواب")
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+          child: Row(
+            children: [
+              // 1. اسأل معلم (Right in RTL)
+              Expanded(
+                child: _buildAbwaabStandaloneTile(
+                  iconWidget: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF10B981), size: 28),
+                  label: 'اسأل معلم',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ChatScreen(api: widget.api)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+
+              // 2. حصص مباشرة (Middle)
+              Expanded(
+                child: _buildAbwaabStandaloneTile(
+                  iconWidget: const Icon(Icons.cell_tower_rounded, color: Color(0xFF0284C7), size: 28),
+                  label: 'حصص مباشرة',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ServicesScreen(api: widget.api)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+
+              // 3. دوري أبواب (Left in RTL)
+              Expanded(
+                child: _buildAbwaabStandaloneTile(
+                  iconWidget: const Icon(Icons.emoji_events_outlined, color: Color(0xFF9333EA), size: 28),
+                  label: 'دوري أبواب',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => OnlineExamsScreen(api: widget.api)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+
+      // 3. Section Title: "مواد المنهاج" matching media_1793903260375_62df2b21.jpg
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 6, 20, 14),
+          child: Text(
+            'مواد المنهاج',
+            style: GoogleFonts.cairo(
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF0F172A),
+            ),
+          ),
+        ),
+      ),
+
+      // 4. Pastel Subject Tiles Grid matching media_1793903260375_62df2b21.jpg
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        sliver: SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 12,
+            childAspectRatio: 0.76,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final item = pastelSubjects[index];
+              final rawTitle = item['title'] as String;
+              final cleanTitle = rawTitle.replaceAll('\n', ' ');
+              final bgColor = item['bgColor'] as Color;
+              final iconWidget = item['iconWidget'] as Widget;
+
+              return InkWell(
+                onTap: () {
+                  final currList = widget.api.studentSubjects;
+                  final matched = currList.firstWhere(
+                    (c) => c.name.contains(cleanTitle) || cleanTitle.contains(c.name),
+                    orElse: () => SubjectCurriculum(
+                      id: 'sub_$index',
+                      code: 'SUB-$index',
+                      name: cleanTitle,
+                      shortName: cleanTitle,
+                      teacherName: 'أستاذ المادة المعتمد',
+                      weeklyPeriods: 4,
+                      maxScore: 100.0,
+                      textbookTitle: 'كتاب $cleanTitle',
+                      textbookPdfUrl: 'https://school.alattab.site/media/curriculum/book.pdf',
+                      totalPages: 160,
+                      progressPercent: (((index + 2) * 15) % 100) / 100.0,
+                      iconName: 'menu_book',
+                      units: [
+                        CurriculumUnit(
+                          unitNumber: 1,
+                          title: 'الوحدة الأولى: المفاهيم الأساسية والمدخل',
+                          lessonsCount: 6,
+                          summary: 'التمهيد والقوانين الأساسية ونماذج محلولة',
+                          keyTopics: const [
+                            'الدرس 1: التمهيد وأساسيات المادة',
+                            'الدرس 2: القوانين والتطبيقات المعملية',
+                            'الدرس 3: نماذج محلولة وتمارين داعمة',
+                          ],
+                        ),
+                        CurriculumUnit(
+                          unitNumber: 2,
+                          title: 'الوحدة الثانية: التطبيقات والمسائل الوزارية',
+                          lessonsCount: 7,
+                          summary: 'المفاهيم المتقدمة وتدريبات ومراجعة شاملة',
+                          keyTopics: const [
+                            'الدرس 1: المفاهيم المتقدمة ونماذج الاختبارات',
+                            'الدرس 2: تدريبات ومراجعة شاملة للوحدة',
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SubjectDetailScreen(
+                        api: widget.api,
+                        subject: matched,
+                      ),
+                    ),
+                  );
+                },
+                borderRadius: BorderRadius.circular(20),
+                child: Column(
+                  children: [
+                    Container(
+                      height: 94,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Center(
+                        child: iconWidget,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      rawTitle,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.cairo(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1E293B),
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+            childCount: pastelSubjects.length,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _buildAbwaabStandaloneTile({
+    required Widget iconWidget,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        height: 74,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0F5FA),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            iconWidget,
+            const SizedBox(height: 5),
+            Text(
+              label,
+              style: GoogleFonts.cairo(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1E293B),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1547,7 +2212,7 @@ class _HomeScreenState extends State<HomeScreen> {
               color: const Color(0xFF0F172A),
               onTap: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api)),
+                MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
               ),
             ),
             _buildServiceTile(
@@ -1750,77 +2415,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Promo / Notice Banner matching Jaib Screenshot
+  // Promo / Notice Banner - completely hidden per user requirement
   // ---------------------------------------------------------------------------
   Widget _buildPromoBanner(BuildContext context, String role) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFFFF1F2), Color(0xFFFEE2E2), Color(0xFFFFFFFF)],
-          begin: Alignment.centerRight,
-          end: Alignment.centerLeft,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFECDD3)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE11D48).withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: const Center(
-              child: Icon(Icons.auto_awesome_rounded, color: Color(0xFFE11D48), size: 24),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'المساعد الذكي لمدرستي (Gemini AI)',
-                  style: GoogleFonts.cairo(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                    color: const Color(0xFF9F1239),
-                  ),
-                ),
-                Text(
-                  'شرح فوري للمناهج وحل المسائل وتلخيص الدروس مباشرة',
-                  style: GoogleFonts.cairo(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF475569),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => ChatScreen(api: widget.api)),
-            ),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              backgroundColor: const Color(0xFFE11D48),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            child: Text(
-              'اسأل الآن',
-              style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
-            ),
-          ),
-        ],
-      ),
-    );
+    return const SizedBox.shrink();
   }
 
   // ---------------------------------------------------------------------------
@@ -2066,6 +2664,135 @@ class _HomeScreenState extends State<HomeScreen> {
               label,
               style: GoogleFonts.cairo(
                 fontSize: 10,
+                fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Abwaab EdTech 5-Destination Bottom Navigation Bar for Students
+  // ---------------------------------------------------------------------------
+  Widget _buildAbwaabBottomBar(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: const Border(top: BorderSide(color: Color(0xFFE2E8F0), width: 1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 64,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              // 1. الرئيسية
+              _buildAbwaabBottomNavItem(
+                icon: Icons.home_rounded,
+                label: 'الرئيسية',
+                isSelected: _selectedBottomNavIndex == 0,
+                onTap: () => setState(() => _selectedBottomNavIndex = 0),
+              ),
+              // 2. دراستي
+              _buildAbwaabBottomNavItem(
+                icon: Icons.menu_book_rounded,
+                label: 'دراستي',
+                isSelected: _selectedBottomNavIndex == 1,
+                onTap: () {
+                  setState(() => _selectedBottomNavIndex = 1);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => SubjectsScreen(api: widget.api)),
+                  ).then((_) {
+                    if (mounted) setState(() => _selectedBottomNavIndex = 0);
+                  });
+                },
+              ),
+              // 3. المهام
+              _buildAbwaabBottomNavItem(
+                icon: Icons.assignment_rounded,
+                label: 'المهام',
+                isSelected: _selectedBottomNavIndex == 2,
+                onTap: () {
+                  setState(() => _selectedBottomNavIndex = 2);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => HomeworkScreen(api: widget.api)),
+                  ).then((_) {
+                    if (mounted) setState(() => _selectedBottomNavIndex = 0);
+                  });
+                },
+              ),
+              // 4. التواصل
+              _buildAbwaabBottomNavItem(
+                icon: Icons.chat_bubble_outline_rounded,
+                label: 'التواصل',
+                isSelected: _selectedBottomNavIndex == 3,
+                onTap: () {
+                  setState(() => _selectedBottomNavIndex = 3);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ChatScreen(api: widget.api)),
+                  ).then((_) {
+                    if (mounted) setState(() => _selectedBottomNavIndex = 0);
+                  });
+                },
+              ),
+              // 5. حسابي
+              _buildAbwaabBottomNavItem(
+                icon: Icons.person_outline_rounded,
+                label: 'حسابي',
+                isSelected: _selectedBottomNavIndex == 4,
+                onTap: () async {
+                  setState(() => _selectedBottomNavIndex = 4);
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api)),
+                  );
+                  await _loadGridTheme();
+                  if (mounted) setState(() => _selectedBottomNavIndex = 0);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAbwaabBottomNavItem({
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final color = isSelected ? const Color(0xFF0284C7) : const Color(0xFF94A3B8);
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: GoogleFonts.cairo(
+                fontSize: 10.5,
                 fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
                 color: color,
               ),

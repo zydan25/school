@@ -105,5 +105,37 @@ void main() {
       expect(lesson.subject, equals('الرياضيات'));
       expect(lesson.classroom, equals('قاعة 101'));
     });
+
+    test('STU-EDTECH: SubjectCurriculum and units structure parsed correctly', () {
+      final unit = CurriculumUnit(
+        unitNumber: 1,
+        title: 'الوحدة الأولى: الميكانيكا',
+        lessonsCount: 5,
+        summary: 'دراسة قوانين نيوتن',
+        keyTopics: const ['قانون نيوتن الأول', 'قانون نيوتن الثاني'],
+        isCompleted: true,
+      );
+
+      final subject = SubjectCurriculum(
+        id: 'sub_test',
+        code: 'PHYS-10',
+        name: 'الفيزياء',
+        shortName: 'فيزياء',
+        teacherName: 'أ. مروان القدسي',
+        weeklyPeriods: 4,
+        maxScore: 100.0,
+        textbookTitle: 'كتاب الفيزياء',
+        textbookPdfUrl: 'https://example.com/physics.pdf',
+        totalPages: 180,
+        progressPercent: 0.65,
+        iconName: 'science',
+        units: [unit],
+      );
+
+      expect(subject.name, equals('الفيزياء'));
+      expect(subject.units.length, equals(1));
+      expect(subject.units.first.keyTopics.length, equals(2));
+      expect(subject.units.first.isCompleted, isTrue);
+    });
   });
 }

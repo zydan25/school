@@ -4,6 +4,7 @@ import '../core/api_service.dart';
 import '../core/models.dart';
 import '../core/theme.dart';
 import 'chat_screen.dart';
+import 'subject_detail_screen.dart';
 
 class SubjectsScreen extends StatefulWidget {
   final ApiService api;
@@ -745,19 +746,25 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
 
                           const SizedBox(width: 8),
 
-                          // Button 2: Units Index
+                          // Button 2: Subject Detail Screen (Abwaab Course View)
                           Expanded(
                             flex: 2,
-                            child: OutlinedButton(
-                              onPressed: () => _showBookPreviewDialog(subject),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF334155),
-                                side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => SubjectDetailScreen(api: widget.api, subject: subject),
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF0F172A),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
                                 padding: const EdgeInsets.symmetric(vertical: 9),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                               ),
                               child: Text(
-                                'الوحدات (${subject.units.length})',
+                                'شرح الدروس',
                                 style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
                               ),
                             ),
