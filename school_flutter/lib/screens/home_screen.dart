@@ -118,7 +118,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     'تبديل مساحة العمل الرسمية',
-                    style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain),
+                    style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close_rounded, size: 20),
@@ -129,7 +129,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 6),
               Text(
                 'المساحات المعتمدة لملف حسابك في ${widget.api.activeSchoolName}:',
-                style: GoogleFonts.almarai(fontSize: 12, color: AppTheme.textMuted),
+                style: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMuted),
               ),
               const SizedBox(height: 16),
               ...available.map((role) {
@@ -180,7 +180,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 Text(
                                   _getRoleLabel(role),
-                                  style: GoogleFonts.almarai(
+                                  style: GoogleFonts.cairo(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
                                     color: isSelected ? color : AppTheme.textMain,
@@ -194,7 +194,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           : role == 'teacher'
                                               ? 'رصد الدرجات، تصحيح الواجبات، والتحضير'
                                               : 'إدارة المدرسة والطلاب والمعلمين',
-                                  style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted),
+                                  style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted),
                                 ),
                               ],
                             ),
@@ -221,16 +221,16 @@ class _HomeScreenState extends State<HomeScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: Text(
           'تسجيل الخروج',
-          style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.bold),
+          style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         content: Text(
           'هل تريد بالتأكيد تسجيل الخروج من منظومة مدرستي؟',
-          style: GoogleFonts.almarai(fontSize: 13),
+          style: GoogleFonts.cairo(fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('إلغاء', style: GoogleFonts.almarai(color: AppTheme.textMuted)),
+            child: Text('إلغاء', style: GoogleFonts.cairo(color: AppTheme.textMuted)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -242,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.pop(ctx);
               widget.api.logout();
             },
-            child: Text('خروج', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
+            child: Text('خروج', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -257,10 +257,11 @@ class _HomeScreenState extends State<HomeScreen> {
         final role = widget.api.currentRole;
         final roleColor = _getRoleColor(role);
 
-        final isAbwaabStudent = role == 'student' && _visualTheme == 'abwaab';
+        final isStudentOrGuardian = role == 'student' || role == 'guardian';
+        final isAbwaabStudent = isStudentOrGuardian && _visualTheme == 'abwaab';
 
         return Scaffold(
-          backgroundColor: isAbwaabStudent ? Colors.white : const Color(0xFFF8FAFC),
+          backgroundColor: Colors.white,
           floatingActionButtonLocation: isAbwaabStudent ? null : FloatingActionButtonLocation.centerDocked,
           floatingActionButton: isAbwaabStudent
               ? null
@@ -299,19 +300,19 @@ class _HomeScreenState extends State<HomeScreen> {
             child: CustomScrollView(
               physics: const BouncingScrollPhysics(),
               slivers: [
-                // 1. Top Header Bar (Jaib style: Greeting + Name + Action Icons)
+                // 1. Top Header Bar
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
                     child: _buildHeaderBar(context, role, roleColor),
                   ),
                 ),
 
                 // 2. Dynamic Body depending on Active Role
-                if (role == 'guardian') ..._buildGuardianDashboard(context)
-                else if (role == 'student') ..._buildStudentDashboard(context)
-                else if (role == 'teacher') ..._buildTeacherDashboard(context)
-                else ..._buildAdminDashboard(context),
+                if (role == 'teacher') ..._buildTeacherDashboard(context)
+                else if (role == 'admin') ..._buildAdminDashboard(context)
+                else if (role == 'guardian' && widget.api.currentStudent == null) ..._buildGuardianDashboard(context)
+                else ..._buildStudentDashboard(context),
 
                 const SliverToBoxAdapter(child: SizedBox(height: 80)),
               ],
@@ -332,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final activeStudent = widget.api.currentStudent;
 
     // 1. Abwaab Educational Theme Header for Student (Matching media_1793903260375_62df2b21.jpg)
-    if (role == 'student' && _visualTheme == 'abwaab' && activeStudent != null) {
+    if ((role == 'student' || role == 'guardian') && activeStudent != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         child: Row(
@@ -384,20 +385,22 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Text(
                       _getTimeGreeting(),
-                      style: GoogleFonts.almarai(
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.cairo().fontFamily,
                         fontSize: 11,
                         color: const Color(0xFF717579),
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                     Text(
                       activeStudent.fullName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.almarai(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: const Color(0xFF1A1D1F),
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.cairo().fontFamily,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF111111),
                       ),
                     ),
                     InkWell(
@@ -422,10 +425,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(width: 4),
                           Text(
                             ' ${activeStudent.grade} ',
-                            style: GoogleFonts.almarai(
+                            style: TextStyle(
+                              fontFamily: GoogleFonts.cairo().fontFamily,
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,
-                              color: const Color(0xFF1A1D1F),
+                              color: const Color(0xFF1E293B),
                             ),
                           ),
                           const Text('🇾🇪', style: TextStyle(fontSize: 12)),
@@ -449,14 +453,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   borderRadius: BorderRadius.circular(20),
                   child: Container(
-                    width: 40,
-                    height: 40,
+                    width: 38,
+                    height: 38,
                     decoration: const BoxDecoration(
                       color: Color(0xFFEBF5FF),
                       shape: BoxShape.circle,
                     ),
                     child: const Center(
-                      child: Icon(Icons.notifications_rounded, color: Color(0xFF0284C7), size: 22),
+                      child: Icon(Icons.notifications_rounded, color: Color(0xFF0284C7), size: 20),
                     ),
                   ),
                 ),
@@ -466,12 +470,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('🔥', style: TextStyle(fontSize: 14)),
+                    const Text('🔥', style: TextStyle(fontSize: 13)),
                     const SizedBox(width: 2),
                     Text(
                       '0',
-                      style: GoogleFonts.almarai(
-                        fontSize: 13,
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.cairo().fontFamily,
+                        fontSize: 12,
                         fontWeight: FontWeight.bold,
                         color: const Color(0xFF64748B),
                       ),
@@ -480,11 +485,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 4),
 
-                // 3-dots Menu
-                IconButton(
-                  icon: const Icon(Icons.more_vert, color: Color(0xFF0F172A), size: 22),
-                  onPressed: () => _showOptionsMenuDialog(context),
-                ),
+                // 3-dots Menu Popup (Anchored right here in place)
+                _buildThreeDotsPopupMenu(context),
               ],
             ),
           ],
@@ -518,7 +520,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   _getTimeGreeting(),
-                  style: GoogleFonts.almarai(
+                  style: GoogleFonts.cairo(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF64748B),
@@ -532,7 +534,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         firstName,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.almarai(
+                        style: GoogleFonts.cairo(
                           fontSize: 18,
                           fontWeight: FontWeight.w900,
                           color: const Color(0xFF0F172A),
@@ -549,7 +551,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       child: Text(
                         _getRoleLabel(role),
-                        style: GoogleFonts.almarai(
+                        style: GoogleFonts.cairo(
                           fontSize: 9.5,
                           fontWeight: FontWeight.bold,
                           color: roleColor,
@@ -578,7 +580,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             'الطالب: ${activeStudent.fullName.split(' ').first} (${activeStudent.grade}) ⇄ تبديل',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.almarai(
+                            style: GoogleFonts.cairo(
                               fontSize: 10.5,
                               fontWeight: FontWeight.bold,
                               color: const Color(0xFF0284C7),
@@ -635,13 +637,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(width: 8),
 
-              // 3-Dots Menu Button (منيو ثلاث نقاط)
-              _buildHeaderIconButton(
-                icon: Icons.more_vert,
-                color: const Color(0xFF0F172A),
-                tooltip: 'الخيارات ومساحات العمل',
-                onTap: () => _showOptionsMenuDialog(context),
-              ),
+              // 3-Dots Menu Button (anchored in place)
+              _buildThreeDotsPopupMenu(context),
             ],
           ),
         ],
@@ -650,9 +647,130 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------------------
+  // 3-Dots Options Menu (Anchored in place right at the button)
+  // ---------------------------------------------------------------------------
+  Widget _buildThreeDotsPopupMenu(BuildContext context) {
+    final availableRoles = widget.api.availableRoles;
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.more_vert_rounded, color: Color(0xFF111111), size: 22),
+      tooltip: 'الخيارات ومساحات العمل',
+      offset: const Offset(0, 42),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: Colors.white,
+      elevation: 8,
+      onSelected: (value) async {
+        if (value == 'switch_student') {
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)));
+        } else if (value == 'add_student') {
+          await Navigator.push(context, MaterialPageRoute(builder: (_) => AddStudentScreen(api: widget.api)));
+        } else if (value == 'teacher_space') {
+          widget.api.switchRole('teacher');
+        } else if (value == 'admin_space') {
+          widget.api.switchRole('admin');
+        } else if (value == 'settings') {
+          final res = await Navigator.push(context, MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api)));
+          if (res != null && mounted) {
+            setState(() {});
+          }
+        }
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'switch_student',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.swap_horiz_rounded, color: Color(0xFF1E60FF), size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'تبديل الطالب (طلابي)',
+                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF111111)),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'add_student',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(color: const Color(0xFFECFDF5), borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.person_add_alt_1_rounded, color: Color(0xFF10B981), size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'إضافة طالب برقم القيد',
+                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF111111)),
+              ),
+            ],
+          ),
+        ),
+        if (availableRoles.contains('teacher'))
+          PopupMenuItem(
+            value: 'teacher_space',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: const Color(0xFFF0FDFA), borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.assignment_ind_rounded, color: Color(0xFF0D9488), size: 18),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'مساحة المعلم',
+                  style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF111111)),
+                ),
+              ],
+            ),
+          ),
+        if (availableRoles.contains('admin') || availableRoles.contains('supervisor'))
+          PopupMenuItem(
+            value: 'admin_space',
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: const Color(0xFFF5F3FF), borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.admin_panel_settings_rounded, color: Color(0xFF6C5CE7), size: 18),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'مساحة الإدارة والمشرف',
+                  style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF111111)),
+                ),
+              ],
+            ),
+          ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'settings',
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.settings_rounded, color: Color(0xFF475569), size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'الإعدادات والمظهر',
+                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF111111)),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // 3-Dots Options Menu Modal (منيو ثلاث نقاط)
   // ---------------------------------------------------------------------------
-  void _showOptionsMenuDialog(BuildContext context) {
+  void _showOptionsMenuDialog(BuildContext context) { // ignore: unused_element
     final availableRoles = widget.api.availableRoles;
     final currentRole = widget.api.currentRole;
     final activeStudent = widget.api.currentStudent;
@@ -686,7 +804,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(width: 10),
                       Text(
                         'خيارات ومساحات العمل',
-                        style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+                        style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
                       ),
                     ],
                   ),
@@ -699,7 +817,7 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(height: 6),
               Text(
                 'الوصول السريع إلى المساحات والطلاب والإعدادات المعتمدة بحسابك:',
-                style: GoogleFonts.almarai(fontSize: 11.5, color: const Color(0xFF64748B)),
+                style: GoogleFonts.cairo(fontSize: 11.5, color: const Color(0xFF64748B)),
               ),
               const SizedBox(height: 14),
 
@@ -851,7 +969,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     Text(
                       title,
-                      style: GoogleFonts.almarai(
+                      style: GoogleFonts.cairo(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
                         color: isSelected ? color : const Color(0xFF0F172A),
@@ -861,7 +979,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.almarai(fontSize: 10.5, color: const Color(0xFF64748B)),
+                      style: GoogleFonts.cairo(fontSize: 10.5, color: const Color(0xFF64748B)),
                     ),
                   ],
                 ),
@@ -950,13 +1068,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         'متابعة الطالب: ${activeStudent.fullName}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                        style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                       ),
                       Text(
                         '${activeStudent.grade} • ${activeStudent.section} • حضور ${activeStudent.attendanceRate}% • معدل ${activeStudent.gpa}%',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.almarai(fontSize: 10.5, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+                        style: GoogleFonts.cairo(fontSize: 10.5, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
@@ -977,7 +1095,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Text(
                     'تبديل (${children.length})',
-                    style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold),
+                    style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -998,7 +1116,7 @@ class _HomeScreenState extends State<HomeScreen> {
             activeStudent != null
                 ? 'خدمات متابعة الطالب (${activeStudent.fullName.split(' ').first})'
                 : 'خدمات متابعة الطالب',
-            style: GoogleFonts.almarai(
+            style: GoogleFonts.cairo(
               fontSize: 15,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF0F172A),
@@ -1150,13 +1268,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   'لا يوجد ملف طالب نشط مرتبط بحسابك في ${widget.api.activeSchoolName}',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                  style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                 ),
                 const SizedBox(height: 8),
                 Text(
                   'يمكنك ربط كود الطالب أو التبديل إلى مدرسة أخرى أو مساحة عمل أخرى.',
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B)),
+                  style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
@@ -1170,7 +1288,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                   icon: const Icon(Icons.person_add_alt_1_rounded, size: 18),
-                  label: Text('إضافة وربط كود الطالب', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
+                  label: Text('إضافة وربط كود الطالب', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
@@ -1231,7 +1349,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               'الحصة القادمة: ${nextLesson.subject}',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.almarai(
+                              style: GoogleFonts.cairo(
                                 fontSize: 12.5,
                                 fontWeight: FontWeight.w800,
                                 color: const Color(0xFF0F172A),
@@ -1247,7 +1365,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             child: Text(
                               'الحصة ${nextLesson.period}',
-                              style: GoogleFonts.almarai(
+                              style: GoogleFonts.cairo(
                                 fontSize: 9.5,
                                 fontWeight: FontWeight.bold,
                                 color: const Color(0xFF0284C7),
@@ -1258,7 +1376,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       Text(
                         '${nextLesson.time} • ${nextLesson.classroom}',
-                        style: GoogleFonts.almarai(
+                        style: GoogleFonts.cairo(
                           fontSize: 10.5,
                           fontWeight: FontWeight.w600,
                           color: const Color(0xFF64748B),
@@ -1280,7 +1398,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   child: Text(
                     'الجدول',
-                    style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold),
+                    style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -1299,7 +1417,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
           child: Text(
             'الخدمات الأكاديمية والذكاء الاصطناعي',
-            style: GoogleFonts.almarai(
+            style: GoogleFonts.cairo(
               fontSize: 15,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF0F172A),
@@ -1422,33 +1540,67 @@ class _HomeScreenState extends State<HomeScreen> {
   // 2.b STUDENT ABWAAB MODERN EDUCATIONAL DASHBOARD (Matching media_1793903260375_62df2b21.jpg)
   // ---------------------------------------------------------------------------
   Widget _buildCalendar31Icon() {
-    return Container(
+    return SizedBox(
       width: 36,
       height: 38,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: const Color(0xFFF97316), width: 1.8),
-      ),
-      child: Column(
+      child: Stack(
+        alignment: Alignment.bottomCenter,
         children: [
           Container(
-            height: 9,
-            decoration: const BoxDecoration(
-              color: Color(0xFFF97316),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
+            width: 36,
+            height: 34,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFF97316), width: 1.8),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF97316),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(6)),
+                  ),
+                ),
+                Expanded(
+                  child: Center(
+                    child: Text(
+                      '31',
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.cairo().fontFamily,
+                        color: const Color(0xFFF97316),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const Expanded(
-            child: Center(
-              child: Text(
-                '31',
-                style: TextStyle(
-                  color: Color(0xFFF97316),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  height: 1.1,
-                ),
+          Positioned(
+            top: 0,
+            left: 8,
+            child: Container(
+              width: 3.5,
+              height: 6,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEA580C),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 0,
+            right: 8,
+            child: Container(
+              width: 3.5,
+              height: 6,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEA580C),
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
           ),
@@ -1746,21 +1898,106 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
 
     return [
-      // 1. Core Student Academic Services: 3-Column Neumorphic Clean Grid
+      // 1. Standalone "جدول الأسبوع" Top Card matching media_1793903260375_62df2b21.jpg
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
+          child: InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => TimetableScreen(api: widget.api)),
+            ),
+            borderRadius: BorderRadius.circular(18),
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F5FA),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildCalendar31Icon(),
+                  const SizedBox(height: 6),
+                  Text(
+                    'جدول الأسبوع',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF1E293B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+
+      // 2. Standalone 3 Cards Row ("اسأل معلم", "حصص مباشرة", "دوري أبواب") matching media_1793903260375_62df2b21.jpg
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          child: Row(
+            children: [
+              // 1. اسأل معلم (Right in RTL)
+              Expanded(
+                child: _buildAbwaabStandaloneTile(
+                  iconWidget: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF10B981), size: 28),
+                  label: 'اسأل معلم',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ChatScreen(api: widget.api)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+
+              // 2. حصص مباشرة (Middle)
+              Expanded(
+                child: _buildAbwaabStandaloneTile(
+                  iconWidget: const Icon(Icons.cell_tower_rounded, color: Color(0xFF0284C7), size: 28),
+                  label: 'حصص مباشرة',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ServicesScreen(api: widget.api)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+
+              // 3. دوري أبواب (Left in RTL)
+              Expanded(
+                child: _buildAbwaabStandaloneTile(
+                  iconWidget: const Icon(Icons.emoji_events_outlined, color: Color(0xFF9333EA), size: 28),
+                  label: 'دوري أبواب',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => OnlineExamsScreen(api: widget.api)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+
+      // 3. The 6 Core Operations Grid (الايقونات الست المربعة المتناسقة - نمط جيب العصري)
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
         sliver: SliverGrid(
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 3,
-            mainAxisSpacing: 12,
+            mainAxisSpacing: 10,
             crossAxisSpacing: 10,
-            childAspectRatio: 0.94,
+            childAspectRatio: 1.05,
           ),
           delegate: SliverChildListDelegate([
-            // Service 1: واجباتي المدرسية with pending badge
+            // 1. واجباتي
             _buildAcademicServiceCard(
-              title: 'واجباتي المدرسية',
-              subtitle: 'تسليم ومتابعة',
+              title: 'واجباتي',
               badgeText: '$displayPending غير منفذ',
               badgeBg: const Color(0xFFFEF2F2),
               badgeBorder: const Color(0xFFFECACA),
@@ -1774,51 +2011,15 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Service 2: جدول الحصص (with Abwaab Calendar 31 icon)
+            // 2. درجاتي
             _buildAcademicServiceCard(
-              title: 'جدول الحصص',
-              subtitle: 'الفترة والقاعات',
-              badgeText: 'اليوم: 6 حصص',
-              badgeBg: const Color(0xFFFFFBEB),
-              badgeBorder: const Color(0xFFFDE68A),
-              badgeTextColor: const Color(0xFFD97706),
-              iconContainerBg: Colors.transparent,
-              icon: Icons.calendar_month_rounded,
-              iconColor: const Color(0xFFF59E0B),
-              customIconWidget: _buildCalendar31Icon(),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => TimetableScreen(api: widget.api)),
-              ),
-            ),
-
-            // Service 3: الاختبارات الإلكترونية
-            _buildAcademicServiceCard(
-              title: 'الاختبارات',
-              subtitle: 'تقييم فوري',
-              badgeText: 'متاح الآن',
-              badgeBg: const Color(0xFFF5F3FF),
-              badgeBorder: const Color(0xFFDDD6FE),
-              badgeTextColor: const Color(0xFF7C3AED),
-              iconContainerBg: const Color(0xFFF5F3FF),
-              icon: Icons.fact_check_outlined,
-              iconColor: const Color(0xFF6C5CE7),
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => OnlineExamsScreen(api: widget.api)),
-              ),
-            ),
-
-            // Service 4: درجاتي والنتائج
-            _buildAcademicServiceCard(
-              title: 'درجاتي والنتائج',
-              subtitle: 'الشهادة والتقدم',
+              title: 'درجاتي',
               badgeText: '98.5% ممتاز',
               badgeBg: const Color(0xFFECFDF5),
               badgeBorder: const Color(0xFFA7F3D0),
               badgeTextColor: const Color(0xFF059669),
               iconContainerBg: const Color(0xFFECFDF5),
-              icon: Icons.military_tech_rounded,
+              icon: Icons.military_tech_outlined,
               iconColor: const Color(0xFF10B981),
               onTap: () => Navigator.push(
                 context,
@@ -1826,16 +2027,47 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Service 5: سجل الحضور والغياب
+            // 3. حصصي وجدولي
             _buildAcademicServiceCard(
-              title: 'سجل الحضور',
-              subtitle: 'الانضباط المدرسي',
+              title: 'حصصي وجدولي',
+              badgeText: 'اليوم 5',
+              badgeBg: const Color(0xFFFFF7ED),
+              badgeBorder: const Color(0xFFFED7AA),
+              badgeTextColor: const Color(0xFFEA580C),
+              iconContainerBg: const Color(0xFFFFF7ED),
+              icon: Icons.calendar_month_outlined,
+              iconColor: const Color(0xFFF97316),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => TimetableScreen(api: widget.api)),
+              ),
+            ),
+
+            // 4. اختباراتي
+            _buildAcademicServiceCard(
+              title: 'اختباراتي',
+              badgeText: 'متاح الآن',
+              badgeBg: const Color(0xFFF5F3FF),
+              badgeBorder: const Color(0xFFDDD6FE),
+              badgeTextColor: const Color(0xFF7C3AED),
+              iconContainerBg: const Color(0xFFF5F3FF),
+              icon: Icons.fact_check_outlined,
+              iconColor: const Color(0xFF7C3AED),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => OnlineExamsScreen(api: widget.api)),
+              ),
+            ),
+
+            // 5. حضوري وغيابي
+            _buildAcademicServiceCard(
+              title: 'حضوري وغيابي',
               badgeText: '99% منتظم',
               badgeBg: const Color(0xFFECFEFF),
               badgeBorder: const Color(0xFFBAE6FD),
               badgeTextColor: const Color(0xFF0284C7),
               iconContainerBg: const Color(0xFFECFEFF),
-              icon: Icons.how_to_reg_rounded,
+              icon: Icons.how_to_reg_outlined,
               iconColor: const Color(0xFF06B6D4),
               onTap: () => Navigator.push(
                 context,
@@ -1843,17 +2075,16 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
 
-            // Service 6: المساعد الذكي AI
+            // 6. المعلم الذكي AI
             _buildAcademicServiceCard(
               title: 'المعلم الذكي AI',
-              subtitle: 'معلمك التفاعلي',
               badgeText: '24/7 ذكي',
               badgeBg: const Color(0xFFFFF1F2),
               badgeBorder: const Color(0xFFFECDD3),
               badgeTextColor: const Color(0xFFE11D48),
               iconContainerBg: const Color(0xFFFFF1F2),
               icon: Icons.auto_awesome_rounded,
-              iconColor: const Color(0xFFF43F5E),
+              iconColor: const Color(0xFFE11D48),
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => ChatScreen(api: widget.api)),
@@ -1863,47 +2094,38 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
 
-      // 2. Section Title: "مواد المنهاج الدراسي"
+      // 4. Section Title: "مواد المنهاج" matching media_1793903260375_62df2b21.jpg
       SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 4,
-                    height: 18,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E60FF),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'مواد المنهاج الدراسي',
-                    style: GoogleFonts.almarai(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF1A1D1F),
-                    ),
-                  ),
-                ],
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFBFDBFE), width: 1),
+              Text(
+                'مواد المنهاج',
+                style: TextStyle(
+                  fontFamily: GoogleFonts.cairo().fontFamily,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF111111),
                 ),
-                child: Text(
-                  '9 مواد مقررة',
-                  style: GoogleFonts.almarai(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1E60FF),
+              ),
+              InkWell(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => SubjectsScreen(api: widget.api)),
+                ),
+                borderRadius: BorderRadius.circular(8),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: Text(
+                    'عرض الكل (${curriculumSubjects.length})',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF1E60FF),
+                    ),
                   ),
                 ),
               ),
@@ -1912,7 +2134,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
 
-      // 3. Compact Bordered Square Subject Tiles (All 9 Curriculum Subjects)
+      // 5. True Geometric Square Curriculum Grid (مربعات متناسقة 76x76 وخط كيرو أنيق)
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         sliver: SliverGrid(
@@ -1920,7 +2142,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisCount: 3,
             mainAxisSpacing: 14,
             crossAxisSpacing: 12,
-            childAspectRatio: 0.82,
+            childAspectRatio: 0.78,
           ),
           delegate: SliverChildBuilderDelegate(
             (context, index) {
@@ -1930,7 +2152,6 @@ class _HomeScreenState extends State<HomeScreen> {
               final bgColor = item['bgColor'] as Color;
               final borderColor = item['borderColor'] as Color;
               final iconWidget = item['iconWidget'] as Widget;
-              final unitsCount = item['unitsCount'] as String;
 
               return InkWell(
                 onTap: () {
@@ -1981,23 +2202,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   );
                 },
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(18),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Crisp square bordered container
+                    // EXACT 76x76 TRUE GEOMETRIC SQUARE CONTAINER
                     Container(
-                      height: 74,
-                      width: double.infinity,
+                      width: 76,
+                      height: 76,
                       decoration: BoxDecoration(
-                        color: bgColor.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: borderColor, width: 1.3),
+                        color: bgColor,
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: borderColor, width: 1.2),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.03),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
                           ),
                         ],
                       ),
@@ -2009,24 +2230,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     Text(
                       rawTitle,
                       textAlign: TextAlign.center,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.almarai(
-                        fontSize: 11.5,
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.cairo().fontFamily,
+                        fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: const Color(0xFF1A1D1F),
+                        color: const Color(0xFF111111),
                         height: 1.2,
-                      ),
-                    ),
-                    Text(
-                      unitsCount,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.almarai(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF717579),
                       ),
                     ),
                   ],
@@ -2074,9 +2285,43 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
   }
 
+  Widget _buildAbwaabStandaloneTile({
+    required Widget iconWidget,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        height: 74,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF0F5FA),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            iconWidget,
+            const SizedBox(height: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: GoogleFonts.cairo().fontFamily,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1E293B),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAcademicServiceCard({
     required String title,
-    required String subtitle,
     required String badgeText,
     required Color badgeBg,
     required Color badgeBorder,
@@ -2089,86 +2334,85 @@ class _HomeScreenState extends State<HomeScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(6, 8, 6, 8),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: const Color(0xFFF1F5F9), width: 1.2),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        child: Stack(
+          clipBehavior: Clip.none,
           children: [
-            // Top Badge Pill
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-              decoration: BoxDecoration(
-                color: badgeBg,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: badgeBorder, width: 0.8),
-              ),
-              child: Text(
-                badgeText,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.almarai(
-                  fontSize: 8.5,
-                  fontWeight: FontWeight.w700,
-                  color: badgeTextColor,
+            // Centered icon and title
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Icon container matching media_1793863825724_547dd324.jpg
+                    customIconWidget ??
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: iconContainerBg,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Center(
+                            child: Icon(icon, color: iconColor, size: 24),
+                          ),
+                        ),
+                    const SizedBox(height: 7),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.cairo().fontFamily,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1E293B),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
 
-            // Centered Soft Pastel Icon Container or Custom Widget
-            customIconWidget ??
-                Container(
-                  width: 38,
-                  height: 38,
+            // Top-right corner badge (e.g. "2 غير منفذ")
+            if (badgeText.isNotEmpty)
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                   decoration: BoxDecoration(
-                    color: iconContainerBg,
-                    borderRadius: BorderRadius.circular(12),
+                    color: badgeBg,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: badgeBorder, width: 0.8),
                   ),
-                  child: Center(
-                    child: Icon(icon, color: iconColor, size: 21),
-                  ),
-                ),
-
-            // Title & Subtitle in Official GoogleFonts.almarai
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.almarai(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFF1A1D1F),
+                  child: Text(
+                    badgeText,
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.w800,
+                      color: badgeTextColor,
+                    ),
                   ),
                 ),
-                Text(
-                  subtitle,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.almarai(
-                    fontSize: 8.5,
-                    fontWeight: FontWeight.w500,
-                    color: const Color(0xFF717579),
-                  ),
-                ),
-              ],
-            ),
+              ),
           ],
         ),
       ),
@@ -2181,7 +2425,7 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
         Text(
           value,
-          style: GoogleFonts.almarai(
+          style: GoogleFonts.cairo(
             fontSize: 13,
             fontWeight: FontWeight.w700,
             color: color,
@@ -2190,7 +2434,7 @@ class _HomeScreenState extends State<HomeScreen> {
         const SizedBox(height: 2),
         Text(
           label,
-          style: GoogleFonts.almarai(
+          style: GoogleFonts.cairo(
             fontSize: 9.5,
             fontWeight: FontWeight.w500,
             color: const Color(0xFF717579),
@@ -2253,7 +2497,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Text(
                           widget.api.currentUserName,
-                          style: GoogleFonts.almarai(
+                          style: GoogleFonts.cairo(
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
@@ -2261,7 +2505,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         Text(
                           'معلم الرياضيات والفيزياء • الشعبة المسندة: أول ثانوي (أ)',
-                          style: GoogleFonts.almarai(
+                          style: GoogleFonts.cairo(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                             color: Colors.white70,
@@ -2289,7 +2533,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   icon: const Icon(Icons.dashboard_rounded, size: 18),
                   label: Text(
                     'فتح لوحة تحكم المعلم المتكاملة',
-                    style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
+                    style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
                   ),
                 ),
               ),
@@ -2309,7 +2553,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
           child: Text(
             'محاور لوحة المعلم السريعة',
-            style: GoogleFonts.almarai(
+            style: GoogleFonts.cairo(
               fontSize: 15,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF0F172A),
@@ -2443,7 +2687,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       children: [
                         Text(
                           widget.api.currentUserName,
-                          style: GoogleFonts.almarai(
+                          style: GoogleFonts.cairo(
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
@@ -2451,7 +2695,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         Text(
                           'إدارة المدرسة • ${widget.api.activeSchoolName}',
-                          style: GoogleFonts.almarai(
+                          style: GoogleFonts.cairo(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: Colors.white70,
@@ -2490,7 +2734,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
           child: Text(
             'أدوات الإدارة والرقابة المدرسية',
-            style: GoogleFonts.almarai(
+            style: GoogleFonts.cairo(
               fontSize: 15,
               fontWeight: FontWeight.w900,
               color: const Color(0xFF0F172A),
@@ -2590,8 +2834,8 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           Icon(icon, size: 16, color: Colors.amber),
           const SizedBox(height: 2),
-          Text(value, style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white)),
-          Text(label, style: GoogleFonts.almarai(fontSize: 10, color: Colors.white70)),
+          Text(value, style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white)),
+          Text(label, style: GoogleFonts.cairo(fontSize: 10, color: Colors.white70)),
         ],
       ),
     );
@@ -2650,7 +2894,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.almarai(
+                  style: GoogleFonts.cairo(
                     fontSize: 11.0,
                     fontWeight: FontWeight.w800,
                     color: const Color(0xFF0F172A),
@@ -2696,7 +2940,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.almarai(
+                style: GoogleFonts.cairo(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
                   color: AppTheme.textMain,
@@ -2706,7 +2950,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 subtitle,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.almarai(
+                style: GoogleFonts.cairo(
                   fontSize: 10,
                   color: AppTheme.textMuted,
                   fontWeight: FontWeight.w600,
@@ -2741,7 +2985,7 @@ class _HomeScreenState extends State<HomeScreen> {
               children: [
                 Text(
                   'العمليات والأنشطة الحديثة',
-                  style: GoogleFonts.almarai(
+                  style: GoogleFonts.cairo(
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF0F172A),
@@ -2759,7 +3003,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   },
                   child: Text(
                     'عرض الكل',
-                    style: GoogleFonts.almarai(
+                    style: GoogleFonts.cairo(
                       fontSize: 12,
                       fontWeight: FontWeight.bold,
                       color: const Color(0xFFE11D48),
@@ -2846,7 +3090,7 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               Text(
                 title,
-                style: GoogleFonts.almarai(
+                style: GoogleFonts.cairo(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
                   color: const Color(0xFF0F172A),
@@ -2854,7 +3098,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               Text(
                 timestamp,
-                style: GoogleFonts.almarai(
+                style: GoogleFonts.cairo(
                   fontSize: 11,
                   color: const Color(0xFF94A3B8),
                   fontWeight: FontWeight.w600,
@@ -2865,7 +3109,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         Text(
           value,
-          style: GoogleFonts.almarai(
+          style: GoogleFonts.cairo(
             fontSize: 13,
             fontWeight: FontWeight.w900,
             color: valueColor,
@@ -2967,7 +3211,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 2),
             Text(
               label,
-              style: GoogleFonts.almarai(
+              style: GoogleFonts.cairo(
                 fontSize: 10,
                 fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
                 color: color,
@@ -3096,7 +3340,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 3),
             Text(
               label,
-              style: GoogleFonts.almarai(
+              style: GoogleFonts.cairo(
                 fontSize: 10.5,
                 fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
                 color: color,

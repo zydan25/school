@@ -44,7 +44,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
     if (code.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('الرجاء إدخال كود الطالب أولاً', style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold)),
+          content: Text('الرجاء إدخال كود الطالب أولاً', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold)),
           backgroundColor: AppTheme.rose,
         ),
       );
@@ -67,7 +67,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
       _passwordController.clear();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['message'] ?? 'تم التحقق من بيانات الطالب في الخادم وربطه بنجاح!', style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold)),
+          content: Text(result['message'] ?? 'تم التحقق من بيانات الطالب في الخادم وربطه بنجاح!', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold)),
           backgroundColor: AppTheme.screenshotGreen,
           duration: const Duration(seconds: 4),
         ),
@@ -76,7 +76,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['message'] ?? 'فشل التحقق من كود الطالب في الخادم', style: GoogleFonts.almarai(fontSize: 13)),
+          content: Text(result['message'] ?? 'فشل التحقق من كود الطالب في الخادم', style: GoogleFonts.cairo(fontSize: 13)),
           backgroundColor: AppTheme.rose,
         ),
       );
@@ -91,7 +91,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('تم مسح كود QR وقراءة بيانات الطالب بنجاح!', style: GoogleFonts.almarai()),
+        content: Text('تم مسح كود QR وقراءة بيانات الطالب بنجاح!', style: GoogleFonts.cairo()),
         backgroundColor: AppTheme.screenshotPurple,
       ),
     );
@@ -117,8 +117,8 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                   controller: _tabController,
                   labelColor: AppTheme.screenshotBlue,
                   unselectedLabelColor: const Color(0xFF64748B),
-                  labelStyle: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.bold),
-                  unselectedLabelStyle: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.w600),
+                  labelStyle: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold),
+                  unselectedLabelStyle: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.w600),
                   indicatorColor: AppTheme.screenshotBlue,
                   indicatorWeight: 3,
                   indicatorSize: TabBarIndicatorSize.tab,
@@ -198,7 +198,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
               const SizedBox(width: 10),
               Text(
                 'طلابي وإدارة الحسابات',
-                style: GoogleFonts.almarai(
+                style: GoogleFonts.cairo(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
                   color: const Color(0xFF0F172A),
@@ -257,7 +257,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                         const SizedBox(width: 8),
                         Text(
                           'المدرسة',
-                          style: GoogleFonts.almarai(
+                          style: GoogleFonts.cairo(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                             color: AppTheme.screenshotBlue,
@@ -267,7 +267,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                     ),
                     Text(
                       'المدرسة الافتراضية الرسمية',
-                      style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
+                      style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
                     ),
                   ],
                 ),
@@ -296,10 +296,10 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                             child: TextField(
                               controller: _schoolCodeController,
                               textAlign: TextAlign.right,
-                              style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                              style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                               decoration: InputDecoration(
                                 hintText: '...أدخل كود المدرسة',
-                                hintStyle: GoogleFonts.almarai(fontSize: 13, color: const Color(0xFF94A3B8)),
+                                hintStyle: GoogleFonts.cairo(fontSize: 13, color: const Color(0xFF94A3B8)),
                                 border: InputBorder.none,
                               ),
                             ),
@@ -318,7 +318,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                         color: Colors.white,
                         child: Text(
                           'كود المدرسة',
-                          style: GoogleFonts.almarai(
+                          style: GoogleFonts.cairo(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
                             color: const Color(0xFF475569),
@@ -353,7 +353,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                     const SizedBox(width: 8),
                     Text(
                       '+ إضافة طالب جديد',
-                      style: GoogleFonts.almarai(
+                      style: GoogleFonts.cairo(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.screenshotGreen,
@@ -384,7 +384,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                             const SizedBox(width: 8),
                             Text(
                               'مسح QR',
-                              style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
+                              style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -410,7 +410,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                             const SizedBox(width: 8),
                             Text(
                               'QR من صورة',
-                              style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
+                              style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
@@ -439,10 +439,10 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                         child: TextField(
                           controller: _studentCodeController,
                           textAlign: TextAlign.right,
-                          style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                           decoration: InputDecoration(
                             hintText: 'كود الطالب',
-                            hintStyle: GoogleFonts.almarai(fontSize: 13, color: const Color(0xFF94A3B8)),
+                            hintStyle: GoogleFonts.cairo(fontSize: 13, color: const Color(0xFF94A3B8)),
                             border: InputBorder.none,
                           ),
                         ),
@@ -472,10 +472,10 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                           controller: _passwordController,
                           obscureText: _obscurePassword,
                           textAlign: TextAlign.right,
-                          style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                           decoration: InputDecoration(
                             hintText: 'كلمة المرور',
-                            hintStyle: GoogleFonts.almarai(fontSize: 13, color: const Color(0xFF94A3B8)),
+                            hintStyle: GoogleFonts.cairo(fontSize: 13, color: const Color(0xFF94A3B8)),
                             border: InputBorder.none,
                           ),
                         ),
@@ -520,7 +520,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                               const SizedBox(width: 8),
                               Text(
                                 '+ إضافة الطالب',
-                                style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold),
+                                style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold),
                               ),
                             ],
                           ),
@@ -547,7 +547,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                 Expanded(
                   child: Text(
                     'نظام أمان الأجهزة: جهازك الحالي مؤكد تلقائياً كجهاز معتمد لحساب الطالب.',
-                    style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.screenshotBlue, fontWeight: FontWeight.bold),
+                    style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.screenshotBlue, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
@@ -598,11 +598,11 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                     children: [
                       Text(
                         '+ ربط وإضافة طالب جديد',
-                        style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0369A1)),
+                        style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0369A1)),
                       ),
                       Text(
                         'استخدم كود الطالب وكلمة المرور أو مسح QR لربطه بالحساب',
-                        style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF0284C7)),
+                        style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF0284C7)),
                       ),
                     ],
                   ),
@@ -621,11 +621,11 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
           children: [
             Text(
               'الطلاب المضافون (${widget.api.students.length})',
-              style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+              style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
             ),
             Text(
               'اضغط على الطالب للانتقال للرئيسية مباشرة',
-              style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+              style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -647,7 +647,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                   SnackBar(
                     content: Text(
                       'تم تبديل الطالب النشط إلى: ${student.fullName} والانتقال للرئيسية ✓',
-                      style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
+                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
                     ),
                     backgroundColor: const Color(0xFF15803D),
                     duration: const Duration(seconds: 2),
@@ -725,7 +725,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                                       student.fullName,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.almarai(
+                                      style: GoogleFonts.cairo(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w900,
                                         color: const Color(0xFF0F172A),
@@ -743,7 +743,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                                       ),
                                       child: Text(
                                         'النشط حالياً',
-                                        style: GoogleFonts.almarai(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF15803D)),
+                                        style: GoogleFonts.cairo(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF15803D)),
                                       ),
                                     ),
                                   ],
@@ -753,7 +753,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                                 '${student.grade} • ${student.section} • كود ${student.studentNumber}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+                                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
                               ),
                             ],
                           ),
@@ -766,7 +766,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                           ),
                           child: Text(
                             isSelected ? 'محدد ✓' : 'تفعيل',
-                            style: GoogleFonts.almarai(
+                            style: GoogleFonts.cairo(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                               color: isSelected ? Colors.white : const Color(0xFF475569),
@@ -785,9 +785,9 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('نسبة الحضور: ${student.attendanceRate}%', style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF15803D), fontWeight: FontWeight.bold)),
-                          Text('المعدل: ${student.gpa}%', style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold)),
-                          Text('انقر للذهاب للرئيسية ⇦', style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF64748B), fontWeight: FontWeight.w600)),
+                          Text('نسبة الحضور: ${student.attendanceRate}%', style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF15803D), fontWeight: FontWeight.bold)),
+                          Text('المعدل: ${student.gpa}%', style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold)),
+                          Text('انقر للذهاب للرئيسية ⇦', style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B), fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),
@@ -806,7 +806,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
           children: [
             Text(
               'الأجهزة المصرح لها بالدخول',
-              style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+              style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
             ),
             IconButton(
               icon: const Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF64748B)),
@@ -841,7 +841,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                       children: [
                         Text(
                           device.deviceName,
-                          style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                          style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                         ),
                         if (device.isAutoConfirmed) ...[
                           const SizedBox(width: 6),
@@ -853,7 +853,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                             ),
                             child: Text(
                               'الجهاز الأول (مؤكد تلقائياً)',
-                              style: GoogleFonts.almarai(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFF15803D)),
+                              style: GoogleFonts.cairo(fontSize: 9, fontWeight: FontWeight.bold, color: const Color(0xFF15803D)),
                             ),
                           ),
                         ],
@@ -861,7 +861,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
                     ),
                     Text(
                       '${device.deviceModel} • ${device.lastActive}',
-                      style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF64748B)),
+                      style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B)),
                     ),
                   ],
                 ),
@@ -869,7 +869,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
               if (!device.isConfirmed)
                 TextButton(
                   onPressed: () => widget.api.confirmDevice(device.id),
-                  child: Text('تأكيد الجهاز', style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.screenshotGreen)),
+                  child: Text('تأكيد الجهاز', style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.screenshotGreen)),
                 )
               else
                 const Icon(Icons.verified_rounded, color: AppTheme.screenshotGreen, size: 20),
@@ -889,7 +889,7 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
           children: [
             const Icon(Icons.phonelink_lock_rounded, color: AppTheme.screenshotBlue, size: 22),
             const SizedBox(width: 8),
-            Text('نظام أمان الأجهزة', style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold)),
+            Text('نظام أمان الأجهزة', style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold)),
           ],
         ),
         content: Column(
@@ -900,14 +900,14 @@ class _ManageStudentsScreenState extends State<ManageStudentsScreen> with Single
               'لحماية بيانات الطلاب والحساب المدرسي:\n'
               '• الجهاز الأول الذي يسجل الدخول يُعتمد تلقائياً دون الحاجة لتأكيد.\n'
               '• أي جهاز جديد يتطلب موافقة ولي الأمر أو المدرسة من هذه القائمة.',
-              style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF475569), height: 1.5),
+              style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF475569), height: 1.5),
             ),
           ],
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('حسناً فهمت', style: GoogleFonts.almarai(fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue)),
+            child: Text('حسناً فهمت', style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue)),
           ),
         ],
       ),

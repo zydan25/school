@@ -46,7 +46,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
       SnackBar(
         content: Text(
           'بدأ تنزيل "${subject.textbookTitle}" بصيغة PDF...',
-          style: GoogleFonts.almarai(fontSize: 13),
+          style: GoogleFonts.cairo(fontSize: 13),
         ),
         backgroundColor: AppTheme.screenshotBlue,
         duration: const Duration(seconds: 2),
@@ -70,7 +70,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
           SnackBar(
             content: Text(
               'اكتمل تحميل الكتاب المدرسي بنجاح! جاهز للقراءة دون اتصال.',
-              style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
+              style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
             ),
             backgroundColor: AppTheme.screenshotGreen,
             action: SnackBarAction(
@@ -128,7 +128,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                       children: [
                         Text(
                           subject.textbookTitle,
-                          style: GoogleFonts.almarai(
+                          style: GoogleFonts.cairo(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
                             color: const Color(0xFF0F172A),
@@ -136,7 +136,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                         ),
                         Text(
                           'معتمد رسمياً من وزارة التربية والتعليم • ${subject.totalPages} صفحة',
-                          style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
+                          style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
                         ),
                       ],
                     ),
@@ -186,7 +186,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                               Text(
                                 subject.shortName,
                                 textAlign: TextAlign.center,
-                                style: GoogleFonts.almarai(
+                                style: GoogleFonts.cairo(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w900,
                                   color: const Color(0xFF0F172A),
@@ -194,7 +194,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                               ),
                               Text(
                                 '2026',
-                                style: GoogleFonts.almarai(fontSize: 8, color: const Color(0xFF64748B)),
+                                style: GoogleFonts.cairo(fontSize: 8, color: const Color(0xFF64748B)),
                               ),
                             ],
                           ),
@@ -212,7 +212,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                                 ),
                                 child: Text(
                                   'النسخة المدرسية المعتمدة PDF',
-                                  style: GoogleFonts.almarai(
+                                  style: GoogleFonts.cairo(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: const Color(0xFF4ADE80),
@@ -222,7 +222,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                               const SizedBox(height: 6),
                               Text(
                                 subject.name,
-                                style: GoogleFonts.almarai(
+                                style: GoogleFonts.cairo(
                                   fontSize: 15,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
@@ -230,12 +230,12 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                               ),
                               Text(
                                 'إعداد وتدريس: ${subject.teacherName}',
-                                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF94A3B8)),
                               ),
                               const SizedBox(height: 6),
                               Text(
                                 'عدد الحصص المقررة: ${subject.weeklyPeriods} حصص أسبوعياً',
-                                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF38BDF8)),
+                                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF38BDF8)),
                               ),
                             ],
                           ),
@@ -249,7 +249,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                   // Units Index Header
                   Text(
                     'فهرس الوحدات والدروس المقررة',
-                    style: GoogleFonts.almarai(
+                    style: GoogleFonts.cairo(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
                       color: const Color(0xFF0F172A),
@@ -286,7 +286,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                                   child: Center(
                                     child: Text(
                                       '${unit.unitNumber}',
-                                      style: GoogleFonts.almarai(
+                                      style: GoogleFonts.cairo(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
                                         color: unit.isCompleted ? const Color(0xFF15803D) : AppTheme.screenshotBlue,
@@ -297,7 +297,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                                 const SizedBox(width: 10),
                                 Text(
                                   unit.title,
-                                  style: GoogleFonts.almarai(
+                                  style: GoogleFonts.cairo(
                                     fontSize: 13,
                                     fontWeight: FontWeight.bold,
                                     color: const Color(0xFF0F172A),
@@ -315,7 +315,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                               ),
                               child: Text(
                                 unit.isCompleted ? 'تم إنجازها ✓' : '${unit.lessonsCount} دروس',
-                                style: GoogleFonts.almarai(
+                                style: GoogleFonts.cairo(
                                   fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                   color: unit.isCompleted
@@ -329,7 +329,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                         const SizedBox(height: 8),
                         Text(
                           unit.summary,
-                          style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF475569), height: 1.4),
+                          style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF475569), height: 1.4),
                         ),
                         const SizedBox(height: 8),
                         Wrap(
@@ -344,7 +344,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                             ),
                             child: Text(
                               '• $topic',
-                              style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF334155)),
+                              style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF334155)),
                             ),
                           )).toList(),
                         ),
@@ -375,7 +375,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                       icon: const Icon(Icons.psychology_rounded, size: 20),
                       label: Text(
                         'اسأل الذكاء الاصطناعي عن منهج ${subject.shortName}',
-                        style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
+                        style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
@@ -474,7 +474,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                   children: [
                     Text(
                       'المواد والمناهج الدراسية',
-                      style: GoogleFonts.almarai(
+                      style: GoogleFonts.cairo(
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
                         color: const Color(0xFF0F172A),
@@ -482,7 +482,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                     ),
                     Text(
                       '${widget.api.currentStudent?.grade ?? 'المنهج الدراسي'} • المنهج المعتمد',
-                      style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
+                      style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
                     ),
                   ],
                 ),
@@ -538,10 +538,10 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                       Expanded(
                         child: TextField(
                           onChanged: (v) => setState(() => _searchQuery = v),
-                          style: GoogleFonts.almarai(fontSize: 13, color: const Color(0xFF0F172A)),
+                          style: GoogleFonts.cairo(fontSize: 13, color: const Color(0xFF0F172A)),
                           decoration: InputDecoration(
                             hintText: 'ابحث في المواد المقررة أو أسماء المعلمين...',
-                            hintStyle: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF94A3B8)),
+                            hintStyle: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF94A3B8)),
                             border: InputBorder.none,
                           ),
                         ),
@@ -613,7 +613,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                                     Expanded(
                                       child: Text(
                                         subject.name,
-                                        style: GoogleFonts.almarai(
+                                        style: GoogleFonts.cairo(
                                           fontSize: 14,
                                           fontWeight: FontWeight.bold,
                                           color: const Color(0xFF0F172A),
@@ -628,7 +628,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                                       ),
                                       child: Text(
                                         '${subject.weeklyPeriods} حصص/أسبوع',
-                                        style: GoogleFonts.almarai(
+                                        style: GoogleFonts.cairo(
                                           fontSize: 10,
                                           fontWeight: FontWeight.bold,
                                           color: const Color(0xFF475569),
@@ -640,7 +640,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                                 const SizedBox(height: 2),
                                 Text(
                                   'المعلم: ${subject.teacherName} • ${subject.code}',
-                                  style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
+                                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
                                 ),
                               ],
                             ),
@@ -667,7 +667,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                           const SizedBox(width: 10),
                           Text(
                             'الإنجاز: ${(subject.progressPercent * 100).toInt()}%',
-                            style: GoogleFonts.almarai(
+                            style: GoogleFonts.cairo(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                               color: const Color(0xFF334155),
@@ -690,7 +690,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                               subject.textbookTitle,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.almarai(
+                              style: GoogleFonts.cairo(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
                                 color: const Color(0xFF334155),
@@ -699,7 +699,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                           ),
                           Text(
                             '${subject.totalPages} صفحة',
-                            style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF94A3B8)),
+                            style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF94A3B8)),
                           ),
                         ],
                       ),
@@ -739,7 +739,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                                 progress != null
                                     ? 'جاري التحميل ${(progress * 100).toInt()}%...'
                                     : (isDownloaded ? 'قراءة الكتاب PDF' : 'تحميل المنهج PDF'),
-                                style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold),
+                                style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
@@ -765,7 +765,7 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
                               ),
                               child: Text(
                                 'شرح الدروس',
-                                style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold),
+                                style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
@@ -791,10 +791,10 @@ class _SubjectsScreenState extends State<SubjectsScreen> {
       ),
       child: Row(
         children: [
-          Text('$title: ', style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF64748B))),
+          Text('$title: ', style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B))),
           Text(
             value,
-            style: GoogleFonts.almarai(fontSize: 10, fontWeight: FontWeight.bold, color: color),
+            style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: color),
           ),
         ],
       ),

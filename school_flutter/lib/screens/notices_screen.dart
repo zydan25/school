@@ -77,7 +77,7 @@ class NoticesScreen extends StatelessWidget {
                 ),
                 child: Text(
                   tag,
-                  style: GoogleFonts.almarai(
+                  style: GoogleFonts.cairo(
                     color: tagColor,
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
@@ -86,14 +86,14 @@ class NoticesScreen extends StatelessWidget {
               ),
               Text(
                 date,
-                style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted),
+                style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted),
               ),
             ],
           ),
           const SizedBox(height: 10),
           Text(
             title,
-            style: GoogleFonts.almarai(
+            style: GoogleFonts.cairo(
               fontSize: 15,
               fontWeight: FontWeight.w800,
               color: AppTheme.textMain,
@@ -102,7 +102,7 @@ class NoticesScreen extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             content,
-            style: GoogleFonts.almarai(
+            style: GoogleFonts.cairo(
               fontSize: 12,
               color: AppTheme.textMuted,
               height: 1.5,

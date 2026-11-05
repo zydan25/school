@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api_service.dart';
@@ -58,9 +58,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(
             content: Text(
               theme == 'abwaab'
-                  ? 'تم تفعيل ثيم أبواب التعليمي العصري بنجاح 🎓'
-                  : 'تم تفعيل ثيم جيب المالي 💼',
-              style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
+                  ? 'تم تفعيل ثيم المنهاج والتعليم (أبواب) 🎓'
+                  : 'تم تفعيل ثيم الخدمات السريعة (جيب) 💼',
+              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold),
             ),
             backgroundColor: const Color(0xFF1E60FF),
             duration: const Duration(seconds: 2),
@@ -79,8 +79,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              cols == 3 ? 'تم تفعيل نمط 3 أيقونات (نمط جيب العصري)' : 'تم تفعيل نمط أيقونتين (تفصيلي)',
-              style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
+              cols == 3 ? 'تم تفعيل نمط 3 أيقونات في الصف (الافتراضي)' : 'تم تفعيل نمط أيقونتين في الصف',
+              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold),
             ),
             backgroundColor: const Color(0xFF1E60FF),
             duration: const Duration(seconds: 2),
@@ -108,12 +108,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
-            const Icon(Icons.lock_rounded, color: Color(0xFFE11D48)),
-            const SizedBox(width: 8),
-            Text('تعيين رمز قفل البرنامج (PIN)', style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold)),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.lock_rounded, color: Color(0xFFDC2626), size: 20),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              'تعيين رمز قفل البرنامج (PIN)',
+              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 14.5, fontWeight: FontWeight.bold, color: const Color(0xFF111111)),
+            ),
           ],
         ),
         content: Column(
@@ -122,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Text(
               'أدخل رمز مرور مكوناً من 4 أرقام لحماية التطبيق عند الفتح:',
-              style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B)),
+              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12, color: const Color(0xFF64748B)),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -131,12 +142,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               maxLength: 4,
               obscureText: true,
               textAlign: TextAlign.center,
-              style: GoogleFonts.almarai(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 12),
+              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 12),
               decoration: InputDecoration(
                 hintText: '••••',
-                hintStyle: GoogleFonts.almarai(letterSpacing: 12),
+                hintStyle: const TextStyle(letterSpacing: 12),
                 counterText: '',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF1E60FF), width: 1.5)),
               ),
             ),
           ],
@@ -144,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('إلغاء', style: GoogleFonts.almarai(color: const Color(0xFF64748B))),
+            child: Text('إلغاء', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -160,7 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('تم تفعيل رمز القفل بنجاح ✓', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
+                      content: Text('تم تفعيل رمز القفل بنجاح ✓', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
                       backgroundColor: const Color(0xFF15803D),
                     ),
                   );
@@ -168,11 +183,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFE11D48),
+              backgroundColor: const Color(0xFF1E60FF),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
-            child: Text('حفظ الرمز', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
+            child: Text('حفظ الرمز', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -189,7 +205,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(
             content: Text(
               value ? 'تم تفعيل الدخول ببصمة الإصبع والوجه ✓' : 'تم إلغاء تفعيل البصمة',
-              style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
+              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold),
             ),
             backgroundColor: value ? const Color(0xFF15803D) : const Color(0xFF64748B),
           ),
@@ -202,23 +218,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text('مسح الذاكرة المؤقتة', style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text('مسح الذاكرة المؤقتة', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 15, fontWeight: FontWeight.bold)),
         content: Text(
-          'سيتم تفريغ الصور والملفات المخزنة مؤقتاً لتوفير المساحة وتسريع التطبيق.',
-          style: GoogleFonts.almarai(fontSize: 13),
+          'سيتم تفريغ الصور والملفات المخزنة مؤقتاً لتوفير المساحة وتسريع أداء التطبيق.',
+          style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, color: const Color(0xFF64748B)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('إلغاء', style: GoogleFonts.almarai(color: const Color(0xFF64748B))),
+            child: Text('إلغاء', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('تم تفريغ الذاكرة المؤقتة بنجاح (تم تحرير 24.6 MB) ✓', style: GoogleFonts.almarai()),
+                  content: Text('تم تفريغ الذاكرة المؤقتة بنجاح (تم تحرير 24.6 MB) ✓', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
                   backgroundColor: const Color(0xFF15803D),
                 ),
               );
@@ -228,7 +245,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: Text('تفريغ الآن', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
+            child: Text('تفريغ الآن', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -239,124 +256,138 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     if (_isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator(color: Color(0xFF1E60FF))),
       );
     }
 
-    final user = widget.api.user;
-    final role = widget.api.currentRole;
+    final activeStudent = widget.api.currentStudent;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: Text(
-          'الملف الشخصي والإعدادات',
-          style: GoogleFonts.almarai(fontSize: 17, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+          'الإعدادات والحساب',
+          style: TextStyle(
+            fontFamily: GoogleFonts.cairo().fontFamily,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF111111),
+          ),
         ),
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: Color(0xFF0F172A)),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF111111)),
           onPressed: () => Navigator.pop(context, _gridColumns),
         ),
       ),
       body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         physics: const BouncingScrollPhysics(),
         children: [
-          // 1. Account Profile Header Card
-          _buildAccountProfileCard(user, role),
-          const SizedBox(height: 18),
+          // 1. Account Profile Card
+          _buildAccountProfileCard(activeStudent),
+          const SizedBox(height: 16),
 
-          // 2. Quick Action to "طلابي" (My Students)
-          _buildMyStudentsShortcut(),
-          const SizedBox(height: 18),
-
-          // 3. Visual Theme Switcher (Abwaab Modern EdTech vs Jaib Fintech)
-          _buildSectionHeader('ثيم ومظهر التطبيق الشامل', Icons.palette_rounded),
+          // 2. Visual Theme & Display Columns (Grouped Card)
+          _buildSectionHeader('المظهر وطريقة العرض', Icons.palette_outlined),
           const SizedBox(height: 8),
           _buildCardContainer([
+            // Theme selection
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.all(14),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'اختر الثيم المفضل للواجهات والأيقونات',
-                    style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                    'الثيم العام للواجهات والأيقونات',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF1E293B),
+                    ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
-                    'الثيم يغير شكل الهيدر، الألوان، البطائق الملونة، الأيقونات، وطريقة عرض المواد التعليمية.',
-                    style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
+                    'يحدد الهيدر والألوان وأيقونات المواد والخدمات المدرسية',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontSize: 10.5,
+                      color: const Color(0xFF777777),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
-                        child: _buildGridOptionTile(
-                          title: 'ثيم أبواب التعليمي',
-                          subtitle: 'عصري هادئ بألوان باستيل وشرح المواد (الموصى به)',
-                          icon: Icons.school_rounded,
+                        child: _buildOptionTile(
+                          title: 'ثيم المنهاج والتعليم',
+                          subtitle: 'ألوان باستيل ومواد المنهاج (أبواب)',
+                          icon: Icons.school_outlined,
+                          iconColor: const Color(0xFF1E60FF),
                           isSelected: _visualTheme == 'abwaab',
                           onTap: () => _updateVisualTheme('abwaab'),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: _buildGridOptionTile(
-                          title: 'ثيم جيب المالي',
-                          subtitle: 'شبكة 3 بطائق سريعة وأزرار خدمات',
-                          icon: Icons.account_balance_wallet_rounded,
+                        child: _buildOptionTile(
+                          title: 'ثيم الخدمات السريعة',
+                          subtitle: 'شبكة بطائق سريعة ومختصرة (جيب)',
+                          icon: Icons.account_balance_wallet_outlined,
+                          iconColor: const Color(0xFFE11D48),
                           isSelected: _visualTheme == 'jaib',
                           onTap: () => _updateVisualTheme('jaib'),
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
-            ),
-          ]),
-          const SizedBox(height: 18),
-
-          // 4. UI Appearance & Grid Columns Settings
-          _buildSectionHeader('تخصيص شبكة الخدمات والأعمدة', Icons.dashboard_customize_rounded),
-          const SizedBox(height: 8),
-          _buildCardContainer([
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                  const SizedBox(height: 14),
+                  const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                  const SizedBox(height: 14),
+                  // Grid Columns selection
                   Text(
-                    'نمط عرض بطائق الخدمات في الرئيسية',
-                    style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                    'توزيع بطائق الخدمات في الصفحة الرئيسية',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF1E293B),
+                    ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
                   Text(
-                    'اختر النمط المناسب لشاشتك، النمط الافتراضي هو 3 أيقونات في الصف كالتطبيقات العصرية.',
-                    style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
+                    'الافتراضي هو 3 أيقونات في الصف كالتطبيقات العصرية المنظمة',
+                    style: TextStyle(
+                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontSize: 10.5,
+                      color: const Color(0xFF777777),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
-                        child: _buildGridOptionTile(
+                        child: _buildOptionTile(
                           title: '3 أيقونات في الصف',
-                          subtitle: 'نمط جيب العصري (الافتراضي)',
+                          subtitle: 'عصري متناسق (الموصى به)',
                           icon: Icons.grid_view_rounded,
+                          iconColor: const Color(0xFF10B981),
                           isSelected: _gridColumns == 3,
                           onTap: () => _updateGridColumns(3),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: _buildGridOptionTile(
+                        child: _buildOptionTile(
                           title: 'أيقونتان في الصف',
-                          subtitle: 'نمط تفصيلي موسع',
-                          icon: Icons.view_agenda_rounded,
+                          subtitle: 'تفصيلي موسع',
+                          icon: Icons.view_agenda_outlined,
+                          iconColor: const Color(0xFF64748B),
                           isSelected: _gridColumns == 2,
                           onTap: () => _updateGridColumns(2),
                         ),
@@ -367,65 +398,77 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ]),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
 
-          // 4. Security & Authentication
+          // 3. Security & Privacy
           _buildSectionHeader('الأمان وقفل التطبيق', Icons.security_rounded),
           const SizedBox(height: 8),
           _buildCardContainer([
             SwitchListTile(
               value: _pinLockEnabled,
               onChanged: _togglePinLock,
-              activeThumbColor: const Color(0xFFE11D48),
+              activeThumbColor: const Color(0xFF1E60FF),
+              activeTrackColor: const Color(0xFFDBEAFE),
               title: Text(
                 'قفل التطبيق برمز PIN',
-                style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: TextStyle(
+                  fontFamily: GoogleFonts.cairo().fontFamily,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1E293B),
+                ),
               ),
               subtitle: Text(
-                _pinLockEnabled ? 'الرمز مفعل (4 أرقام)' : 'طلب رمز سري عند فتح التطبيق',
-                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
+                _pinLockEnabled ? 'الرمز مفعل (4 أرقام) - اضغط للتغيير' : 'طلب رمز سري عند فتح التطبيق للحماية',
+                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
               ),
               secondary: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE11D48).withValues(alpha: 0.1),
+                  color: const Color(0xFFEFF6FF),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.pin_rounded, color: Color(0xFFE11D48), size: 20),
+                child: const Icon(Icons.pin_rounded, color: Color(0xFF1E60FF), size: 18),
               ),
             ),
-            const Divider(height: 1, indent: 64),
+            const Divider(height: 1, indent: 60, color: Color(0xFFF1F5F9)),
             SwitchListTile(
               value: _biometricsEnabled,
               onChanged: _toggleBiometrics,
-              activeThumbColor: const Color(0xFF0D9488),
+              activeThumbColor: const Color(0xFF10B981),
+              activeTrackColor: const Color(0xFFD1FAE5),
               title: Text(
                 'الدخول بالبصمة الحيوية',
-                style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: TextStyle(
+                  fontFamily: GoogleFonts.cairo().fontFamily,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1E293B),
+                ),
               ),
               subtitle: Text(
                 'استخدام بصمة الإصبع أو الوجه للدخول السريع',
-                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
+                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
               ),
               secondary: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0D9488).withValues(alpha: 0.1),
+                  color: const Color(0xFFECFDF5),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.fingerprint_rounded, color: Color(0xFF0D9488), size: 20),
+                child: const Icon(Icons.fingerprint_rounded, color: Color(0xFF10B981), size: 18),
               ),
             ),
           ]),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
 
-          // 5. Notifications Preferences
-          _buildSectionHeader('التنبيهات والإشعارات', Icons.notifications_active_rounded),
+          // 4. Notifications Preferences
+          _buildSectionHeader('الإشعارات والتنبيهات المدرسية', Icons.notifications_none_rounded),
           const SizedBox(height: 8),
           _buildCardContainer([
             _buildNotificationSwitch(
               title: 'تنبيهات الواجبات الجديدة',
-              subtitle: 'إشعار فوري عند إضافة المعلم واجباً دراسياً',
+              subtitle: 'إشعار فوري عند إضافة المعلم واجباً دراسياً جديداً',
               value: _notifyHomework,
               onChanged: (val) async {
                 setState(() => _notifyHomework = val);
@@ -433,10 +476,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await p.setBool('notify_homework', val);
               },
             ),
-            const Divider(height: 1, indent: 20),
+            const Divider(height: 1, indent: 20, color: Color(0xFFF1F5F9)),
             _buildNotificationSwitch(
               title: 'تنبيهات رصد الدرجات والنتائج',
-              subtitle: 'إشعار فوري عند نشر درجات الاختبارات الشهرية',
+              subtitle: 'إشعار فوري عند نشر درجات الاختبارات الشهرية والفصلية',
               value: _notifyGrades,
               onChanged: (val) async {
                 setState(() => _notifyGrades = val);
@@ -444,10 +487,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 await p.setBool('notify_grades', val);
               },
             ),
-            const Divider(height: 1, indent: 20),
+            const Divider(height: 1, indent: 20, color: Color(0xFFF1F5F9)),
             _buildNotificationSwitch(
               title: 'تنبيهات الحضور والغياب اليومي',
-              subtitle: 'إشعار صباحي بحالة تسجيل حضور الحصة',
+              subtitle: 'إشعار صباحي عند تسجيل الحضور والانضباط المدرسي',
               value: _notifyAttendance,
               onChanged: (val) async {
                 setState(() => _notifyAttendance = val);
@@ -456,10 +499,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
             ),
           ]),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
 
-          // 6. Storage & System
-          _buildSectionHeader('الذاكرة والتخزين', Icons.storage_rounded),
+          // 5. Cache & Sync
+          _buildSectionHeader('الذاكرة والتخزين والمزامنة', Icons.storage_rounded),
           const SizedBox(height: 8),
           _buildCardContainer([
             ListTile(
@@ -467,61 +510,103 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.cleaning_services_rounded, color: Color(0xFF475569), size: 20),
+                child: const Icon(Icons.cleaning_services_rounded, color: Color(0xFF475569), size: 18),
               ),
               title: Text(
                 'مسح الذاكرة المؤقتة (Cache)',
-                style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: TextStyle(
+                  fontFamily: GoogleFonts.cairo().fontFamily,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1E293B),
+                ),
               ),
               subtitle: Text(
-                'تفريغ البيانات والملفات المؤقتة لتسريع التطبيق',
-                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
+                'تفريغ الصور والملفات المخزنة مؤقتاً (24.6 MB)',
+                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
               ),
-              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF94A3B8)),
+              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Color(0xFF94A3B8)),
+            ),
+            const Divider(height: 1, indent: 60, color: Color(0xFFF1F5F9)),
+            ListTile(
+              onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                await widget.api.fetchProfiles();
+                if (mounted) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text('تمت مزامنة البيانات مع الخادم بنجاح ✓', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
+                      backgroundColor: const Color(0xFF15803D),
+                    ),
+                  );
+                }
+              },
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.sync_rounded, color: Color(0xFF16A34A), size: 18),
+              ),
+              title: Text(
+                'مزامنة البيانات الآن',
+                style: TextStyle(
+                  fontFamily: GoogleFonts.cairo().fontFamily,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1E293B),
+                ),
+              ),
+              subtitle: Text(
+                'تحديث الجداول والمواد والدرجات من السيرفر المدرسي',
+                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
+              ),
+              trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Color(0xFF94A3B8)),
             ),
           ]),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
 
-          // 7. About Application
-          _buildSectionHeader('عن المنظومة', Icons.info_outline_rounded),
+          // 6. About App & School
+          _buildSectionHeader('عن المنظومة المدرسية', Icons.info_outline_rounded),
           const SizedBox(height: 8),
           _buildCardContainer([
             ListTile(
-              title: Text('إصدار مدرستي الذكية', style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold)),
-              subtitle: Text('الإصدار 1.2.0 (بناء معتمد مستقر)', style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B))),
+              title: Text('إصدار مدرستي الذكية', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+              subtitle: Text('الإصدار v1.2.0 (بناء معتمد مستقر)', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777))),
               trailing: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(8),
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                child: Text('v1.2.0', style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold)),
+                child: Text('v1.2.0', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 11, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B))),
               ),
             ),
-            const Divider(height: 1, indent: 20),
+            const Divider(height: 1, indent: 20, color: Color(0xFFF1F5F9)),
             ListTile(
-              title: Text('المدرسة المعتمدة', style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold)),
-              subtitle: Text('${widget.api.activeSchoolName} • كود ${widget.api.activeSchoolCode}', style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B))),
+              title: Text('المدرسة المعتمدة', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+              subtitle: Text('${widget.api.activeSchoolName} • كود ${widget.api.activeSchoolCode}', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777))),
             ),
           ]),
           const SizedBox(height: 24),
 
-          // Logout Button
+          // 7. Logout Button
           ElevatedButton.icon(
             onPressed: () {
-              Navigator.pop(context);
-              widget.api.logout();
+              _showLogoutDialog();
             },
-            icon: const Icon(Icons.logout_rounded, size: 20),
-            label: Text('تسجيل الخروج من المنظومة', style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.bold)),
+            icon: const Icon(Icons.logout_rounded, size: 18),
+            label: Text('تسجيل الخروج من الحساب', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 13, fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFFF1F2),
               foregroundColor: const Color(0xFFE11D48),
               elevation: 0,
-              padding: const EdgeInsets.symmetric(vertical: 14),
+              padding: const EdgeInsets.symmetric(vertical: 13),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
                 side: const BorderSide(color: Color(0xFFFECDD3)),
@@ -534,67 +619,184 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildAccountProfileCard(UserAccount? user, String role) {
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text('تسجيل الخروج', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 15, fontWeight: FontWeight.bold)),
+        content: Text('هل أنت متأكد من رغبتك في تسجيل الخروج من التطبيق؟', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, color: const Color(0xFF64748B))),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('إلغاء', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+              widget.api.logout();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text('خروج', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountProfileCard(StudentProfile? activeStudent) {
+    final displayName = activeStudent?.fullName ?? widget.api.currentUserName;
+    final displayGrade = activeStudent?.grade ?? 'طالب مدرستي';
+    final studentId = activeStudent?.studentNumber ?? '10482';
+
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFF1F5F9), width: 1.2),
         boxShadow: AppTheme.softShadow,
       ),
-      child: Row(
+      child: Column(
         children: [
-          CircleAvatar(
-            radius: 30,
-            backgroundColor: const Color(0xFF1E60FF),
-            child: Text(
-              widget.api.currentUserName.isNotEmpty ? widget.api.currentUserName.characters.first : 'م',
-              style: GoogleFonts.almarai(fontSize: 22, color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.api.currentUserName,
-                  style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
-                ),
-                Text(
-                  '${widget.api.activeSchoolName} • كود ${widget.api.activeSchoolCode}',
-                  style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  children: widget.api.availableRoles.map((r) {
-                    final isCurrent = r == role;
-                    return Container(
+          Row(
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: const Color(0xFF1E60FF).withValues(alpha: 0.1),
+                    child: Text(
+                      displayName.isNotEmpty ? displayName.characters.first : 'ط',
+                      style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 20, color: const Color(0xFF1E60FF), fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF16A34A),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.cairo().fontFamily,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF111111),
+                      ),
+                    ),
+                    Text(
+                      '$displayGrade • ${widget.api.activeSchoolName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: GoogleFonts.cairo().fontFamily,
+                        fontSize: 11,
+                        color: const Color(0xFF777777),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
-                        color: isCurrent ? const Color(0xFF0F172A) : const Color(0xFFF1F5F9),
+                        color: const Color(0xFFF1F5F9),
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        r == 'guardian'
-                            ? 'ولي أمر'
-                            : r == 'student'
-                                ? 'طالب'
-                                : r == 'teacher'
-                                    ? 'معلم'
-                                    : 'إدارة',
-                        style: GoogleFonts.almarai(
-                          fontSize: 10,
+                        'رقم القيد: $studentId',
+                        style: TextStyle(
+                          fontFamily: GoogleFonts.cairo().fontFamily,
+                          fontSize: 9.5,
                           fontWeight: FontWeight.bold,
-                          color: isCurrent ? Colors.white : const Color(0xFF64748B),
+                          color: const Color(0xFF475569),
                         ),
                       ),
-                    );
-                  }).toList(),
+                    ),
+                  ],
                 ),
-              ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 10),
+          // My Students shortcut inside the card
+          InkWell(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
+            ),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F7FF),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFBAE6FD)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF0284C7),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.people_alt_rounded, color: Colors.white, size: 16),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'عرض وإدارة طلابي (${widget.api.students.length})',
+                          style: TextStyle(
+                            fontFamily: GoogleFonts.cairo().fontFamily,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF0369A1),
+                          ),
+                        ),
+                        Text(
+                          'التبديل بين بطائق الطلاب بضغطة زر أو إضافة طالب جديد',
+                          style: TextStyle(
+                            fontFamily: GoogleFonts.cairo().fontFamily,
+                            fontSize: 10,
+                            color: const Color(0xFF0284C7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Color(0xFF0284C7)),
+                ],
+              ),
             ),
           ),
         ],
@@ -602,61 +804,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildMyStudentsShortcut() {
-    return InkWell(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => MyStudentsScreen(api: widget.api)),
-      ),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFEFF6FF),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFBFDBFE)),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: const BoxDecoration(
-                color: Color(0xFF0284C7),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.people_alt_rounded, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'طلابي والطلاب المضافون (${widget.api.students.length})',
-                    style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0369A1)),
-                  ),
-                  Text(
-                    'عرض بطائق الطلاب والتبديل المباشر بضغطة زر أو إضافة طالب جديد',
-                    style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF0284C7)),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Color(0xFF0284C7)),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: const Color(0xFF0F172A)),
-        const SizedBox(width: 8),
+        Icon(icon, size: 16, color: const Color(0xFF1E293B)),
+        const SizedBox(width: 6),
         Text(
           title,
-          style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+          style: TextStyle(
+            fontFamily: GoogleFonts.cairo().fontFamily,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF1E293B),
+          ),
         ),
       ],
     );
@@ -667,51 +827,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(color: const Color(0xFFF1F5F9), width: 1.2),
         boxShadow: AppTheme.softShadow,
       ),
       child: Column(children: children),
     );
   }
 
-  Widget _buildGridOptionTile({
+  Widget _buildOptionTile({
     required String title,
     required String subtitle,
     required IconData icon,
+    required Color iconColor,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
-    final color = isSelected ? const Color(0xFFE11D48) : const Color(0xFF94A3B8);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFFFF1F2) : const Color(0xFFF8FAFC),
+          color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? const Color(0xFFE11D48) : const Color(0xFFE2E8F0),
+            color: isSelected ? const Color(0xFF1E60FF) : const Color(0xFFE2E8F0),
             width: isSelected ? 1.5 : 1.0,
           ),
         ),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 28),
+            Icon(icon, color: isSelected ? const Color(0xFF1E60FF) : iconColor, size: 24),
             const SizedBox(height: 6),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: GoogleFonts.almarai(
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF475569),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: GoogleFonts.cairo().fontFamily,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: isSelected ? const Color(0xFF1E60FF) : const Color(0xFF1E293B),
               ),
             ),
+            const SizedBox(height: 2),
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: GoogleFonts.almarai(fontSize: 9.5, color: const Color(0xFF64748B)),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: GoogleFonts.cairo().fontFamily,
+                fontSize: 9,
+                color: const Color(0xFF777777),
+                height: 1.2,
+              ),
             ),
           ],
         ),
@@ -728,11 +899,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return SwitchListTile(
       value: value,
       onChanged: onChanged,
-      activeThumbColor: const Color(0xFF0F172A),
-      title: Text(title, style: GoogleFonts.almarai(fontSize: 12.5, fontWeight: FontWeight.bold)),
-      subtitle: Text(subtitle, style: GoogleFonts.almarai(fontSize: 10.5, color: const Color(0xFF64748B))),
+      activeThumbColor: const Color(0xFF1E60FF),
+      activeTrackColor: const Color(0xFFDBEAFE),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontFamily: GoogleFonts.cairo().fontFamily,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: const Color(0xFF1E293B),
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: TextStyle(
+          fontFamily: GoogleFonts.cairo().fontFamily,
+          fontSize: 10,
+          color: const Color(0xFF777777),
+        ),
+      ),
     );
   }
 }
-
-

@@ -23,11 +23,11 @@ class AppTheme {
   static const Color screenshotGreen = Color(0xFF10B981);
   static const Color screenshotFieldBorder = Color(0xFF3B82F6);
 
-  static const Color background = Color(0xFFF8F9FA); // Ultra-clean Neumorphic backdrop
+  static const Color background = Colors.white; // Pure white as user requested
   static const Color cardSurface = Colors.white;
-  static const Color textMain = Color(0xFF1A1D1F); // Official dark charcoal
-  static const Color textMuted = Color(0xFF717579); // Balanced slate gray
-  static const Color borderLight = Color(0xFFE2E8F0);
+  static const Color textMain = Color(0xFF111111); // Clean dark ink (Altakhfid style)
+  static const Color textMuted = Color(0xFF777777); // Balanced muted slate (Altakhfid style)
+  static const Color borderLight = Color(0xFFE7E7E7);
 
   // Vibrant Card Gradients
   static const LinearGradient cardGradientBlue = LinearGradient(
@@ -115,23 +115,23 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      fontFamily: GoogleFonts.almarai().fontFamily,
+      fontFamily: GoogleFonts.cairo().fontFamily,
       colorScheme: ColorScheme.fromSeed(
         seedColor: primary,
         primary: primary,
         secondary: emerald,
         surface: cardSurface,
       ),
-      scaffoldBackgroundColor: background,
+      scaffoldBackgroundColor: Colors.white,
       appBarTheme: AppBarTheme(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
         titleTextStyle: TextStyle(
           color: textMain,
           fontSize: 15,
-          fontWeight: FontWeight.w700,
-          fontFamily: GoogleFonts.almarai().fontFamily,
+          fontWeight: FontWeight.w800,
+          fontFamily: GoogleFonts.cairo().fontFamily,
         ),
         iconTheme: const IconThemeData(color: textMain, size: 20),
       ),

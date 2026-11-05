@@ -29,7 +29,7 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
             centerTitle: true,
             title: Text(
               'Ø·Ù„Ø§Ø¨ÙŠ ÙˆØ§Ù„Ø­Ø³Ø§Ø¨Ø§Øª Ø§Ù„Ù…Ø¶Ø§ÙØ©',
-              style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+              style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
             ),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
@@ -102,11 +102,11 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                           children: [
                             Text(
                               '+ Ø¥Ø¶Ø§ÙØ© ÙˆØ±Ø¨Ø· Ø·Ø§Ù„Ø¨ Ø¬Ø¯ÙŠØ¯',
-                              style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0369A1)),
+                              style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0369A1)),
                             ),
                             Text(
                               'Ø£Ø¯Ø®Ù„ ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨ ÙˆÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ù„Ø±Ø¨Ø· Ø­Ø³Ø§Ø¨Ù‡ Ø¨Ø§Ù„Ù…ØªØ§Ø¨Ø¹Ø©',
-                              style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF0284C7)),
+                              style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF0284C7)),
                             ),
                           ],
                         ),
@@ -125,11 +125,11 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                 children: [
                   Text(
                     'Ù‚Ø§Ø¦Ù…Ø© Ø§Ù„Ø·Ù„Ø§Ø¨ Ø§Ù„Ù…Ø±ØªØ¨Ø·ÙŠÙ† (${students.length})',
-                    style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+                    style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
                   ),
                   Text(
                     'Ø§Ù†Ù‚Ø± Ø¹Ù„Ù‰ Ø§Ù„Ø·Ø§Ù„Ø¨ Ù„Ù„Ø§Ù†ØªÙ‚Ø§Ù„ ÙÙˆØ±Ø§Ù‹ Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ© â‡¦',
-                    style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -151,7 +151,7 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                         SnackBar(
                           content: Text(
                             'ØªÙ… ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø·Ø§Ù„Ø¨: ${student.fullName} ÙˆØ§Ù„Ø§Ù†ØªÙ‚Ø§Ù„ Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ© âœ“',
-                            style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
+                            style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
                           ),
                           backgroundColor: const Color(0xFF15803D),
                           duration: const Duration(seconds: 2),
@@ -229,7 +229,7 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                                             student.fullName,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: GoogleFonts.almarai(
+                                            style: GoogleFonts.cairo(
                                               fontSize: 14.5,
                                               fontWeight: FontWeight.w900,
                                               color: const Color(0xFF0F172A),
@@ -247,7 +247,7 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                                             ),
                                             child: Text(
                                               'Ø§Ù„Ù†Ø´Ø· Ø­Ø§Ù„ÙŠØ§Ù‹',
-                                              style: GoogleFonts.almarai(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF15803D)),
+                                              style: GoogleFonts.cairo(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF15803D)),
                                             ),
                                           ),
                                         ],
@@ -257,7 +257,7 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                                       '${student.grade} â€¢ ${student.section} â€¢ ÙƒÙˆØ¯ ${student.studentNumber}',
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+                                      style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
                                     ),
                                   ],
                                 ),
@@ -270,7 +270,7 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                                 ),
                                 child: Text(
                                   isSelected ? 'Ù…Ø­Ø¯Ø¯ âœ“' : 'ØªÙØ¹ÙŠÙ„',
-                                  style: GoogleFonts.almarai(
+                                  style: GoogleFonts.cairo(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
                                     color: isSelected ? Colors.white : const Color(0xFF475569),
@@ -289,9 +289,9 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text('Ù†Ø³Ø¨Ø© Ø§Ù„Ø­Ø¶ÙˆØ±: ${student.attendanceRate}%', style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF15803D), fontWeight: FontWeight.bold)),
-                                Text('Ø§Ù„Ù…Ø¹Ø¯Ù„: ${student.gpa}%', style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold)),
-                                Text('ØªØ¨Ø¯ÙŠÙ„ Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ© â‡¦', style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold)),
+                                Text('Ù†Ø³Ø¨Ø© Ø§Ù„Ø­Ø¶ÙˆØ±: ${student.attendanceRate}%', style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF15803D), fontWeight: FontWeight.bold)),
+                                Text('Ø§Ù„Ù…Ø¹Ø¯Ù„: ${student.gpa}%', style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold)),
+                                Text('ØªØ¨Ø¯ÙŠÙ„ Ù„Ù„Ø±Ø¦ÙŠØ³ÙŠØ© â‡¦', style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold)),
                               ],
                             ),
                           ),
@@ -329,7 +329,7 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                         const SizedBox(width: 10),
                         Text(
                           'Ø§Ù„Ø£Ø¬Ù‡Ø²Ø© Ø§Ù„Ù…Ø¹ØªÙ…Ø¯Ø© ÙˆØ§Ù„Ù…ÙˆØ«Ù‚Ø©',
-                          style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                         ),
                       ],
                     ),
@@ -348,7 +348,7 @@ class _MyStudentsScreenState extends State<MyStudentsScreen> {
                           Expanded(
                             child: Text(
                               'Ø¬Ù‡Ø§Ø²Ùƒ Ø§Ù„Ø­Ø§Ù„ÙŠ (Android Client) Ù…Ø¤ÙƒØ¯ ÙˆÙ…Ø¹ØªÙ…Ø¯ Ø±Ø³Ù…ÙŠØ§Ù‹.',
-                              style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF166534), fontWeight: FontWeight.bold),
+                              style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF166534), fontWeight: FontWeight.bold),
                             ),
                           ),
                         ],

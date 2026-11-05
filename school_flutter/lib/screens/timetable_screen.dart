@@ -71,7 +71,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                   child: ChoiceChip(
                     label: Text(
                       day,
-                      style: GoogleFonts.almarai(
+                      style: GoogleFonts.cairo(
                         fontSize: 13,
                         fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                         color: isSelected ? Colors.white : AppTheme.textMain,
@@ -102,7 +102,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                 ? Center(
                     child: Text(
                       'لا توجد حصص مسجلة ليوم $_selectedDay',
-                      style: GoogleFonts.almarai(color: AppTheme.textMuted),
+                      style: GoogleFonts.cairo(color: AppTheme.textMuted),
                     ),
                   )
                 : ListView.builder(
@@ -146,7 +146,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
             child: Center(
               child: Text(
                 '0$number',
-                style: GoogleFonts.almarai(
+                style: GoogleFonts.cairo(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
                   color: accent,
@@ -166,7 +166,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                   children: [
                     Text(
                       p.subject,
-                      style: GoogleFonts.almarai(
+                      style: GoogleFonts.cairo(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
                         color: AppTheme.textMain,
@@ -174,7 +174,7 @@ class _TimetableScreenState extends State<TimetableScreen> {
                     ),
                     Text(
                       p.time,
-                      style: GoogleFonts.almarai(
+                      style: GoogleFonts.cairo(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: AppTheme.accent,
@@ -189,14 +189,14 @@ class _TimetableScreenState extends State<TimetableScreen> {
                     const SizedBox(width: 4),
                     Text(
                       p.teacher,
-                      style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted),
+                      style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted),
                     ),
                     const SizedBox(width: 12),
                     const Icon(Icons.meeting_room_outlined, size: 14, color: AppTheme.textMuted),
                     const SizedBox(width: 4),
                     Text(
                       p.classroom,
-                      style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted),
+                      style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted),
                     ),
                   ],
                 ),
