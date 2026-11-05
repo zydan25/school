@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api_service.dart';
-import '../core/models.dart';
 import '../core/theme.dart';
 import 'homework_screen.dart';
 import 'grades_screen.dart';
@@ -16,6 +15,7 @@ import 'manage_students_screen.dart';
 import 'subjects_screen.dart';
 import 'teacher_dashboard_screen.dart';
 import 'online_exams_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final ApiService api;
@@ -26,18 +26,12 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late PageController _pageController;
   int _gridColumns = 3; // Default 3 columns (Jaib fintech style from screenshot)
   int _selectedBottomNavIndex = 0;
-  bool _hideCardDetails = false;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController(
-      initialPage: widget.api.selectedStudentIndex,
-      viewportFraction: 0.92,
-    );
     _loadGridTheme();
   }
 
@@ -51,15 +45,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (_) {}
   }
 
-  Future<void> _toggleGridTheme() async {
-    final next = _gridColumns == 3 ? 2 : 3;
-    setState(() => _gridColumns = next);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('home_grid_columns', next);
-    } catch (_) {}
-  }
-
   String _getTimeGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) {
@@ -69,12 +54,6 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       return 'مساء النور';
     }
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
   }
 
   Color _getRoleColor(String role) {
@@ -330,15 +309,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ---------------------------------------------------------------------------
-  // Header Bar with Role Switcher & Jaib Fintech Style Header
+  // Header Bar with Role Switcher, Student Pill & 3-Dots Options Menu
   // ---------------------------------------------------------------------------
   Widget _buildHeaderBar(BuildContext context, String role, Color roleColor) {
     final firstName = widget.api.currentUserName.isNotEmpty
         ? widget.api.currentUserName.split(' ').first
         : 'مرحباً';
+    final activeStudent = widget.api.currentStudent;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
@@ -363,7 +343,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   _getTimeGreeting(),
                   style: GoogleFonts.cairo(
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w700,
                     color: const Color(0xFF64748B),
                   ),
@@ -377,7 +357,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.cairo(
-                          fontSize: 19,
+                          fontSize: 18,
                           fontWeight: FontWeight.w900,
                           color: const Color(0xFF0F172A),
                         ),
@@ -402,35 +382,45 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
+                if (activeStudent != null && (role == 'guardian' || role == 'student')) ...[
+                  const SizedBox(height: 3),
+                  InkWell(
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api, initialTab: 1)),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.school_rounded, size: 12, color: Color(0xFF0284C7)),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            'الطالب: ${activeStudent.fullName.split(' ').first} (${activeStudent.grade}) ⇄ تبديل',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.cairo(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                              color: const Color(0xFF0284C7),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
 
-          // Action Buttons (Left side in RTL matching Jaib Screenshot)
+          // Clean Top Action Buttons (Left side in RTL)
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Grid Style Toggle (3 icons vs 2 icons)
-              _buildHeaderIconButton(
-                icon: _gridColumns == 3 ? Icons.view_comfy_rounded : Icons.view_agenda_rounded,
-                color: const Color(0xFF0F172A),
-                tooltip: _gridColumns == 3 ? 'التبديل إلى عمودين' : 'التبديل إلى 3 أعمدة (نمط جيب)',
-                onTap: _toggleGridTheme,
-              ),
-              const SizedBox(width: 6),
-
-              // AI Robot Support Button
-              _buildHeaderIconButton(
-                icon: Icons.smart_toy_outlined,
-                color: const Color(0xFFE11D48),
-                tooltip: 'المساعد الذكي (Gemini)',
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => ChatScreen(api: widget.api)),
-                ),
-              ),
-              const SizedBox(width: 6),
-
               // Notification Bell with Red Unread Dot
               Stack(
                 clipBehavior: Clip.none,
@@ -458,27 +448,255 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ],
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
 
-              // Role Switcher / Menu Button
+              // Role Switcher Button
               _buildHeaderIconButton(
                 icon: Icons.swap_horiz_rounded,
                 color: const Color(0xFF475569),
                 tooltip: 'تبديل مساحة العمل',
                 onTap: _showRoleSwitcherDialog,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
 
-              // Logout Button
+              // 3-Dots Menu Button (منيو ثلاث نقاط)
               _buildHeaderIconButton(
-                icon: Icons.logout_rounded,
-                color: AppTheme.rose,
-                tooltip: 'تسجيل الخروج',
-                onTap: _showLogoutDialog,
+                icon: Icons.more_vert,
+                color: const Color(0xFF0F172A),
+                tooltip: 'الخيارات ومساحات العمل',
+                onTap: () => _showOptionsMenuDialog(context),
               ),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // 3-Dots Options Menu Modal (منيو ثلاث نقاط)
+  // ---------------------------------------------------------------------------
+  void _showOptionsMenuDialog(BuildContext context) {
+    final availableRoles = widget.api.availableRoles;
+    final currentRole = widget.api.currentRole;
+    final activeStudent = widget.api.currentStudent;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      backgroundColor: Colors.white,
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A).withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.apps_rounded, color: Color(0xFF0F172A), size: 20),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'خيارات ومساحات العمل',
+                        style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'الوصول السريع إلى المساحات والطلاب والإعدادات المعتمدة بحسابك:',
+                style: GoogleFonts.cairo(fontSize: 11.5, color: const Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 14),
+
+              // 1. Switch Student Option
+              _buildMenuActionTile(
+                title: 'تبديل الطالب النشط',
+                subtitle: activeStudent != null
+                    ? 'الحالي: ${activeStudent.fullName} (${activeStudent.grade})'
+                    : 'اختيار وتفعيل أحد الأبناء المسجلين',
+                icon: Icons.school_rounded,
+                color: const Color(0xFF0284C7),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api, initialTab: 1)),
+                  );
+                },
+              ),
+
+              // 2. View My Students Option
+              _buildMenuActionTile(
+                title: 'عرض طلابي (الأبناء المسجلون)',
+                subtitle: '${widget.api.students.length} طلاب مسجلون - ربط وإدارة الأجهزة',
+                icon: Icons.people_alt_rounded,
+                color: const Color(0xFF7C3AED),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api, initialTab: 1)),
+                  );
+                },
+              ),
+
+              // 3. Teacher Workspace Option (if available)
+              if (availableRoles.contains('teacher'))
+                _buildMenuActionTile(
+                  title: 'الانتقال إلى مساحة المعلم',
+                  subtitle: 'رصد درجات الطلاب وتصحيح الواجبات ودفتر التحضير',
+                  icon: Icons.cast_for_education_rounded,
+                  color: const Color(0xFF0D9488),
+                  isSelected: currentRole == 'teacher',
+                  onTap: () {
+                    widget.api.switchRole('teacher');
+                    Navigator.pop(ctx);
+                  },
+                ),
+
+              // 4. Admin / Supervisor Workspace Option (if available)
+              if (availableRoles.contains('admin') || availableRoles.contains('staff'))
+                _buildMenuActionTile(
+                  title: 'الانتقال إلى مساحة الإدارة والمشرف',
+                  subtitle: 'إدارة المدرسة وقيد القبول والتقارير العامة',
+                  icon: Icons.admin_panel_settings_rounded,
+                  color: const Color(0xFF0F172A),
+                  isSelected: currentRole == 'admin' || currentRole == 'staff',
+                  onTap: () {
+                    widget.api.switchRole(availableRoles.contains('admin') ? 'admin' : 'staff');
+                    Navigator.pop(ctx);
+                  },
+                ),
+
+              // 5. Guardian Workspace Option (if available)
+              if (availableRoles.contains('guardian'))
+                _buildMenuActionTile(
+                  title: 'الانتقال إلى مساحة ولي الأمر',
+                  subtitle: 'متابعة الأبناء، الرسوم وسندات السداد، والحضور',
+                  icon: Icons.family_restroom_rounded,
+                  color: const Color(0xFF7C3AED),
+                  isSelected: currentRole == 'guardian',
+                  onTap: () {
+                    widget.api.switchRole('guardian');
+                    Navigator.pop(ctx);
+                  },
+                ),
+
+              // 6. Settings Option
+              _buildMenuActionTile(
+                title: 'الإعدادات وتخصيص الواجهة',
+                subtitle: 'نمط البطائق، الأمان ورمز PIN، الإشعارات، الحساب',
+                icon: Icons.settings_rounded,
+                color: const Color(0xFF475569),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api)),
+                  );
+                  _loadGridTheme();
+                },
+              ),
+
+              // 7. Logout Option
+              _buildMenuActionTile(
+                title: 'تسجيل الخروج',
+                subtitle: 'تسجيل الخروج الآمن من المنظومة',
+                icon: Icons.logout_rounded,
+                color: const Color(0xFFE11D48),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showLogoutDialog();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMenuActionTile({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+    bool isSelected = false,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? color.withValues(alpha: 0.1) : const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected ? color : const Color(0xFFE2E8F0),
+              width: isSelected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.cairo(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: isSelected ? color : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.cairo(fontSize: 10.5, color: const Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              if (isSelected)
+                Icon(Icons.check_circle_rounded, color: color, size: 18)
+              else
+                const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF94A3B8)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -495,15 +713,15 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          width: 36,
-          height: 36,
+          width: 38,
+          height: 38,
           decoration: BoxDecoration(
             color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
           child: Center(
-            child: Icon(icon, color: color, size: 19),
+            child: Icon(icon, color: color, size: 20),
           ),
         ),
       ),
@@ -518,169 +736,97 @@ class _HomeScreenState extends State<HomeScreen> {
     final activeStudent = widget.api.currentStudent;
 
     return [
-      // Children Selector Carousel
-      SliverToBoxAdapter(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'الأبناء المسجلون (${children.length})',
-                    style: GoogleFonts.cairo(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.textMain,
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.person_add_alt_1_rounded, size: 16, color: Color(0xFF7C3AED)),
-                        const SizedBox(width: 4),
-                        Text(
-                          'إضافة طالب جديد',
-                          style: GoogleFonts.cairo(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: const Color(0xFF7C3AED),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+      // Compact Active Student Bar
+      if (activeStudent != null)
+        SliverToBoxAdapter(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: AppTheme.softShadow,
             ),
-
-            if (children.isEmpty)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppTheme.borderLight),
+            child: Row(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.network(
+                    activeStudent.avatarUrl,
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 44,
+                      height: 44,
+                      color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
+                      child: const Icon(Icons.person, color: Color(0xFF7C3AED)),
+                    ),
+                  ),
                 ),
-                child: Center(
+                const SizedBox(width: 12),
+                Expanded(
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.school_outlined, size: 40, color: AppTheme.textMuted),
-                      const SizedBox(height: 8),
                       Text(
-                        'لا يوجد طلاب مرتبطون بحسابك حالياً',
-                        style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+                        'متابعة الطالب: ${activeStudent.fullName}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                       ),
-                      const SizedBox(height: 4),
                       Text(
-                        'انقر على إضافة طالب جديد واستخدم كود الطالب وكلمة المرور لربطه.',
-                        style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted),
+                        '${activeStudent.grade} • ${activeStudent.section} • حضور ${activeStudent.attendanceRate}% • معدل ${activeStudent.gpa}%',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.cairo(fontSize: 10.5, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
                 ),
-              )
-            else ...[
-              SizedBox(
-                height: 185,
-                child: PageView.builder(
-                  controller: _pageController,
-                  itemCount: children.length,
-                  onPageChanged: (idx) => widget.api.selectStudent(idx),
-                  itemBuilder: (context, idx) {
-                    final student = children[idx];
-                    final isSelected = idx == widget.api.selectedStudentIndex;
-                    return _buildChildCard(student, isSelected);
-                  },
-                ),
-              ),
-              // Pagination Indicator Dots matching Jaib Screenshot
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  children.length,
-                  (idx) {
-                    final isSelected = idx == widget.api.selectedStudentIndex;
-                    return AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      width: isSelected ? 16 : 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFFE11D48) : const Color(0xFFCBD5E1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
+                ElevatedButton(
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api, initialTab: 1)),
                     );
                   },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFEFF6FF),
+                    foregroundColor: const Color(0xFF0284C7),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: Text(
+                    'تبديل (${children.length})',
+                    style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
                 ),
-              ),
-            ],
-          ],
+              ],
+            ),
+          ),
         ),
-      ),
 
       // Announcement / Promo Banner
       SliverToBoxAdapter(
         child: _buildPromoBanner(context, 'guardian'),
       ),
 
-      // Guardian Services Section Title & Grid Theme Toggle Pill
+      // Guardian Services Section Title
       SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                activeStudent != null
-                    ? 'خدمات متابعة الطالب (${activeStudent.fullName.split(' ').first})'
-                    : 'خدمات متابعة الطالب',
-                style: GoogleFonts.cairo(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
-              InkWell(
-                onTap: _toggleGridTheme,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _gridColumns == 3 ? Icons.grid_view_rounded : Icons.view_agenda_rounded,
-                        size: 13,
-                        color: const Color(0xFFE11D48),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _gridColumns == 3 ? '3 أعمدة' : 'عمودين',
-                        style: GoogleFonts.cairo(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+          child: Text(
+            activeStudent != null
+                ? 'خدمات متابعة الطالب (${activeStudent.fullName.split(' ').first})'
+                : 'خدمات متابعة الطالب',
+            style: GoogleFonts.cairo(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF0F172A),
+            ),
           ),
         ),
       ),
@@ -693,7 +839,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisCount: _gridColumns,
             mainAxisSpacing: _gridColumns == 3 ? 10 : 12,
             crossAxisSpacing: _gridColumns == 3 ? 10 : 12,
-            childAspectRatio: _gridColumns == 3 ? 0.98 : 1.45,
+            childAspectRatio: _gridColumns == 3 ? 0.95 : 1.45,
           ),
           delegate: SliverChildListDelegate([
             _buildServiceTile(
@@ -795,141 +941,6 @@ class _HomeScreenState extends State<HomeScreen> {
     ];
   }
 
-  Widget _buildChildCard(StudentProfile student, bool isSelected) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isSelected ? const Color(0xFF7C3AED) : AppTheme.borderLight,
-          width: isSelected ? 2 : 1,
-        ),
-        boxShadow: isSelected
-            ? [
-                BoxShadow(
-                  color: const Color(0xFF7C3AED).withValues(alpha: 0.15),
-                  blurRadius: 14,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : AppTheme.softShadow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: Image.network(
-                  student.avatarUrl,
-                  width: 52,
-                  height: 52,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    width: 52,
-                    height: 52,
-                    color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
-                    child: const Icon(Icons.person, color: Color(0xFF7C3AED)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      student.fullName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.cairo(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        color: AppTheme.textMain,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${student.grade} • ${student.section}',
-                      style: GoogleFonts.cairo(
-                        fontSize: 12,
-                        color: AppTheme.textMuted,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              InkWell(
-                onTap: () => setState(() => _hideCardDetails = !_hideCardDetails),
-                borderRadius: BorderRadius.circular(8),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(
-                    _hideCardDetails ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                    size: 16,
-                    color: const Color(0xFF64748B),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF7C3AED).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _hideCardDetails ? '••••' : student.studentNumber,
-                  style: GoogleFonts.cairo(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: const Color(0xFF7C3AED),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.borderLight),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildCardMetric('نسبة الحضور', _hideCardDetails ? '••%' : '${student.attendanceRate}%', const Color(0xFF15803D)),
-                Container(width: 1, height: 20, color: AppTheme.borderLight),
-                _buildCardMetric('المعدل التراكمي', _hideCardDetails ? '••%' : '${student.gpa}%', const Color(0xFF0284C7)),
-                Container(width: 1, height: 20, color: AppTheme.borderLight),
-                _buildCardMetric('الحالة الأكاديمية', 'منتظم', const Color(0xFF7C3AED)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCardMetric(String label, String val, Color valColor) {
-    return Column(
-      children: [
-        Text(label, style: GoogleFonts.cairo(fontSize: 10, color: AppTheme.textMuted)),
-        Text(val, style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.w800, color: valColor)),
-      ],
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // 2. STUDENT DASHBOARD
   // ---------------------------------------------------------------------------
@@ -997,230 +1008,122 @@ class _HomeScreenState extends State<HomeScreen> {
     final nextLesson = hasLessons ? todayLessons.first : null;
 
     return [
-      // Student Identity Card (Jaib Red Gradient with Eye Toggle)
-      SliverToBoxAdapter(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFE11D48), Color(0xFF9F1239)],
-              begin: Alignment.topRight,
-              end: Alignment.bottomLeft,
+      // Compact Next Lesson Strip (Clean, Light Jaib Style)
+      if (nextLesson != null)
+        SliverToBoxAdapter(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFFE11D48).withValues(alpha: 0.35),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: Image.network(
-                      student.avatarUrl,
-                      width: 54,
-                      height: 54,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 54,
-                        height: 54,
-                        color: Colors.white24,
-                        child: const Icon(Icons.school, color: Colors.white),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          student.fullName,
-                          style: GoogleFonts.cairo(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                          ),
-                        ),
-                        Text(
-                          '${student.grade} • ${student.section}',
-                          style: GoogleFonts.cairo(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white70,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () => setState(() => _hideCardDetails = !_hideCardDetails),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
                     borderRadius: BorderRadius.circular(10),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        _hideCardDetails ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                        color: Colors.white,
-                        size: 18,
-                      ),
-                    ),
                   ),
-                  const SizedBox(width: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      _hideCardDetails ? '••••' : student.studentNumber,
-                      style: GoogleFonts.cairo(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
+                  child: const Center(
+                    child: Icon(Icons.schedule_rounded, color: Color(0xFF0284C7), size: 20),
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.schedule_rounded, color: Colors.amber, size: 16),
-                        const SizedBox(width: 8),
-                        Text(
-                          nextLesson != null
-                              ? 'الحصة ${nextLesson.period}: ${nextLesson.subject} (${nextLesson.time})'
-                              : 'انتهت الحصص المجدولة لليوم',
-                          style: GoogleFonts.cairo(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'الحصة القادمة: ${nextLesson.subject}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.cairo(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0284C7).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'الحصة ${nextLesson.period}',
+                              style: GoogleFonts.cairo(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF0284C7),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Text(
+                        '${nextLesson.time} • ${nextLesson.classroom}',
+                        style: GoogleFonts.cairo(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF64748B),
                         ),
-                      ],
-                    ),
-                    Text(
-                      nextLesson != null ? nextLesson.classroom : 'الجدول مكتمل ✓',
-                      style: GoogleFonts.cairo(fontSize: 11, color: Colors.white70),
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
+                TextButton(
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => TimetableScreen(api: widget.api)),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    backgroundColor: const Color(0xFFF1F5F9),
+                    foregroundColor: const Color(0xFF0F172A),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: Text(
+                    'الجدول',
+                    style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-
-      // Pagination Indicator Dots matching Jaib Screenshot
-      SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.only(top: 8, bottom: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 16,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE11D48),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              const SizedBox(width: 5),
-              Container(
-                width: 5,
-                height: 5,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFCBD5E1),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 5),
-              Container(
-                width: 5,
-                height: 5,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFCBD5E1),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
 
       // Announcement / Promo Banner
       SliverToBoxAdapter(
         child: _buildPromoBanner(context, 'student'),
       ),
 
-      // Student Services Title & Grid Theme Toggle Pill
+      // Student Services Title
       SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'الخدمات الأكاديمية والذكاء الاصطناعي',
-                style: GoogleFonts.cairo(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
-              InkWell(
-                onTap: _toggleGridTheme,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _gridColumns == 3 ? Icons.grid_view_rounded : Icons.view_agenda_rounded,
-                        size: 13,
-                        color: const Color(0xFFE11D48),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _gridColumns == 3 ? '3 أعمدة' : 'عمودين',
-                        style: GoogleFonts.cairo(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+          child: Text(
+            'الخدمات الأكاديمية والذكاء الاصطناعي',
+            style: GoogleFonts.cairo(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF0F172A),
+            ),
           ),
         ),
       ),
@@ -1233,7 +1136,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisCount: _gridColumns,
             mainAxisSpacing: _gridColumns == 3 ? 10 : 12,
             crossAxisSpacing: _gridColumns == 3 ? 10 : 12,
-            childAspectRatio: _gridColumns == 3 ? 0.98 : 1.45,
+            childAspectRatio: _gridColumns == 3 ? 0.95 : 1.45,
           ),
           delegate: SliverChildListDelegate([
             _buildServiceTile(
@@ -1430,53 +1333,17 @@ class _HomeScreenState extends State<HomeScreen> {
         child: _buildPromoBanner(context, 'teacher'),
       ),
 
-      // Section Header with Quick Theme Toggle Pill
+      // Teacher Services Title
       SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'محاور لوحة المعلم السريعة',
-                style: GoogleFonts.cairo(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
-              InkWell(
-                onTap: _toggleGridTheme,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _gridColumns == 3 ? Icons.grid_view_rounded : Icons.view_agenda_rounded,
-                        size: 13,
-                        color: const Color(0xFFE11D48),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _gridColumns == 3 ? '3 أعمدة' : 'عمودين',
-                        style: GoogleFonts.cairo(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+          child: Text(
+            'محاور لوحة المعلم السريعة',
+            style: GoogleFonts.cairo(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF0F172A),
+            ),
           ),
         ),
       ),
@@ -1489,7 +1356,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisCount: _gridColumns,
             mainAxisSpacing: _gridColumns == 3 ? 10 : 12,
             crossAxisSpacing: _gridColumns == 3 ? 10 : 12,
-            childAspectRatio: _gridColumns == 3 ? 0.98 : 1.45,
+            childAspectRatio: _gridColumns == 3 ? 0.95 : 1.45,
           ),
           delegate: SliverChildListDelegate([
             _buildServiceTile(
@@ -1647,53 +1514,17 @@ class _HomeScreenState extends State<HomeScreen> {
         child: _buildPromoBanner(context, 'admin'),
       ),
 
-      // Section Header with Quick Theme Toggle Pill
+      // Admin Services Title
       SliverToBoxAdapter(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'أدوات الإدارة والرقابة المدرسية',
-                style: GoogleFonts.cairo(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF0F172A),
-                ),
-              ),
-              InkWell(
-                onTap: _toggleGridTheme,
-                borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        _gridColumns == 3 ? Icons.grid_view_rounded : Icons.view_agenda_rounded,
-                        size: 13,
-                        color: const Color(0xFFE11D48),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _gridColumns == 3 ? '3 أعمدة' : 'عمودين',
-                        style: GoogleFonts.cairo(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.bold,
-                          color: const Color(0xFF0F172A),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
+          child: Text(
+            'أدوات الإدارة والرقابة المدرسية',
+            style: GoogleFonts.cairo(
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              color: const Color(0xFF0F172A),
+            ),
           ),
         ),
       ),
@@ -1706,7 +1537,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisCount: _gridColumns,
             mainAxisSpacing: _gridColumns == 3 ? 10 : 12,
             crossAxisSpacing: _gridColumns == 3 ? 10 : 12,
-            childAspectRatio: _gridColumns == 3 ? 0.98 : 1.45,
+            childAspectRatio: _gridColumns == 3 ? 0.95 : 1.45,
           ),
           delegate: SliverChildListDelegate([
             _buildServiceTile(
@@ -1814,7 +1645,7 @@ class _HomeScreenState extends State<HomeScreen> {
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
@@ -1832,28 +1663,28 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
                     color: color.withValues(alpha: 0.09),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: color.withValues(alpha: 0.2)),
                   ),
                   child: Center(
-                    child: Icon(icon, color: color, size: 22),
+                    child: Icon(icon, color: color, size: 21),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   title,
                   textAlign: TextAlign.center,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.cairo(
-                    fontSize: 11.5,
+                    fontSize: 11.0,
                     fontWeight: FontWeight.w800,
                     color: const Color(0xFF0F172A),
-                    height: 1.25,
+                    height: 1.2,
                   ),
                 ),
               ],
@@ -2198,14 +2029,14 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icons.person_outline_rounded,
             label: 'الملف',
             isSelected: _selectedBottomNavIndex == 3,
-            onTap: () {
+            onTap: () async {
               setState(() => _selectedBottomNavIndex = 3);
-              Navigator.push(
+              await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => ManageStudentsScreen(api: widget.api)),
-              ).then((_) {
-                if (mounted) setState(() => _selectedBottomNavIndex = 0);
-              });
+                MaterialPageRoute(builder: (_) => SettingsScreen(api: widget.api)),
+              );
+              await _loadGridTheme();
+              if (mounted) setState(() => _selectedBottomNavIndex = 0);
             },
           ),
         ],

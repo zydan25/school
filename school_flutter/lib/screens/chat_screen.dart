@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
 import '../core/models.dart';
@@ -76,6 +77,54 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               icon: const Icon(Icons.arrow_back_ios_new_rounded),
               onPressed: () => Navigator.pop(context),
             ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded),
+                tooltip: 'بدء محادثة ذكية جديدة',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      title: Text(
+                        'بدء محادثة جديدة',
+                        style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      content: Text(
+                        'هل تريد مسح سجل المحادثة الحالية مع المعلم الذكي والبدء من جديد؟',
+                        style: GoogleFonts.cairo(fontSize: 13),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: Text('إلغاء', style: GoogleFonts.cairo(color: const Color(0xFF64748B))),
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            widget.api.clearCurrentStudentAiChat();
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('تم بدء محادثة جديدة بنجاح ✓', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                                duration: const Duration(seconds: 2),
+                                behavior: SnackBarBehavior.floating,
+                                backgroundColor: const Color(0xFF15803D),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFE11D48),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          child: Text('بدء جديد', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
             bottom: PreferredSize(
               preferredSize: const Size.fromHeight(48),
               child: Container(
@@ -254,58 +303,151 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
       alignment: isMe ? Alignment.centerLeft : Alignment.centerRight,
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
-        constraints: const BoxConstraints(maxWidth: 320),
+        constraints: const BoxConstraints(maxWidth: 340),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isMe ? AppTheme.primaryNavy : Colors.white,
+          color: isMe ? const Color(0xFF0F172A) : Colors.white,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
             topRight: const Radius.circular(16),
             bottomLeft: Radius.circular(isMe ? 4 : 16),
             bottomRight: Radius.circular(isMe ? 16 : 4),
           ),
-          border: isMe ? null : Border.all(color: AppTheme.borderLight),
-          boxShadow: AppTheme.softShadow,
+          border: isMe ? null : Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (!isMe) ...[
               Row(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Icon(Icons.auto_awesome_rounded, color: AppTheme.accent, size: 14),
-                  const SizedBox(width: 4),
-                  Text(
-                    msg.senderName,
-                    style: GoogleFonts.cairo(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: AppTheme.accent,
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF0284C7), size: 14),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        msg.senderName,
+                        style: GoogleFonts.cairo(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF0284C7),
+                        ),
+                      ),
+                    ],
+                  ),
+                  InkWell(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: msg.text));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('تم نسخ الإجابة إلى الحافظة ✓', style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 12)),
+                          duration: const Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                          backgroundColor: const Color(0xFF0F172A),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.copy_rounded, size: 13, color: Color(0xFF64748B)),
+                          const SizedBox(width: 3),
+                          Text(
+                            'نسخ',
+                            style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B), fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
             ],
-            Text(
+            SelectableText(
               msg.text,
               style: GoogleFonts.cairo(
-                fontSize: 12,
-                color: isMe ? Colors.white : AppTheme.textMain,
+                fontSize: 12.5,
+                color: isMe ? Colors.white : const Color(0xFF0F172A),
                 height: 1.5,
               ),
             ),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.bottomLeft,
-              child: Text(
-                msg.time,
-                style: GoogleFonts.cairo(
-                  fontSize: 9,
-                  color: isMe ? Colors.white70 : AppTheme.textMuted,
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (!isMe)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      InkWell(
+                        onTap: () {
+                          widget.api.askAiCopilot('اشرح النقطة السابقة بمثال إضافي مبسط وتطبيقي أكثر');
+                          _scrollToBottom(_aiScrollController);
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '💡 مثال إضافي',
+                            style: GoogleFonts.cairo(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF475569)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: () {
+                          widget.api.askAiCopilot('اعطني سؤالاً اختبارياً تدريبياً على ما شرحته لي للتو لاختبار فهمي');
+                          _scrollToBottom(_aiScrollController);
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '📝 تدريب',
+                            style: GoogleFonts.cairo(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF475569)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  const SizedBox.shrink(),
+                Text(
+                  msg.time,
+                  style: GoogleFonts.cairo(
+                    fontSize: 9.5,
+                    color: isMe ? Colors.white70 : const Color(0xFF94A3B8),
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),
