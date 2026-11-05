@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   // Neumorphic Light & Modern Clean Tokens per user specification
@@ -25,9 +24,9 @@ class AppTheme {
 
   static const Color background = Colors.white; // Pure white as user requested
   static const Color cardSurface = Colors.white;
-  static const Color textMain = Color(0xFF111111); // Clean dark ink (Altakhfid style)
-  static const Color textMuted = Color(0xFF777777); // Balanced muted slate (Altakhfid style)
-  static const Color borderLight = Color(0xFFE7E7E7);
+  static const Color textMain = Color(0xFF1A1D1F); // Clean dark ink (rule 3: Color(0xFF1A1D1F))
+  static const Color textMuted = Color(0xFF717579); // Balanced muted slate (rule 3: Color(0xFF717579))
+  static const Color borderLight = Color(0xFFF1F5F9);
 
   // Vibrant Card Gradients
   static const LinearGradient cardGradientBlue = LinearGradient(
@@ -101,7 +100,7 @@ class AppTheme {
   static BoxDecoration neumorphicDecoration({
     Color color = Colors.white,
     double radius = 18.0,
-    Border? border,
+    Border? border = const Border.fromBorderSide(BorderSide(color: Color(0xFFF1F5F9), width: 1.2)),
   }) {
     return BoxDecoration(
       color: color,
@@ -115,7 +114,9 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      fontFamily: GoogleFonts.tajawal().fontFamily,
+      // Default engine typography (unspecified) per user requirement:
+      // "وغير نوع الخط بحيث يكون غير محدد ويستخدم الافتراضي من فلاتر دارت"
+      fontFamily: null,
       colorScheme: ColorScheme.fromSeed(
         seedColor: primary,
         primary: primary,
@@ -123,17 +124,17 @@ class AppTheme {
         surface: cardSurface,
       ),
       scaffoldBackgroundColor: Colors.white,
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: true,
         titleTextStyle: TextStyle(
           color: textMain,
-          fontSize: 15,
-          fontWeight: FontWeight.w800,
-          fontFamily: GoogleFonts.tajawal().fontFamily,
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
         ),
-        iconTheme: const IconThemeData(color: textMain, size: 20),
+        iconTheme: IconThemeData(color: textMain, size: 20),
       ),
     );
   }
