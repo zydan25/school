@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
 import '../core/models.dart';
@@ -54,13 +54,13 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                     const SizedBox(height: 16),
                     Text(
                       'لا يوجد ملف طالب نشط مرتبط بحسابك في هذه المدرسة',
-                      style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                      style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'يمكنك التحقق من المدرسة النشطة أو إضافة كود الطالب من شاشة إدارة الطلاب.',
-                      style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
+                      style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B)),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -84,7 +84,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
           appBar: AppBar(
             title: Text(
               'سجل الدرجات والشهادات الرسمية',
-              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+              style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
             ),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded),
@@ -103,7 +103,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                   controller: _tabController,
                   labelColor: AppTheme.primaryNavy,
                   unselectedLabelColor: AppTheme.textMuted,
-                  labelStyle: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
+                  labelStyle: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold),
                   indicatorColor: AppTheme.accent,
                   indicatorSize: TabBarIndicatorSize.tab,
                   tabs: const [
@@ -167,7 +167,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                       children: [
                         Text(
                           student.fullName,
-                          style: GoogleFonts.cairo(
+                          style: GoogleFonts.almarai(
                             fontSize: 15,
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
@@ -175,7 +175,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                         ),
                         Text(
                           '${student.grade} - ${student.section} (رقم القيد: ${student.studentNumber})',
-                          style: GoogleFonts.cairo(
+                          style: GoogleFonts.almarai(
                             fontSize: 11,
                             color: Colors.white70,
                             fontWeight: FontWeight.w600,
@@ -191,7 +191,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                       ),
                       child: Text(
                         'ناجح بتفوق ✓',
-                        style: GoogleFonts.cairo(
+                        style: GoogleFonts.almarai(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                           color: const Color(0xFF064E3B),
@@ -237,7 +237,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                         const SizedBox(width: 6),
                         Text(
                           'معاينة واستخراج الشهادة الرقمية المعتمدة 📜',
-                          style: GoogleFonts.cairo(
+                          style: GoogleFonts.almarai(
                             color: Colors.white,
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -322,7 +322,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                                   children: [
                                     Text(
                                       g.subject,
-                                      style: GoogleFonts.cairo(
+                                      style: GoogleFonts.almarai(
                                         fontSize: 12,
                                         fontWeight: FontWeight.bold,
                                         color: AppTheme.textMain,
@@ -334,7 +334,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                                 ),
                                 Text(
                                   g.teacher,
-                                  style: GoogleFonts.cairo(
+                                  style: GoogleFonts.almarai(
                                     fontSize: 10,
                                     color: AppTheme.textMuted,
                                   ),
@@ -347,7 +347,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                             child: Text(
                               (g.homeworkScore + g.participation).toStringAsFixed(1),
                               textAlign: TextAlign.center,
-                              style: GoogleFonts.cairo(
+                              style: GoogleFonts.almarai(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
                                 color: AppTheme.textMain,
@@ -359,7 +359,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                             child: Text(
                               g.monthlyExam.toStringAsFixed(1),
                               textAlign: TextAlign.center,
-                              style: GoogleFonts.cairo(
+                              style: GoogleFonts.almarai(
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
                                 color: AppTheme.textMain,
@@ -371,7 +371,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                             child: Text(
                               g.total.toStringAsFixed(1),
                               textAlign: TextAlign.center,
-                              style: GoogleFonts.cairo(
+                              style: GoogleFonts.almarai(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w900,
                                 color: AppTheme.primary,
@@ -389,7 +389,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                                 ),
                                 child: Text(
                                   g.letterGrade.split(' ').first,
-                                  style: GoogleFonts.cairo(
+                                  style: GoogleFonts.almarai(
                                     fontSize: 10,
                                     fontWeight: FontWeight.bold,
                                     color: AppTheme.emerald,
@@ -417,7 +417,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                     children: [
                       Text(
                         'المجموع العام لدرجات الفصل:',
-                        style: GoogleFonts.cairo(
+                        style: GoogleFonts.almarai(
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: AppTheme.textMain,
@@ -425,7 +425,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                       ),
                       Text(
                         '${totalEarned.toInt()} من ${maxPossible.toInt()} درجة (${percentage.toStringAsFixed(1)}%)',
-                        style: GoogleFonts.cairo(
+                        style: GoogleFonts.almarai(
                           fontSize: 12,
                           fontWeight: FontWeight.w900,
                           color: AppTheme.emerald,
@@ -484,11 +484,11 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                         children: [
                           Text(
                             g.subject,
-                            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textMain),
+                            style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textMain),
                           ),
                           Text(
                             g.teacher,
-                            style: GoogleFonts.cairo(fontSize: 10, color: AppTheme.textMuted),
+                            style: GoogleFonts.almarai(fontSize: 10, color: AppTheme.textMuted),
                           ),
                         ],
                       ),
@@ -502,7 +502,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                     ),
                     child: Text(
                       g.letterGrade,
-                      style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.emerald),
+                      style: GoogleFonts.almarai(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.emerald),
                     ),
                   ),
                 ],
@@ -534,7 +534,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                 children: [
                   Text(
                     'ملاحظة المعلم: ${g.teacherRemarks}',
-                    style: GoogleFonts.cairo(fontSize: 10, color: AppTheme.textMuted),
+                    style: GoogleFonts.almarai(fontSize: 10, color: AppTheme.textMuted),
                   ),
                   InkWell(
                     onTap: () => _consultAiForSubject(g.subject),
@@ -544,7 +544,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                         const SizedBox(width: 4),
                         Text(
                           'استشارة المساعد الذكي',
-                          style: GoogleFonts.cairo(fontSize: 10, color: AppTheme.accent, fontWeight: FontWeight.bold),
+                          style: GoogleFonts.almarai(fontSize: 10, color: AppTheme.accent, fontWeight: FontWeight.bold),
                         ),
                       ],
                     ),
@@ -568,11 +568,11 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
       ),
       child: Column(
         children: [
-          Text(title, style: GoogleFonts.cairo(fontSize: 9, color: AppTheme.textMuted)),
+          Text(title, style: GoogleFonts.almarai(fontSize: 9, color: AppTheme.textMuted)),
           const SizedBox(height: 2),
           Text(
             '$score / $max',
-            style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+            style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold, color: color),
           ),
         ],
       ),
@@ -615,7 +615,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                       Center(
                         child: Text(
                           '${overallGpa.toStringAsFixed(0)}%',
-                          style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w900, color: AppTheme.primaryNavy),
+                          style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.w900, color: AppTheme.primaryNavy),
                         ),
                       ),
                     ],
@@ -628,11 +628,11 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                     children: [
                       Text(
                         'الأداء الأكاديمي العام: ممتاز مع مرتبة الشرف 🏆',
-                        style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textMain),
+                        style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textMain),
                       ),
                       Text(
                         'الطالب يحقق نتائج أعلى من متوسط الشعبة بنسبة +14.2%، ومؤهل للترشح للأولمبياد العلمي.',
-                        style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted),
+                        style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted),
                       ),
                     ],
                   ),
@@ -645,7 +645,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
 
           Text(
             'مقارنة تحصيل المواد الدراسية:',
-            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textMain),
+            style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.textMain),
           ),
           const SizedBox(height: 10),
 
@@ -668,11 +668,11 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                     children: [
                       Text(
                         g.subject,
-                        style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textMain),
+                        style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textMain),
                       ),
                       Text(
                         '${(pct * 100).toStringAsFixed(1)}% (${g.total} / ${g.maxTotal})',
-                        style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
+                        style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.primary),
                       ),
                     ],
                   ),
@@ -727,27 +727,27 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                       const SizedBox(width: 8),
                       Text(
                         'المدرسة الافتراضية الحديثة',
-                        style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+                        style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
                       ),
                     ],
                   ),
                   Text(
                     'شهادة تفوق وتقدير أكاديمي رسمي',
-                    style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFFD4AF37), fontWeight: FontWeight.bold),
+                    style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFFD4AF37), fontWeight: FontWeight.bold),
                   ),
                   const Divider(height: 24, thickness: 1),
                   Text(
                     'تشهد إدارة المدرسة بأن الطالب:',
-                    style: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMuted),
+                    style: GoogleFonts.almarai(fontSize: 12, color: AppTheme.textMuted),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     student.fullName,
-                    style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.primaryNavy),
+                    style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.w900, color: AppTheme.primaryNavy),
                   ),
                   Text(
                     'المقيد برقم قيد (${student.studentNumber}) - ${student.grade}',
-                    style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMain),
+                    style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMain),
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -762,22 +762,22 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('المعدل العام:', style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted)),
-                            Text('${percentage.toStringAsFixed(1)}%', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.emerald)),
+                            Text('المعدل العام:', style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted)),
+                            Text('${percentage.toStringAsFixed(1)}%', style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: AppTheme.emerald)),
                           ],
                         ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('الترتيب الأكاديمي:', style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted)),
-                            Text('الأول على الشعبة 🥇', style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textMain)),
+                            Text('الترتيب الأكاديمي:', style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted)),
+                            Text('الأول على الشعبة 🥇', style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.textMain)),
                           ],
                         ),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('التقدير العام:', style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted)),
-                            Text('ممتاز مع مرتبة الشرف', style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFD4AF37))),
+                            Text('التقدير العام:', style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted)),
+                            Text('ممتاز مع مرتبة الشرف', style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFFD4AF37))),
                           ],
                         ),
                       ],
@@ -790,15 +790,15 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                       Column(
                         children: [
                           const Icon(Icons.qr_code_2_rounded, size: 48, color: AppTheme.primaryNavy),
-                          Text('كود التحقق الرقمي', style: GoogleFonts.cairo(fontSize: 8, color: AppTheme.textMuted)),
+                          Text('كود التحقق الرقمي', style: GoogleFonts.almarai(fontSize: 8, color: AppTheme.textMuted)),
                         ],
                       ),
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text('ختم وتوقيع الإدارة العامة', style: GoogleFonts.cairo(fontSize: 9, fontWeight: FontWeight.bold)),
-                          Text('مدير المنصة: د. سيف العتاب', style: GoogleFonts.cairo(fontSize: 9, color: AppTheme.textMuted)),
-                          Text('المشرف الأكاديمي: أ. عبد الرحمن', style: GoogleFonts.cairo(fontSize: 9, color: AppTheme.textMuted)),
+                          Text('ختم وتوقيع الإدارة العامة', style: GoogleFonts.almarai(fontSize: 9, fontWeight: FontWeight.bold)),
+                          Text('مدير المنصة: د. سيف العتاب', style: GoogleFonts.almarai(fontSize: 9, color: AppTheme.textMuted)),
+                          Text('المشرف الأكاديمي: أ. عبد الرحمن', style: GoogleFonts.almarai(fontSize: 9, color: AppTheme.textMuted)),
                         ],
                       ),
                     ],
@@ -812,12 +812,12 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     icon: const Icon(Icons.download_rounded, size: 16),
-                    label: Text('تنزيل وحفظ الشهادة بصيغة PDF', style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold)),
+                    label: Text('تنزيل وحفظ الشهادة بصيغة PDF', style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold)),
                     onPressed: () {
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('تم تنزيل الشهادة الرقمية المعتمدة بنجاح ✅', style: GoogleFonts.cairo()),
+                          content: Text('تم تنزيل الشهادة الرقمية المعتمدة بنجاح ✅', style: GoogleFonts.almarai()),
                           backgroundColor: AppTheme.emerald,
                         ),
                       );
@@ -851,7 +851,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                 children: [
                   Text(
                     'تفاصيل مادة: ${g.subject}',
-                    style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
+                    style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.bold, color: AppTheme.primaryNavy),
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -861,12 +861,12 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                     ),
                     child: Text(
                       g.letterGrade,
-                      style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.emerald),
+                      style: GoogleFonts.almarai(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.emerald),
                     ),
                   ),
                 ],
               ),
-              Text('المعلم المشرف: ${g.teacher}', style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted)),
+              Text('المعلم المشرف: ${g.teacher}', style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted)),
               const Divider(height: 20),
               _buildDetailRow('اختبار الشهر الأول:', '${g.monthOneExam} من 20 درجة'),
               _buildDetailRow('اختبار الشهر الثاني:', '${g.monthTwoExam} من 20 درجة'),
@@ -883,7 +883,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                 ),
                 child: Text(
                   'ملاحظة المعلم: ${g.teacherRemarks}',
-                  style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMain),
+                  style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMain),
                 ),
               ),
               const SizedBox(height: 14),
@@ -895,7 +895,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 icon: const Icon(Icons.auto_awesome_rounded, size: 16),
-                label: Text('اسأل الذكاء الاصطناعي لرفع مستواك في هذه المادة 🤖', style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold)),
+                label: Text('اسأل الذكاء الاصطناعي لرفع مستواك في هذه المادة 🤖', style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold)),
                 onPressed: () {
                   Navigator.pop(context);
                   _consultAiForSubject(g.subject);
@@ -914,8 +914,8 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted)),
-          Text(value, style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textMain)),
+          Text(label, style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted)),
+          Text(value, style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.textMain)),
         ],
       ),
     );
@@ -932,9 +932,9 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
   Widget _buildMetricCol(String label, String value) {
     return Column(
       children: [
-        Text(label, style: GoogleFonts.cairo(color: Colors.white70, fontSize: 10)),
+        Text(label, style: GoogleFonts.almarai(color: Colors.white70, fontSize: 10)),
         const SizedBox(height: 2),
-        Text(value, style: GoogleFonts.cairo(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13)),
+        Text(value, style: GoogleFonts.almarai(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13)),
       ],
     );
   }
@@ -955,7 +955,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
         ),
         child: Text(
           label,
-          style: GoogleFonts.cairo(
+          style: GoogleFonts.almarai(
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
             color: isSelected ? Colors.white : AppTheme.textMuted,
@@ -969,7 +969,7 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
     return Text(
       text,
       textAlign: align,
-      style: GoogleFonts.cairo(
+      style: GoogleFonts.almarai(
         fontSize: 11,
         fontWeight: FontWeight.bold,
         color: AppTheme.textMain,
@@ -977,3 +977,4 @@ class _GradesScreenState extends State<GradesScreen> with SingleTickerProviderSt
     );
   }
 }
+

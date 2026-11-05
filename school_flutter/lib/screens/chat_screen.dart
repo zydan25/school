@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
@@ -65,11 +65,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               children: [
                 Text(
                   'المحادثات المدرسية والذكاء الاصطناعي',
-                  style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold),
                 ),
                 Text(
                   'الطالب المستفيد: $studentName',
-                  style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.accent, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.accent, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -88,16 +88,16 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                       title: Text(
                         'بدء محادثة جديدة',
-                        style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: GoogleFonts.almarai(fontWeight: FontWeight.bold, fontSize: 16),
                       ),
                       content: Text(
                         'هل تريد مسح سجل المحادثة الحالية مع المعلم الذكي والبدء من جديد؟',
-                        style: GoogleFonts.cairo(fontSize: 13),
+                        style: GoogleFonts.almarai(fontSize: 13),
                       ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(ctx),
-                          child: Text('إلغاء', style: GoogleFonts.cairo(color: const Color(0xFF64748B))),
+                          child: Text('إلغاء', style: GoogleFonts.almarai(color: const Color(0xFF64748B))),
                         ),
                         ElevatedButton(
                           onPressed: () {
@@ -105,7 +105,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             Navigator.pop(ctx);
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('تم بدء محادثة جديدة بنجاح ✓', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                                content: Text('تم بدء محادثة جديدة بنجاح ✓', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
                                 duration: const Duration(seconds: 2),
                                 behavior: SnackBarBehavior.floating,
                                 backgroundColor: const Color(0xFF15803D),
@@ -117,7 +117,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                           ),
-                          child: Text('بدء جديد', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                          child: Text('بدء جديد', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
@@ -138,7 +138,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   controller: _tabController,
                   labelColor: AppTheme.primaryNavy,
                   unselectedLabelColor: AppTheme.textMuted,
-                  labelStyle: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
+                  labelStyle: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold),
                   indicatorColor: AppTheme.accent,
                   indicatorSize: TabBarIndicatorSize.tab,
                   tabs: [
@@ -217,11 +217,11 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   children: [
                     Text(
                       'المعلم الذكي المخصص لـ ${student?.fullName ?? 'الطالب'}',
-                      style: GoogleFonts.cairo(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                      style: GoogleFonts.almarai(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                     Text(
                       'جاهز لشرح دروس ${student?.grade ?? 'المنهج الدراسي'} وتبسيط الواجبات فوراً 🎓',
-                      style: GoogleFonts.cairo(color: Colors.white70, fontSize: 10),
+                      style: GoogleFonts.almarai(color: Colors.white70, fontSize: 10),
                     ),
                   ],
                 ),
@@ -286,7 +286,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     return Padding(
       padding: const EdgeInsets.only(left: 8),
       child: ActionChip(
-        label: Text(label, style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.accent)),
+        label: Text(label, style: GoogleFonts.almarai(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.accent)),
         backgroundColor: const Color(0xFFEFF6FF),
         side: const BorderSide(color: Color(0xFFBFDBFE)),
         onPressed: () {
@@ -343,7 +343,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                       const SizedBox(width: 6),
                       Text(
                         msg.senderName,
-                        style: GoogleFonts.cairo(
+                        style: GoogleFonts.almarai(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: const Color(0xFF0284C7),
@@ -356,10 +356,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                       Clipboard.setData(ClipboardData(text: msg.text));
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
-                          content: Text('تم نسخ الإجابة إلى الحافظة ✓', style: GoogleFonts.cairo(fontWeight: FontWeight.bold, fontSize: 12)),
+                          content: Text('تم نسخ الإجابة إلى الحافظة ✓', style: GoogleFonts.almarai(fontWeight: FontWeight.bold, fontSize: 12)),
                           duration: const Duration(seconds: 2),
                           behavior: SnackBarBehavior.floating,
-                          backgroundColor: const Color(0xFF0F172A),
+                          backgroundColor: const Color(0xFF1E60FF),
                         ),
                       );
                     },
@@ -373,7 +373,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           const SizedBox(width: 3),
                           Text(
                             'نسخ',
-                            style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B), fontWeight: FontWeight.bold),
+                            style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF64748B), fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
@@ -385,7 +385,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ],
             SelectableText(
               msg.text,
-              style: GoogleFonts.cairo(
+              style: GoogleFonts.almarai(
                 fontSize: 12.5,
                 color: isMe ? Colors.white : const Color(0xFF0F172A),
                 height: 1.5,
@@ -413,7 +413,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           ),
                           child: Text(
                             '💡 مثال إضافي',
-                            style: GoogleFonts.cairo(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF475569)),
+                            style: GoogleFonts.almarai(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF475569)),
                           ),
                         ),
                       ),
@@ -432,7 +432,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                           ),
                           child: Text(
                             '📝 تدريب',
-                            style: GoogleFonts.cairo(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF475569)),
+                            style: GoogleFonts.almarai(fontSize: 9.5, fontWeight: FontWeight.bold, color: const Color(0xFF475569)),
                           ),
                         ),
                       ),
@@ -442,7 +442,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   const SizedBox.shrink(),
                 Text(
                   msg.time,
-                  style: GoogleFonts.cairo(
+                  style: GoogleFonts.almarai(
                     fontSize: 9.5,
                     color: isMe ? Colors.white70 : const Color(0xFF94A3B8),
                   ),
@@ -480,7 +480,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             Flexible(
               child: Text(
                 'المساعد الذكي (Gemini 3.5 Flash) يستحضر بيانات المنهج ويكتب الإجابة...',
-                style: GoogleFonts.cairo(
+                style: GoogleFonts.almarai(
                   fontSize: 11,
                   fontWeight: FontWeight.bold,
                   color: const Color(0xFF166534),
@@ -556,7 +556,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 children: [
                   Text(
                     msg.senderName,
-                    style: GoogleFonts.cairo(
+                    style: GoogleFonts.almarai(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                       color: AppTheme.primaryNavy,
@@ -565,7 +565,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                   const SizedBox(width: 4),
                   Text(
                     '(${msg.senderRole})',
-                    style: GoogleFonts.cairo(fontSize: 9, color: AppTheme.textMuted),
+                    style: GoogleFonts.almarai(fontSize: 9, color: AppTheme.textMuted),
                   ),
                 ],
               ),
@@ -573,7 +573,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
             ],
             Text(
               msg.text,
-              style: GoogleFonts.cairo(
+              style: GoogleFonts.almarai(
                 fontSize: 12,
                 color: isMe ? Colors.white : AppTheme.textMain,
                 height: 1.4,
@@ -584,7 +584,7 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
               alignment: Alignment.bottomLeft,
               child: Text(
                 msg.time,
-                style: GoogleFonts.cairo(
+                style: GoogleFonts.almarai(
                   fontSize: 9,
                   color: isMe ? Colors.white70 : AppTheme.textMuted,
                 ),
@@ -622,10 +622,10 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
                 ),
                 child: TextField(
                   controller: controller,
-                  style: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMain),
+                  style: GoogleFonts.almarai(fontSize: 12, color: AppTheme.textMain),
                   decoration: InputDecoration(
                     hintText: hint,
-                    hintStyle: GoogleFonts.cairo(fontSize: 11, color: AppTheme.textMuted),
+                    hintStyle: GoogleFonts.almarai(fontSize: 11, color: AppTheme.textMuted),
                     border: InputBorder.none,
                   ),
                   onSubmitted: (val) {
@@ -657,3 +657,5 @@ class _ChatScreenState extends State<ChatScreen> with SingleTickerProviderStateM
     );
   }
 }
+
+

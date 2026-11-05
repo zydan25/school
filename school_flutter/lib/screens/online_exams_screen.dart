@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
@@ -53,7 +53,7 @@ class _OnlineExamsScreenState extends State<OnlineExamsScreen> with SingleTicker
             elevation: 0,
             title: Text(
               'الاختبارات الإلكترونية',
-              style: GoogleFonts.cairo(
+              style: GoogleFonts.almarai(
                 fontSize: 18,
                 fontWeight: FontWeight.w900,
                 color: const Color(0xFF0F172A),
@@ -70,8 +70,8 @@ class _OnlineExamsScreenState extends State<OnlineExamsScreen> with SingleTicker
               controller: _tabController,
               labelColor: AppTheme.screenshotBlue,
               unselectedLabelColor: const Color(0xFF64748B),
-              labelStyle: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
-              unselectedLabelStyle: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w600),
+              labelStyle: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
+              unselectedLabelStyle: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.w600),
               indicatorColor: AppTheme.screenshotBlue,
               indicatorWeight: 3,
               tabs: const [
@@ -119,13 +119,13 @@ class _OnlineExamsScreenState extends State<OnlineExamsScreen> with SingleTicker
               Text(
                 emptyMessage,
                 textAlign: TextAlign.center,
-                style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
               ),
               const SizedBox(height: 8),
               Text(
                 'يتم إدراج الاختبارات ونشر أوراق الإجابة آلياً وفق الخطة الدراسية لشعبتك.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
+                style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B)),
               ),
               const SizedBox(height: 24),
               OutlinedButton.icon(
@@ -139,7 +139,7 @@ class _OnlineExamsScreenState extends State<OnlineExamsScreen> with SingleTicker
                 icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
                 label: Text(
                   'خوض اختبار تجريبي تدريبي',
-                  style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -196,7 +196,7 @@ class _OnlineExamsScreenState extends State<OnlineExamsScreen> with SingleTicker
                 ),
                 child: Text(
                   exam.subjectName,
-                  style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
+                  style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
                 ),
               ),
               Container(
@@ -207,7 +207,7 @@ class _OnlineExamsScreenState extends State<OnlineExamsScreen> with SingleTicker
                 ),
                 child: Text(
                   statusLabel,
-                  style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: statusText),
+                  style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold, color: statusText),
                 ),
               ),
             ],
@@ -215,13 +215,13 @@ class _OnlineExamsScreenState extends State<OnlineExamsScreen> with SingleTicker
           const SizedBox(height: 10),
           Text(
             exam.title,
-            style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+            style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
           ),
           if (exam.description.isNotEmpty) ...[
             const SizedBox(height: 4),
             Text(
               exam.description,
-              style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
+              style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B)),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -233,14 +233,14 @@ class _OnlineExamsScreenState extends State<OnlineExamsScreen> with SingleTicker
               const SizedBox(width: 4),
               Text(
                 'المدة: ${exam.durationMinutes} دقيقة',
-                style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
+                style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B)),
               ),
               const SizedBox(width: 16),
               const Icon(Icons.grade_outlined, size: 16, color: Color(0xFF64748B)),
               const SizedBox(width: 4),
               Text(
                 'الدرجة: ${exam.totalScore.toInt()} درجة',
-                style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
+                style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B)),
               ),
             ],
           ),
@@ -258,7 +258,7 @@ class _OnlineExamsScreenState extends State<OnlineExamsScreen> with SingleTicker
               ),
               child: Text(
                 exam.status == 'submitted' || exam.status == 'graded' ? 'عرض تفاصيل الإجابة' : 'بدء الاختبار الآن',
-                style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+                style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
               ),
             ),
           ),
@@ -400,7 +400,7 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
               const SizedBox(width: 8),
               Text(
                 'تم تسليم ورقة الاختبار',
-                style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold),
+                style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -408,7 +408,7 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
             autoSubmit
                 ? 'انتهى الوقت المحدد للاختبار وتم حفظ إجاباتك وتسليمها بنجاح إلى منصة الاختبارات الإلكترونية.'
                 : 'تم اعتماد إجاباتك وإرسال ورقة الاختبار إلى خادم المدرسة بنجاح. ستعلن النتائج فور اعتمادها.',
-            style: GoogleFonts.cairo(fontSize: 13, color: const Color(0xFF334155)),
+            style: GoogleFonts.almarai(fontSize: 13, color: const Color(0xFF334155)),
           ),
           actions: [
             ElevatedButton(
@@ -421,7 +421,7 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              child: Text('العودة للاختبارات', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+              child: Text('العودة للاختبارات', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
             ),
           ],
         );
@@ -441,7 +441,7 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
         elevation: 0,
         title: Text(
           widget.exam.title,
-          style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+          style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
         ),
         actions: [
           Container(
@@ -461,7 +461,7 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
                 const SizedBox(width: 6),
                 Text(
                   _formatTimer(),
-                  style: GoogleFonts.cairo(
+                  style: GoogleFonts.almarai(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
                     color: _remainingSeconds < 300 ? Colors.red : AppTheme.screenshotBlue,
@@ -483,11 +483,11 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
               children: [
                 Text(
                   'السؤال ${_currentQuestionIndex + 1} من ${_sampleQuestions.length}',
-                  style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                  style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                 ),
                 Text(
                   '${currentQ['points']} درجات',
-                  style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
+                  style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
                 ),
               ],
             ),
@@ -517,7 +517,7 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
                 children: [
                   Text(
                     currentQ['question'],
-                    style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                    style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 18),
                   ...List.generate(options.length, (optIdx) {
@@ -558,7 +558,7 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
                             Expanded(
                               child: Text(
                                 options[optIdx],
-                                style: GoogleFonts.cairo(
+                                style: GoogleFonts.almarai(
                                   fontSize: 13,
                                   fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                                   color: isSelected ? AppTheme.screenshotBlue : const Color(0xFF0F172A),
@@ -587,7 +587,7 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                       ),
-                      child: Text('السابق', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                      child: Text('السابق', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
                     ),
                   ),
                 if (_currentQuestionIndex > 0) const SizedBox(width: 12),
@@ -611,7 +611,7 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
                     ),
                     child: Text(
                       _currentQuestionIndex == _sampleQuestions.length - 1 ? 'تسليم الاختبار النهائي' : 'السؤال التالي',
-                      style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+                      style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -623,3 +623,4 @@ class _ExamPaperScreenState extends State<ExamPaperScreen> {
     );
   }
 }
+

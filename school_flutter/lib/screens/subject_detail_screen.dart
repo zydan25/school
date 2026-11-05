@@ -100,10 +100,10 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
           children: [
             Text(
               sub.name,
-              style: GoogleFonts.cairo(
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                color: const Color(0xFF0F172A),
+              style: GoogleFonts.almarai(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF1A1D1F),
               ),
             ),
             const SizedBox(width: 8),
@@ -166,10 +166,10 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
           // 2. "أسئلة خصيصاً لك" matching media_1793903260400_0cb23ad7.jpg
           Text(
             'أسئلة خصيصاً لك',
-            style: GoogleFonts.cairo(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF0F172A),
+            style: GoogleFonts.almarai(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1A1D1F),
             ),
           ),
           const SizedBox(height: 10),
@@ -180,12 +180,19 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                 MaterialPageRoute(builder: (_) => OnlineExamsScreen(api: widget.api)),
               );
             },
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               decoration: BoxDecoration(
                 color: const Color(0xFFF7F5FC),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
@@ -230,10 +237,10 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                   Expanded(
                     child: Text(
                       '$studentFirstName، أخطائك السابقة هنا!',
-                      style: GoogleFonts.cairo(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF0F172A),
+                      style: GoogleFonts.almarai(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1A1D1F),
                       ),
                     ),
                   ),
@@ -242,15 +249,15 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
             ),
           ),
 
-          const SizedBox(height: 22),
+          const SizedBox(height: 20),
 
           // 3. "اختبارات جاهزة" matching media_1793903260400_0cb23ad7.jpg
           Text(
             'اختبارات جاهزة',
-            style: GoogleFonts.cairo(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              color: const Color(0xFF0F172A),
+            style: GoogleFonts.almarai(
+              fontSize: 14.5,
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF1A1D1F),
             ),
           ),
           const SizedBox(height: 10),
@@ -261,12 +268,19 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                 MaterialPageRoute(builder: (_) => OnlineExamsScreen(api: widget.api)),
               );
             },
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(18),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               decoration: BoxDecoration(
                 color: const Color(0xFFF3F7FA),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
               child: Row(
                 children: [
@@ -275,10 +289,10 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                   Expanded(
                     child: Text(
                       'اختبارات الوحدة',
-                      style: GoogleFonts.cairo(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        color: const Color(0xFF0F172A),
+                      style: GoogleFonts.almarai(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1A1D1F),
                       ),
                     ),
                   ),
@@ -287,7 +301,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
             ),
           ),
 
-          const SizedBox(height: 26),
+          const SizedBox(height: 24),
 
           // 4. "دروس ووحدات المنهج"
           Row(
@@ -295,18 +309,18 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
             children: [
               Text(
                 'وحدات ودروس المنهج',
-                style: GoogleFonts.cairo(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: const Color(0xFF0F172A),
+                style: GoogleFonts.almarai(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF1A1D1F),
                 ),
               ),
               Text(
                 '${sub.units.length} وحدات • ${sub.teacherName}',
-                style: GoogleFonts.cairo(
-                  fontSize: 11.5,
-                  color: const Color(0xFF64748B),
-                  fontWeight: FontWeight.bold,
+                style: GoogleFonts.almarai(
+                  fontSize: 11,
+                  color: const Color(0xFF717579),
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
@@ -327,34 +341,41 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: const Color(0xFFF1F5F9), width: 1.2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 15,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
               ),
               child: ExpansionTile(
                 initiallyExpanded: unit.unitNumber == 1,
                 shape: const Border(),
                 leading: Container(
-                  width: 36,
-                  height: 36,
+                  width: 34,
+                  height: 34,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                    color: const Color(0xFFEFF6FF),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Center(
                     child: Text(
                       '${unit.unitNumber}',
-                      style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF2563EB)),
+                      style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF1E60FF)),
                     ),
                   ),
                 ),
                 title: Text(
                   unit.title,
-                  style: GoogleFonts.cairo(fontSize: 13.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                  style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF1A1D1F)),
                 ),
                 subtitle: Text(
                   '${unit.lessonsCount > 0 ? unit.lessonsCount : topics.length} دروس تعليمية',
-                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                  style: GoogleFonts.almarai(fontSize: 10.5, fontWeight: FontWeight.w500, color: const Color(0xFF717579)),
                 ),
                 children: topics.asMap().entries.map((entry) {
                   final idx = entry.key + 1;
@@ -383,10 +404,10 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                           Container(
                             padding: const EdgeInsets.all(6),
                             decoration: const BoxDecoration(
-                              color: Color(0xFFE2E8F0),
+                              color: Color(0xFFEFF6FF),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.play_arrow_rounded, size: 16, color: Color(0xFF2563EB)),
+                            child: const Icon(Icons.play_arrow_rounded, size: 16, color: Color(0xFF1E60FF)),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
@@ -395,11 +416,11 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                               children: [
                                 Text(
                                   topicTitle,
-                                  style: GoogleFonts.cairo(fontSize: 12.5, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                                  style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF1A1D1F)),
                                 ),
                                 Text(
                                   'الدرس $idx • انقر لمشاهدة الشرح التفاعلي بالفيديو',
-                                  style: GoogleFonts.cairo(fontSize: 10.5, color: const Color(0xFF94A3B8)),
+                                  style: GoogleFonts.almarai(fontSize: 10, fontWeight: FontWeight.w500, color: const Color(0xFF717579)),
                                 ),
                               ],
                             ),
@@ -464,10 +485,10 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
             Text(
               label,
               maxLines: 1,
-              style: GoogleFonts.cairo(
-                fontSize: 11.5,
-                fontWeight: FontWeight.bold,
-                color: isSelected ? Colors.white : const Color(0xFF334155),
+              style: GoogleFonts.almarai(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: isSelected ? Colors.white : const Color(0xFF1A1D1F),
               ),
             ),
           ],

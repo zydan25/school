@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
 import '../core/models.dart';
@@ -36,7 +36,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               const SizedBox(width: 8),
               Text(
                 'تقديم عذر غياب معتمد',
-                style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold),
+                style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold),
               ),
             ],
           ),
@@ -47,7 +47,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               children: [
                 Text(
                   'سيتم إرسال هذا العذر إلى إدارة المدرسة ومعلمي الصف لاعتماده.',
-                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                  style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -79,7 +79,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     Expanded(
                       child: Text(
                         'إرفاق تقرير طبي / إشعار مراجعة معتمد',
-                        style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
+                        style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -99,7 +99,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                         Expanded(
                           child: Text(
                             'medical_report_2026.pdf (مرفق جاهز)',
-                            style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
+                            style: GoogleFonts.almarai(fontSize: 10, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
                           ),
                         ),
                       ],
@@ -111,14 +111,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text('إلغاء', style: GoogleFonts.cairo()),
+              child: Text('إلغاء', style: GoogleFonts.almarai()),
             ),
             ElevatedButton(
               onPressed: () {
                 final reason = _reasonController.text.trim();
                 if (reason.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('الرجاء كتابة سبب الغياب', style: GoogleFonts.cairo())),
+                    SnackBar(content: Text('الرجاء كتابة سبب الغياب', style: GoogleFonts.almarai())),
                   );
                   return;
                 }
@@ -131,7 +131,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 Navigator.pop(ctx);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text('تم تقديم عذر الغياب إلى الإدارة بنجاح!', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                    content: Text('تم تقديم عذر الغياب إلى الإدارة بنجاح!', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
                     backgroundColor: AppTheme.screenshotGreen,
                   ),
                 );
@@ -141,7 +141,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              child: Text('إرسال العذر', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+              child: Text('إرسال العذر', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -166,7 +166,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             elevation: 0,
             title: Text(
               'سجل الحضور والمواظبة • $studentName',
-              style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+              style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
             ),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
@@ -212,7 +212,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           ),
                           Text(
                             '${attendanceRate.toInt()}%',
-                            style: GoogleFonts.cairo(
+                            style: GoogleFonts.almarai(
                               fontSize: 17,
                               fontWeight: FontWeight.w900,
                               color: AppTheme.screenshotGreen,
@@ -227,7 +227,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           children: [
                             Text(
                               'نسبة الحضور التراكمية',
-                              style: GoogleFonts.cairo(
+                              style: GoogleFonts.almarai(
                                 fontSize: 15,
                                 fontWeight: FontWeight.bold,
                                 color: const Color(0xFF0F172A),
@@ -236,7 +236,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             const SizedBox(height: 3),
                             Text(
                               'سجل ممتاز ومثالي للعام الدراسي 2026/2027 بدون أي غياب غير مبرر.',
-                              style: GoogleFonts.cairo(
+                              style: GoogleFonts.almarai(
                                 fontSize: 11,
                                 color: const Color(0xFF64748B),
                                 height: 1.4,
@@ -282,11 +282,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           children: [
                             Text(
                               'هل تغيب الطالب أو لديه ظرف طارئ؟',
-                              style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF1E3A8A)),
+                              style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF1E3A8A)),
                             ),
                             Text(
                               'يمكنك تقديم عذر غياب رسمي وإرفاق الإشعار الطبي لاعتماده فوراً.',
-                              style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF3B82F6)),
+                              style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF3B82F6)),
                             ),
                           ],
                         ),
@@ -300,7 +300,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        child: Text('+ تقديم عذر', style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold)),
+                        child: Text('+ تقديم عذر', style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold)),
                       ),
                     ],
                   ),
@@ -310,7 +310,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   const SizedBox(height: 18),
                   Text(
                     'أعذار الغياب المقدمة (${excuses.length})',
-                    style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                    style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 8),
                   ...excuses.map((exc) => _buildExcuseCard(exc)),
@@ -324,11 +324,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   children: [
                     Text(
                       'سجل الأيام والحصص الأخيرة',
-                      style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                      style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                     ),
                     Text(
                       'تحديث لحظي من بوابة الحضور',
-                      style: GoogleFonts.cairo(fontSize: 10, color: AppTheme.screenshotBlue),
+                      style: GoogleFonts.almarai(fontSize: 10, color: AppTheme.screenshotBlue),
                     ),
                   ],
                 ),
@@ -362,11 +362,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           const SizedBox(height: 4),
           Text(
             val,
-            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w900, color: color),
+            style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.w900, color: color),
           ),
           Text(
             title,
-            style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B)),
+            style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF64748B)),
           ),
         ],
       ),
@@ -406,7 +406,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   children: [
                     Text(
                       exc.date,
-                      style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                      style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                     ),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -416,14 +416,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       ),
                       child: Text(
                         isApproved ? 'معتمد من الإدارة' : 'قيد المراجعة',
-                        style: GoogleFonts.cairo(fontSize: 9, fontWeight: FontWeight.bold, color: isApproved ? AppTheme.screenshotGreen : AppTheme.screenshotOrange),
+                        style: GoogleFonts.almarai(fontSize: 9, fontWeight: FontWeight.bold, color: isApproved ? AppTheme.screenshotGreen : AppTheme.screenshotOrange),
                       ),
                     ),
                   ],
                 ),
                 Text(
                   exc.reason,
-                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF475569)),
+                  style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF475569)),
                 ),
                 if (exc.medicalReportUrl != null) ...[
                   const SizedBox(height: 4),
@@ -431,7 +431,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     children: [
                       const Icon(Icons.picture_as_pdf_rounded, size: 12, color: AppTheme.screenshotBlue),
                       const SizedBox(width: 4),
-                      Text('تقرير طبي مرفق', style: GoogleFonts.cairo(fontSize: 9, color: AppTheme.screenshotBlue, fontWeight: FontWeight.bold)),
+                      Text('تقرير طبي مرفق', style: GoogleFonts.almarai(fontSize: 9, color: AppTheme.screenshotBlue, fontWeight: FontWeight.bold)),
                     ],
                   ),
                 ],
@@ -474,11 +474,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               children: [
                 Text(
                   date,
-                  style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                  style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                 ),
                 Text(
                   desc,
-                  style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B)),
+                  style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF64748B)),
                 ),
               ],
             ),
@@ -488,3 +488,4 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 }
+

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
 import '../core/theme.dart';
@@ -31,7 +31,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (code.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('الرجاء إدخال كود الطالب أولاً', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold)),
+          content: Text('Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø¥Ø¯Ø®Ø§Ù„ ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨ Ø£ÙˆÙ„Ø§Ù‹', style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold)),
           backgroundColor: const Color(0xFFE11D48),
         ),
       );
@@ -55,8 +55,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            result['message'] ?? 'تم التحقق من بيانات الطالب في الخادم وربطه بنجاح!',
-            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+            result['message'] ?? 'ØªÙ… Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø§Ù„Ø¨ ÙÙŠ Ø§Ù„Ø®Ø§Ø¯Ù… ÙˆØ±Ø¨Ø·Ù‡ Ø¨Ù†Ø¬Ø§Ø­!',
+            style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
           ),
           backgroundColor: const Color(0xFF15803D),
           duration: const Duration(seconds: 3),
@@ -66,7 +66,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['message'] ?? 'فشل التحقق من كود الطالب في الخادم', style: GoogleFonts.cairo(fontSize: 13)),
+          content: Text(result['message'] ?? 'ÙØ´Ù„ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨ ÙÙŠ Ø§Ù„Ø®Ø§Ø¯Ù…', style: GoogleFonts.almarai(fontSize: 13)),
           backgroundColor: const Color(0xFFE11D48),
         ),
       );
@@ -81,7 +81,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('تم مسح كود QR وقراءة بيانات الطالب بنجاح!', style: GoogleFonts.cairo()),
+        content: Text('ØªÙ… Ù…Ø³Ø­ ÙƒÙˆØ¯ QR ÙˆÙ‚Ø±Ø§Ø¡Ø© Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø§Ù„Ø¨ Ø¨Ù†Ø¬Ø§Ø­!', style: GoogleFonts.almarai()),
         backgroundColor: const Color(0xFF7C3AED),
       ),
     );
@@ -91,7 +91,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
   Widget build(BuildContext context) {
     final currentSchool = widget.api.activeSchoolName.isNotEmpty
         ? widget.api.activeSchoolName
-        : 'المدرسة الافتراضية';
+        : 'Ø§Ù„Ù…Ø¯Ø±Ø³Ø© Ø§Ù„Ø§ÙØªØ±Ø§Ø¶ÙŠØ©';
     final currentCode = widget.api.activeSchoolCode.isNotEmpty
         ? widget.api.activeSchoolCode
         : '1234';
@@ -103,8 +103,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         elevation: 0,
         centerTitle: true,
         title: Text(
-          'إضافة وربط طالب جديد',
-          style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+          'Ø¥Ø¶Ø§ÙØ© ÙˆØ±Ø¨Ø· Ø·Ø§Ù„Ø¨ Ø¬Ø¯ÙŠØ¯',
+          style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
@@ -114,7 +114,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
           IconButton(
             icon: const Icon(Icons.qr_code_scanner_rounded, size: 22, color: Color(0xFF0F172A)),
             onPressed: _simulateQrScan,
-            tooltip: 'مسح كود QR',
+            tooltip: 'Ù…Ø³Ø­ ÙƒÙˆØ¯ QR',
           ),
         ],
       ),
@@ -124,7 +124,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Card 1: "المدرسة"
+            // Card 1: "Ø§Ù„Ù…Ø¯Ø±Ø³Ø©"
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
@@ -148,8 +148,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        'بيانات المدرسة المعتمدة',
-                        style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                        'Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø¯Ø±Ø³Ø© Ø§Ù„Ù…Ø¹ØªÙ…Ø¯Ø©',
+                        style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                       ),
                     ],
                   ),
@@ -167,8 +167,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(currentSchool, style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
-                            Text('كود المدرسة: $currentCode', style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B))),
+                            Text(currentSchool, style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                            Text('ÙƒÙˆØ¯ Ø§Ù„Ù…Ø¯Ø±Ø³Ø©: $currentCode', style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B))),
                           ],
                         ),
                         const Icon(Icons.verified_rounded, color: Color(0xFF15803D), size: 20),
@@ -181,7 +181,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
             const SizedBox(height: 16),
 
-            // Card 2: "بيانات الطالب للدخول"
+            // Card 2: "Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø§Ù„Ø¨ Ù„Ù„Ø¯Ø®ÙˆÙ„"
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
@@ -208,15 +208,15 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            'كود وكلمة مرور الطالب',
-                            style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                            'ÙƒÙˆØ¯ ÙˆÙƒÙ„Ù…Ø© Ù…Ø±ÙˆØ± Ø§Ù„Ø·Ø§Ù„Ø¨',
+                            style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                           ),
                         ],
                       ),
                       TextButton.icon(
                         onPressed: _simulateQrScan,
                         icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
-                        label: Text('مسح QR', style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold)),
+                        label: Text('Ù…Ø³Ø­ QR', style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold)),
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFF0284C7),
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -226,7 +226,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Input 1: كود الطالب
+                  // Input 1: ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                     decoration: BoxDecoration(
@@ -242,10 +242,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                           child: TextField(
                             controller: _studentCodeController,
                             textAlign: TextAlign.right,
-                            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                            style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                             decoration: InputDecoration(
-                              hintText: 'كود الطالب (مثال: STD-2026-009)',
-                              hintStyle: GoogleFonts.cairo(fontSize: 13, color: const Color(0xFF94A3B8)),
+                              hintText: 'ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨ (Ù…Ø«Ø§Ù„: STD-2026-009)',
+                              hintStyle: GoogleFonts.almarai(fontSize: 13, color: const Color(0xFF94A3B8)),
                               border: InputBorder.none,
                             ),
                           ),
@@ -256,7 +256,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
 
                   const SizedBox(height: 12),
 
-                  // Input 2: كلمة المرور
+                  // Input 2: ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ±
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                     decoration: BoxDecoration(
@@ -273,10 +273,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             controller: _passwordController,
                             obscureText: _obscurePassword,
                             textAlign: TextAlign.right,
-                            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                            style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                             decoration: InputDecoration(
-                              hintText: 'كلمة مرور الطالب',
-                              hintStyle: GoogleFonts.cairo(fontSize: 13, color: const Color(0xFF94A3B8)),
+                              hintText: 'ÙƒÙ„Ù…Ø© Ù…Ø±ÙˆØ± Ø§Ù„Ø·Ø§Ù„Ø¨',
+                              hintStyle: GoogleFonts.almarai(fontSize: 13, color: const Color(0xFF94A3B8)),
                               border: InputBorder.none,
                             ),
                           ),
@@ -319,8 +319,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                                 const Icon(Icons.person_add_alt_1_rounded, size: 20),
                                 const SizedBox(width: 8),
                                 Text(
-                                  '+ إضافة وربط الطالب الآن',
-                                  style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold),
+                                  '+ Ø¥Ø¶Ø§ÙØ© ÙˆØ±Ø¨Ø· Ø§Ù„Ø·Ø§Ù„Ø¨ Ø§Ù„Ø¢Ù†',
+                                  style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
@@ -346,8 +346,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'نظام أمان الحساب المدرسي: يتم توثيق جهازك واعتماده فورياً للوصول الآمن لحساب الطالب.',
-                      style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold),
+                      'Ù†Ø¸Ø§Ù… Ø£Ù…Ø§Ù† Ø§Ù„Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…Ø¯Ø±Ø³ÙŠ: ÙŠØªÙ… ØªÙˆØ«ÙŠÙ‚ Ø¬Ù‡Ø§Ø²Ùƒ ÙˆØ§Ø¹ØªÙ…Ø§Ø¯Ù‡ ÙÙˆØ±ÙŠØ§Ù‹ Ù„Ù„ÙˆØµÙˆÙ„ Ø§Ù„Ø¢Ù…Ù† Ù„Ø­Ø³Ø§Ø¨ Ø§Ù„Ø·Ø§Ù„Ø¨.',
+                      style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -359,3 +359,4 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     );
   }
 }
+

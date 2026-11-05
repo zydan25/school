@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
 import 'chat_screen.dart';
@@ -31,27 +31,27 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
 
   final List<Map<String, String>> _playlist = [
     {
-      'title': '1. القواعد الإملائية: همزة القطع وألف الوصل',
+      'title': '1. Ø§Ù„Ù‚ÙˆØ§Ø¹Ø¯ Ø§Ù„Ø¥Ù…Ù„Ø§Ø¦ÙŠØ©: Ù‡Ù…Ø²Ø© Ø§Ù„Ù‚Ø·Ø¹ ÙˆØ£Ù„Ù Ø§Ù„ÙˆØµÙ„',
       'duration': '12:45',
-      'teacher': 'أ. أحمد السعيد',
+      'teacher': 'Ø£. Ø£Ø­Ù…Ø¯ Ø§Ù„Ø³Ø¹ÙŠØ¯',
       'completed': 'true',
     },
     {
-      'title': '2. مواضع همزة القطع في الأسماء والأفعال',
+      'title': '2. Ù…ÙˆØ§Ø¶Ø¹ Ù‡Ù…Ø²Ø© Ø§Ù„Ù‚Ø·Ø¹ ÙÙŠ Ø§Ù„Ø£Ø³Ù…Ø§Ø¡ ÙˆØ§Ù„Ø£ÙØ¹Ø§Ù„',
       'duration': '15:20',
-      'teacher': 'أ. أحمد السعيد',
+      'teacher': 'Ø£. Ø£Ø­Ù…Ø¯ Ø§Ù„Ø³Ø¹ÙŠØ¯',
       'completed': 'false',
     },
     {
-      'title': '3. تدريبات تطبيقية ونماذج وزارية',
+      'title': '3. ØªØ¯Ø±ÙŠØ¨Ø§Øª ØªØ·Ø¨ÙŠÙ‚ÙŠØ© ÙˆÙ†Ù…Ø§Ø°Ø¬ ÙˆØ²Ø§Ø±ÙŠØ©',
       'duration': '09:15',
-      'teacher': 'أ. أحمد السعيد',
+      'teacher': 'Ø£. Ø£Ø­Ù…Ø¯ Ø§Ù„Ø³Ø¹ÙŠØ¯',
       'completed': 'false',
     },
     {
-      'title': '4. اختبار ختامي قصير على الوحدة',
+      'title': '4. Ø§Ø®ØªØ¨Ø§Ø± Ø®ØªØ§Ù…ÙŠ Ù‚ØµÙŠØ± Ø¹Ù„Ù‰ Ø§Ù„ÙˆØ­Ø¯Ø©',
       'duration': '05:00',
-      'teacher': 'أ. أحمد السعيد',
+      'teacher': 'Ø£. Ø£Ø­Ù…Ø¯ Ø§Ù„Ø³Ø¹ÙŠØ¯',
       'completed': 'false',
     },
   ];
@@ -70,12 +70,12 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
         ),
         title: Text(
           widget.subjectName,
-          style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+          style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF0284C7)),
-            tooltip: 'اسأل المساعد الذكي عن هذا الدرس',
+            tooltip: 'Ø§Ø³Ø£Ù„ Ø§Ù„Ù…Ø³Ø§Ø¹Ø¯ Ø§Ù„Ø°ÙƒÙŠ Ø¹Ù† Ù‡Ø°Ø§ Ø§Ù„Ø¯Ø±Ø³',
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => ChatScreen(api: widget.api)),
@@ -124,7 +124,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                                 Text(
                                   widget.lessonTitle,
                                   textAlign: TextAlign.center,
-                                  style: GoogleFonts.cairo(
+                                  style: GoogleFonts.almarai(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,
@@ -132,7 +132,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                                 ),
                                 Text(
                                   widget.teacherName,
-                                  style: GoogleFonts.cairo(fontSize: 11, color: Colors.white70),
+                                  style: GoogleFonts.almarai(fontSize: 11, color: Colors.white70),
                                 ),
                               ],
                             ),
@@ -171,7 +171,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('04:15 / 12:45', style: GoogleFonts.cairo(fontSize: 11, color: Colors.white)),
+                          Text('04:15 / 12:45', style: GoogleFonts.almarai(fontSize: 11, color: Colors.white)),
                           const Row(
                             children: [
                               Icon(Icons.subtitles_rounded, color: Colors.white, size: 18),
@@ -190,7 +190,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
             ),
           ),
 
-          // 2. Video Title & Interactive Action Row (لم يعجبني • شارك • حفظ) matching Screenshot
+          // 2. Video Title & Interactive Action Row (Ù„Ù… ÙŠØ¹Ø¬Ø¨Ù†ÙŠ â€¢ Ø´Ø§Ø±Ùƒ â€¢ Ø­ÙØ¸) matching Screenshot
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Column(
@@ -198,7 +198,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
               children: [
                 Text(
                   widget.lessonTitle,
-                  style: GoogleFonts.cairo(
+                  style: GoogleFonts.almarai(
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF0F172A),
@@ -206,48 +206,48 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${widget.teacherName} • شرح متاح دون إنترنت',
-                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.bold),
+                  '${widget.teacherName} â€¢ Ø´Ø±Ø­ Ù…ØªØ§Ø­ Ø¯ÙˆÙ† Ø¥Ù†ØªØ±Ù†Øª',
+                  style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
 
-                // Action Bar matching Screenshot 1 (لم يعجبني • شارك • حفظ)
+                // Action Bar matching Screenshot 1 (Ù„Ù… ÙŠØ¹Ø¬Ø¨Ù†ÙŠ â€¢ Ø´Ø§Ø±Ùƒ â€¢ Ø­ÙØ¸)
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _buildActionButton(
                       icon: _isLiked ? Icons.thumb_up_rounded : Icons.thumb_up_outlined,
-                      label: 'أعجبني',
+                      label: 'Ø£Ø¹Ø¬Ø¨Ù†ÙŠ',
                       isActive: _isLiked,
                       onTap: () => setState(() => _isLiked = !_isLiked),
                     ),
                     _buildActionButton(
                       icon: Icons.thumb_down_outlined,
-                      label: 'لم يعجبني',
+                      label: 'Ù„Ù… ÙŠØ¹Ø¬Ø¨Ù†ÙŠ',
                       isActive: false,
                       onTap: () {},
                     ),
                     _buildActionButton(
                       icon: Icons.share_rounded,
-                      label: 'شارك',
+                      label: 'Ø´Ø§Ø±Ùƒ',
                       isActive: false,
                       onTap: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('تم نسخ رابط الدرس بنجاح ✓', style: GoogleFonts.cairo())),
+                          SnackBar(content: Text('ØªÙ… Ù†Ø³Ø® Ø±Ø§Ø¨Ø· Ø§Ù„Ø¯Ø±Ø³ Ø¨Ù†Ø¬Ø§Ø­ âœ“', style: GoogleFonts.almarai())),
                         );
                       },
                     ),
                     _buildActionButton(
                       icon: _isSaved ? Icons.bookmark_rounded : Icons.bookmark_outline_rounded,
-                      label: _isSaved ? 'محفوظ' : 'حفظ',
+                      label: _isSaved ? 'Ù…Ø­ÙÙˆØ¸' : 'Ø­ÙØ¸',
                       isActive: _isSaved,
                       onTap: () {
                         setState(() => _isSaved = !_isSaved);
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                              _isSaved ? 'تم حفظ الدرس في المفضلة ✓' : 'تمت إزالة الدرس من المفضلة',
-                              style: GoogleFonts.cairo(),
+                              _isSaved ? 'ØªÙ… Ø­ÙØ¸ Ø§Ù„Ø¯Ø±Ø³ ÙÙŠ Ø§Ù„Ù…ÙØ¶Ù„Ø© âœ“' : 'ØªÙ…Øª Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ø¯Ø±Ø³ Ù…Ù† Ø§Ù„Ù…ÙØ¶Ù„Ø©',
+                              style: GoogleFonts.almarai(),
                             ),
                           ),
                         );
@@ -268,12 +268,12 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  'محتويات الوحدة (${_playlist.length} دروس)',
-                  style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                  'Ù…Ø­ØªÙˆÙŠØ§Øª Ø§Ù„ÙˆØ­Ø¯Ø© (${_playlist.length} Ø¯Ø±ÙˆØ³)',
+                  style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
                 ),
                 Text(
-                  'مكتمل 1 من ${_playlist.length}',
-                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF15803D), fontWeight: FontWeight.bold),
+                  'Ù…ÙƒØªÙ…Ù„ 1 Ù…Ù† ${_playlist.length}',
+                  style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF15803D), fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -331,7 +331,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                                 item['title']!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.cairo(
+                                style: GoogleFonts.almarai(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.bold,
                                   color: isSelected ? const Color(0xFF0284C7) : const Color(0xFF0F172A),
@@ -341,12 +341,12 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                                 children: [
                                   Text(
                                     item['duration']!,
-                                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                                    style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    '• ${item['teacher']!}',
-                                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                    'â€¢ ${item['teacher']!}',
+                                    style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF94A3B8)),
                                   ),
                                 ],
                               ),
@@ -381,10 +381,11 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
           children: [
             Icon(icon, color: color, size: 20),
             const SizedBox(height: 2),
-            Text(label, style: GoogleFonts.cairo(fontSize: 10.5, color: color, fontWeight: FontWeight.bold)),
+            Text(label, style: GoogleFonts.almarai(fontSize: 10.5, color: color, fontWeight: FontWeight.bold)),
           ],
         ),
       ),
     );
   }
 }
+

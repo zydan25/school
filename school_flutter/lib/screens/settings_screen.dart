@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/api_service.dart';
@@ -60,9 +60,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               theme == 'abwaab'
                   ? 'تم تفعيل ثيم أبواب التعليمي العصري بنجاح 🎓'
                   : 'تم تفعيل ثيم جيب المالي 💼',
-              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+              style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
             ),
-            backgroundColor: const Color(0xFF0F172A),
+            backgroundColor: const Color(0xFF1E60FF),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -80,9 +80,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(
             content: Text(
               cols == 3 ? 'تم تفعيل نمط 3 أيقونات (نمط جيب العصري)' : 'تم تفعيل نمط أيقونتين (تفصيلي)',
-              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+              style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
             ),
-            backgroundColor: const Color(0xFF0F172A),
+            backgroundColor: const Color(0xFF1E60FF),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -113,7 +113,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             const Icon(Icons.lock_rounded, color: Color(0xFFE11D48)),
             const SizedBox(width: 8),
-            Text('تعيين رمز قفل البرنامج (PIN)', style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold)),
+            Text('تعيين رمز قفل البرنامج (PIN)', style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold)),
           ],
         ),
         content: Column(
@@ -122,7 +122,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Text(
               'أدخل رمز مرور مكوناً من 4 أرقام لحماية التطبيق عند الفتح:',
-              style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
+              style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B)),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -131,10 +131,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               maxLength: 4,
               obscureText: true,
               textAlign: TextAlign.center,
-              style: GoogleFonts.cairo(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 12),
+              style: GoogleFonts.almarai(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 12),
               decoration: InputDecoration(
                 hintText: '••••',
-                hintStyle: GoogleFonts.cairo(letterSpacing: 12),
+                hintStyle: GoogleFonts.almarai(letterSpacing: 12),
                 counterText: '',
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               ),
@@ -144,7 +144,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('إلغاء', style: GoogleFonts.cairo(color: const Color(0xFF64748B))),
+            child: Text('إلغاء', style: GoogleFonts.almarai(color: const Color(0xFF64748B))),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -160,7 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('تم تفعيل رمز القفل بنجاح ✓', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                      content: Text('تم تفعيل رمز القفل بنجاح ✓', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
                       backgroundColor: const Color(0xFF15803D),
                     ),
                   );
@@ -172,7 +172,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: Text('حفظ الرمز', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            child: Text('حفظ الرمز', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -189,7 +189,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(
             content: Text(
               value ? 'تم تفعيل الدخول ببصمة الإصبع والوجه ✓' : 'تم إلغاء تفعيل البصمة',
-              style: GoogleFonts.cairo(fontWeight: FontWeight.bold),
+              style: GoogleFonts.almarai(fontWeight: FontWeight.bold),
             ),
             backgroundColor: value ? const Color(0xFF15803D) : const Color(0xFF64748B),
           ),
@@ -203,32 +203,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text('مسح الذاكرة المؤقتة', style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold)),
+        title: Text('مسح الذاكرة المؤقتة', style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.bold)),
         content: Text(
           'سيتم تفريغ الصور والملفات المخزنة مؤقتاً لتوفير المساحة وتسريع التطبيق.',
-          style: GoogleFonts.cairo(fontSize: 13),
+          style: GoogleFonts.almarai(fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('إلغاء', style: GoogleFonts.cairo(color: const Color(0xFF64748B))),
+            child: Text('إلغاء', style: GoogleFonts.almarai(color: const Color(0xFF64748B))),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('تم تفريغ الذاكرة المؤقتة بنجاح (تم تحرير 24.6 MB) ✓', style: GoogleFonts.cairo()),
+                  content: Text('تم تفريغ الذاكرة المؤقتة بنجاح (تم تحرير 24.6 MB) ✓', style: GoogleFonts.almarai()),
                   backgroundColor: const Color(0xFF15803D),
                 ),
               );
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF0F172A),
+              backgroundColor: const Color(0xFF1E60FF),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: Text('تفريغ الآن', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+            child: Text('تفريغ الآن', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -251,7 +251,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(
         title: Text(
           'الملف الشخصي والإعدادات',
-          style: GoogleFonts.cairo(fontSize: 17, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+          style: GoogleFonts.almarai(fontSize: 17, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
         ),
         backgroundColor: Colors.white,
         elevation: 0,
@@ -284,12 +284,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Text(
                     'اختر الثيم المفضل للواجهات والأيقونات',
-                    style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                    style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'الثيم يغير شكل الهيدر، الألوان، البطائق الملونة، الأيقونات، وطريقة عرض المواد التعليمية.',
-                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                    style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -332,12 +332,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Text(
                     'نمط عرض بطائق الخدمات في الرئيسية',
-                    style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                    style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'اختر النمط المناسب لشاشتك، النمط الافتراضي هو 3 أيقونات في الصف كالتطبيقات العصرية.',
-                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                    style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -379,11 +379,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               activeThumbColor: const Color(0xFFE11D48),
               title: Text(
                 'قفل التطبيق برمز PIN',
-                style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
               ),
               subtitle: Text(
                 _pinLockEnabled ? 'الرمز مفعل (4 أرقام)' : 'طلب رمز سري عند فتح التطبيق',
-                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
               ),
               secondary: Container(
                 padding: const EdgeInsets.all(8),
@@ -401,11 +401,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               activeThumbColor: const Color(0xFF0D9488),
               title: Text(
                 'الدخول بالبصمة الحيوية',
-                style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
               ),
               subtitle: Text(
                 'استخدام بصمة الإصبع أو الوجه للدخول السريع',
-                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
               ),
               secondary: Container(
                 padding: const EdgeInsets.all(8),
@@ -474,11 +474,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               title: Text(
                 'مسح الذاكرة المؤقتة (Cache)',
-                style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
               ),
               subtitle: Text(
                 'تفريغ البيانات والملفات المؤقتة لتسريع التطبيق',
-                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
               ),
               trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF94A3B8)),
             ),
@@ -490,21 +490,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 8),
           _buildCardContainer([
             ListTile(
-              title: Text('إصدار مدرستي الذكية', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold)),
-              subtitle: Text('الإصدار 1.2.0 (بناء معتمد مستقر)', style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B))),
+              title: Text('إصدار مدرستي الذكية', style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold)),
+              subtitle: Text('الإصدار 1.2.0 (بناء معتمد مستقر)', style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B))),
               trailing: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: const Color(0xFFE2E8F0),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text('v1.2.0', style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold)),
+                child: Text('v1.2.0', style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold)),
               ),
             ),
             const Divider(height: 1, indent: 20),
             ListTile(
-              title: Text('المدرسة المعتمدة', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold)),
-              subtitle: Text('${widget.api.activeSchoolName} • كود ${widget.api.activeSchoolCode}', style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B))),
+              title: Text('المدرسة المعتمدة', style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold)),
+              subtitle: Text('${widget.api.activeSchoolName} • كود ${widget.api.activeSchoolCode}', style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B))),
             ),
           ]),
           const SizedBox(height: 24),
@@ -516,7 +516,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               widget.api.logout();
             },
             icon: const Icon(Icons.logout_rounded, size: 20),
-            label: Text('تسجيل الخروج من المنظومة', style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold)),
+            label: Text('تسجيل الخروج من المنظومة', style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFFF1F2),
               foregroundColor: const Color(0xFFE11D48),
@@ -547,10 +547,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           CircleAvatar(
             radius: 30,
-            backgroundColor: const Color(0xFF0F172A),
+            backgroundColor: const Color(0xFF1E60FF),
             child: Text(
               widget.api.currentUserName.isNotEmpty ? widget.api.currentUserName.characters.first : 'م',
-              style: GoogleFonts.cairo(fontSize: 22, color: Colors.white, fontWeight: FontWeight.bold),
+              style: GoogleFonts.almarai(fontSize: 22, color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
           const SizedBox(width: 14),
@@ -560,11 +560,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Text(
                   widget.api.currentUserName,
-                  style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+                  style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
                 ),
                 Text(
                   '${widget.api.activeSchoolName} • كود ${widget.api.activeSchoolCode}',
-                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+                  style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 6),
                 Wrap(
@@ -585,7 +585,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 : r == 'teacher'
                                     ? 'معلم'
                                     : 'إدارة',
-                        style: GoogleFonts.cairo(
+                        style: GoogleFonts.almarai(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
                           color: isCurrent ? Colors.white : const Color(0xFF64748B),
@@ -633,11 +633,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Text(
                     'طلابي والطلاب المضافون (${widget.api.students.length})',
-                    style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0369A1)),
+                    style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0369A1)),
                   ),
                   Text(
                     'عرض بطائق الطلاب والتبديل المباشر بضغطة زر أو إضافة طالب جديد',
-                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF0284C7)),
+                    style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF0284C7)),
                   ),
                 ],
               ),
@@ -656,7 +656,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(width: 8),
         Text(
           title,
-          style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+          style: GoogleFonts.almarai(fontSize: 14, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
         ),
       ],
     );
@@ -702,7 +702,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text(
               title,
               textAlign: TextAlign.center,
-              style: GoogleFonts.cairo(
+              style: GoogleFonts.almarai(
                 fontSize: 12,
                 fontWeight: FontWeight.bold,
                 color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF475569),
@@ -711,7 +711,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: GoogleFonts.cairo(fontSize: 9.5, color: const Color(0xFF64748B)),
+              style: GoogleFonts.almarai(fontSize: 9.5, color: const Color(0xFF64748B)),
             ),
           ],
         ),
@@ -729,8 +729,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       value: value,
       onChanged: onChanged,
       activeThumbColor: const Color(0xFF0F172A),
-      title: Text(title, style: GoogleFonts.cairo(fontSize: 12.5, fontWeight: FontWeight.bold)),
-      subtitle: Text(subtitle, style: GoogleFonts.cairo(fontSize: 10.5, color: const Color(0xFF64748B))),
+      title: Text(title, style: GoogleFonts.almarai(fontSize: 12.5, fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: GoogleFonts.almarai(fontSize: 10.5, color: const Color(0xFF64748B))),
     );
   }
 }
+
+

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
 import '../core/theme.dart';
@@ -14,7 +14,7 @@ class ServicesScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(
           'الخدمات المدرسية والمرافق',
-          style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain),
+          style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain),
         ),
         centerTitle: true,
         leading: IconButton(
@@ -109,7 +109,7 @@ class ServicesScreen extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: GoogleFonts.cairo(
+                      style: GoogleFonts.almarai(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: AppTheme.textMain,
@@ -117,7 +117,7 @@ class ServicesScreen extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
-                      style: GoogleFonts.cairo(
+                      style: GoogleFonts.almarai(
                         fontSize: 11,
                         color: AppTheme.textMuted,
                         fontWeight: FontWeight.w600,
@@ -143,10 +143,11 @@ class ServicesScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMuted, fontWeight: FontWeight.bold)),
-          Text(value, style: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMain, fontWeight: FontWeight.w700)),
+          Text(label, style: GoogleFonts.almarai(fontSize: 12, color: AppTheme.textMuted, fontWeight: FontWeight.bold)),
+          Text(value, style: GoogleFonts.almarai(fontSize: 12, color: AppTheme.textMain, fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 }
+

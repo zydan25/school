@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../core/api_service.dart';
 import '../core/theme.dart';
@@ -31,7 +31,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
     if (remaining <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('تم سداد كافة الرسوم الدراسية المقررة بالكامل!', style: GoogleFonts.cairo()),
+          content: Text('تم سداد كافة الرسوم الدراسية المقررة بالكامل!', style: GoogleFonts.almarai()),
           backgroundColor: AppTheme.screenshotGreen,
         ),
       );
@@ -93,11 +93,11 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                           children: [
                             Text(
                               'سداد فوري عبر محفظة جيب',
-                              style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                              style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                             ),
                             Text(
                               'رقم الحساب: ${widget.api.userPhone}',
-                              style: GoogleFonts.cairo(fontSize: 11, color: AppTheme.jaibRed, fontWeight: FontWeight.w600),
+                              style: GoogleFonts.almarai(fontSize: 11, color: AppTheme.jaibRed, fontWeight: FontWeight.w600),
                             ),
                           ],
                         ),
@@ -114,7 +114,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
 
                 Text(
                   'اختر المبلغ المراد سداده:',
-                  style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF64748B)),
+                  style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF64748B)),
                 ),
                 const SizedBox(height: 8),
 
@@ -147,10 +147,10 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                 TextField(
                   controller: customAmountController,
                   keyboardType: TextInputType.number,
-                  style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold),
+                  style: GoogleFonts.almarai(fontSize: 15, fontWeight: FontWeight.bold),
                   decoration: InputDecoration(
                     labelText: 'مبلغ السداد (ريال)',
-                    labelStyle: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B)),
+                    labelStyle: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B)),
                     prefixIcon: const Icon(Icons.payments_outlined, color: AppTheme.jaibRed, size: 20),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                     focusedBorder: OutlineInputBorder(
@@ -184,7 +184,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                     ),
                     child: Text(
                       'تأكيد سداد ${selectedAmount.toInt()} ريال الآن',
-                      style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+                      style: GoogleFonts.almarai(fontSize: 13, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -201,7 +201,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
     return ChoiceChip(
       label: Text(
         label,
-        style: GoogleFonts.cairo(
+        style: GoogleFonts.almarai(
           fontSize: 11,
           fontWeight: FontWeight.bold,
           color: isSelected ? Colors.white : const Color(0xFF0F172A),
@@ -238,11 +238,11 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
               const SizedBox(height: 10),
               Text(
                 'تمت عملية السداد بنجاح',
-                style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
               ),
               Text(
                 'سند قبض رقم #${widget.api.paymentReceipts.first['id']}',
-                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
               ),
               const SizedBox(height: 14),
 
@@ -269,11 +269,11 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(ctx),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0F172A),
+                    backgroundColor: const Color(0xFF1E60FF),
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: Text('حسناً', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                  child: Text('حسناً', style: GoogleFonts.almarai(fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -289,8 +289,8 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B))),
-          Text(value, style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+          Text(label, style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B))),
+          Text(value, style: GoogleFonts.almarai(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
         ],
       ),
     );
@@ -313,7 +313,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
             elevation: 0,
             title: Text(
               'الرسوم والأقساط الدراسية',
-              style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+              style: GoogleFonts.almarai(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
             ),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
@@ -345,7 +345,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                             children: [
                               Text(
                                 'المتبقي للسداد (${widget.api.currentStudent?.fullName.split(' ').first ?? 'الطالب'})',
-                                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
                               ),
                               Row(
                                 crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -353,14 +353,14 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                                 children: [
                                   Text(
                                     '${remaining.toInt()}',
-                                    style: GoogleFonts.cairo(
+                                    style: GoogleFonts.almarai(
                                       fontSize: 26,
                                       fontWeight: FontWeight.w900,
                                       color: remaining > 0 ? AppTheme.jaibRed : AppTheme.screenshotGreen,
                                     ),
                                   ),
                                   const SizedBox(width: 4),
-                                  Text('ريال', style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF64748B))),
+                                  Text('ريال', style: GoogleFonts.almarai(fontSize: 12, color: const Color(0xFF64748B))),
                                 ],
                               ),
                             ],
@@ -373,7 +373,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                             ),
                             child: Text(
                               remaining == 0 ? 'مسدد بالكامل' : 'قيد الاستحقاق',
-                              style: GoogleFonts.cairo(
+                              style: GoogleFonts.almarai(
                                 fontSize: 11,
                                 fontWeight: FontWeight.bold,
                                 color: remaining == 0 ? AppTheme.screenshotGreen : AppTheme.jaibRed,
@@ -387,8 +387,8 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('نسبة الإنجاز: ${(progress * 100).toInt()}%', style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B))),
-                          Text('المسدد: ${paid.toInt()} / ${total.toInt()} ريال', style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                          Text('نسبة الإنجاز: ${(progress * 100).toInt()}%', style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF64748B))),
+                          Text('المسدد: ${paid.toInt()} / ${total.toInt()} ريال', style: GoogleFonts.almarai(fontSize: 10, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -422,7 +422,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                     icon: const Icon(Icons.account_balance_wallet_rounded, size: 18),
                     label: Text(
                       'سداد فوري عبر محفظة جيب الإلكترونية',
-                      style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
+                      style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -440,7 +440,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                     controller: _tabController,
                     labelColor: AppTheme.screenshotBlue,
                     unselectedLabelColor: const Color(0xFF64748B),
-                    labelStyle: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold),
+                    labelStyle: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold),
                     indicatorColor: AppTheme.screenshotBlue,
                     indicatorSize: TabBarIndicatorSize.tab,
                     tabs: const [
@@ -494,18 +494,18 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
                                     children: [
                                       Text(
                                         rec['title'],
-                                        style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                                        style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                                       ),
                                       Text(
                                         '${rec['id']} • ${rec['method']}',
-                                        style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B)),
+                                        style: GoogleFonts.almarai(fontSize: 10, color: const Color(0xFF64748B)),
                                       ),
                                     ],
                                   ),
                                 ),
                                 Text(
                                   '${(rec['amount'] as double).toInt()} ر.ي',
-                                  style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.screenshotGreen),
+                                  style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.screenshotGreen),
                                 ),
                               ],
                             ),
@@ -541,11 +541,11 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
             children: [
               Text(
                 title,
-                style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: GoogleFonts.almarai(fontSize: 12, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
               ),
               Text(
                 amount,
-                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                style: GoogleFonts.almarai(fontSize: 11, color: const Color(0xFF64748B)),
               ),
             ],
           ),
@@ -557,7 +557,7 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
             ),
             child: Text(
               isPaid ? 'مسدد' : 'متبقي',
-              style: GoogleFonts.cairo(
+              style: GoogleFonts.almarai(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
                 color: isPaid ? AppTheme.screenshotGreen : AppTheme.jaibRed,
@@ -569,3 +569,5 @@ class _FinanceScreenState extends State<FinanceScreen> with SingleTickerProvider
     );
   }
 }
+
+
