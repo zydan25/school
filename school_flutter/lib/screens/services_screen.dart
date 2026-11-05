@@ -14,7 +14,7 @@ class ServicesScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(
           'الخدمات المدرسية والمرافق',
-          style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain),
+          style: GoogleFonts.tajawal(fontSize: 16, fontWeight: FontWeight.w800, color: AppTheme.textMain),
         ),
         centerTitle: true,
         leading: IconButton(
@@ -109,7 +109,7 @@ class ServicesScreen extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: GoogleFonts.cairo(
+                      style: GoogleFonts.tajawal(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: AppTheme.textMain,
@@ -117,7 +117,7 @@ class ServicesScreen extends StatelessWidget {
                     ),
                     Text(
                       subtitle,
-                      style: GoogleFonts.cairo(
+                      style: GoogleFonts.tajawal(
                         fontSize: 11,
                         color: AppTheme.textMuted,
                         fontWeight: FontWeight.w600,
@@ -143,8 +143,8 @@ class ServicesScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMuted, fontWeight: FontWeight.bold)),
-          Text(value, style: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMain, fontWeight: FontWeight.w700)),
+          Text(label, style: GoogleFonts.tajawal(fontSize: 12, color: AppTheme.textMuted, fontWeight: FontWeight.bold)),
+          Text(value, style: GoogleFonts.tajawal(fontSize: 12, color: AppTheme.textMain, fontWeight: FontWeight.w700)),
         ],
       ),
     );

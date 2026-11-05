@@ -60,7 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               theme == 'abwaab'
                   ? 'تم تفعيل ثيم المنهاج والتعليم (أبواب) 🎓'
                   : 'تم تفعيل ثيم الخدمات السريعة (جيب) 💼',
-              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold),
+              style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontWeight: FontWeight.bold),
             ),
             backgroundColor: const Color(0xFF1E60FF),
             duration: const Duration(seconds: 2),
@@ -80,7 +80,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(
             content: Text(
               cols == 3 ? 'تم تفعيل نمط 3 أيقونات في الصف (الافتراضي)' : 'تم تفعيل نمط أيقونتين في الصف',
-              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold),
+              style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontWeight: FontWeight.bold),
             ),
             backgroundColor: const Color(0xFF1E60FF),
             duration: const Duration(seconds: 2),
@@ -123,7 +123,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             const SizedBox(width: 10),
             Text(
               'تعيين رمز قفل البرنامج (PIN)',
-              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 14.5, fontWeight: FontWeight.bold, color: const Color(0xFF111111)),
+              style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 14.5, fontWeight: FontWeight.bold, color: const Color(0xFF111111)),
             ),
           ],
         ),
@@ -133,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Text(
               'أدخل رمز مرور مكوناً من 4 أرقام لحماية التطبيق عند الفتح:',
-              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12, color: const Color(0xFF64748B)),
+              style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 12, color: const Color(0xFF64748B)),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -142,13 +142,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               maxLength: 4,
               obscureText: true,
               textAlign: TextAlign.center,
-              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 12),
+              style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 12),
               decoration: InputDecoration(
                 hintText: '••••',
                 hintStyle: const TextStyle(letterSpacing: 12),
                 counterText: '',
                 filled: true,
-                fillColor: const Color(0xFFF8FAFC),
+                fillColor: Colors.white,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                 enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF1E60FF), width: 1.5)),
@@ -159,7 +159,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('إلغاء', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
+            child: Text('إلغاء', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -175,7 +175,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text('تم تفعيل رمز القفل بنجاح ✓', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
+                      content: Text('تم تفعيل رمز القفل بنجاح ✓', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontWeight: FontWeight.bold)),
                       backgroundColor: const Color(0xFF15803D),
                     ),
                   );
@@ -188,7 +188,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
-            child: Text('حفظ الرمز', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
+            child: Text('حفظ الرمز', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -205,7 +205,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(
             content: Text(
               value ? 'تم تفعيل الدخول ببصمة الإصبع والوجه ✓' : 'تم إلغاء تفعيل البصمة',
-              style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold),
+              style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontWeight: FontWeight.bold),
             ),
             backgroundColor: value ? const Color(0xFF15803D) : const Color(0xFF64748B),
           ),
@@ -220,22 +220,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text('مسح الذاكرة المؤقتة', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 15, fontWeight: FontWeight.bold)),
+        title: Text('مسح الذاكرة المؤقتة', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 15, fontWeight: FontWeight.bold)),
         content: Text(
           'سيتم تفريغ الصور والملفات المخزنة مؤقتاً لتوفير المساحة وتسريع أداء التطبيق.',
-          style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, color: const Color(0xFF64748B)),
+          style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 12.5, color: const Color(0xFF64748B)),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('إلغاء', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
+            child: Text('إلغاء', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('تم تفريغ الذاكرة المؤقتة بنجاح (تم تحرير 24.6 MB) ✓', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
+                  content: Text('تم تفريغ الذاكرة المؤقتة بنجاح (تم تحرير 24.6 MB) ✓', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontWeight: FontWeight.bold)),
                   backgroundColor: const Color(0xFF15803D),
                 ),
               );
@@ -245,7 +245,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: Text('تفريغ الآن', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
+            child: Text('تفريغ الآن', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -269,7 +269,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title: Text(
           'الإعدادات والحساب',
           style: TextStyle(
-            fontFamily: GoogleFonts.cairo().fontFamily,
+            fontFamily: GoogleFonts.tajawal().fontFamily,
             fontSize: 16,
             fontWeight: FontWeight.w800,
             color: const Color(0xFF111111),
@@ -305,7 +305,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     'الثيم العام للواجهات والأيقونات',
                     style: TextStyle(
-                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontFamily: GoogleFonts.tajawal().fontFamily,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF1E293B),
@@ -315,7 +315,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     'يحدد الهيدر والألوان وأيقونات المواد والخدمات المدرسية',
                     style: TextStyle(
-                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontFamily: GoogleFonts.tajawal().fontFamily,
                       fontSize: 10.5,
                       color: const Color(0xFF777777),
                     ),
@@ -353,7 +353,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     'توزيع بطائق الخدمات في الصفحة الرئيسية',
                     style: TextStyle(
-                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontFamily: GoogleFonts.tajawal().fontFamily,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
                       color: const Color(0xFF1E293B),
@@ -363,7 +363,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Text(
                     'الافتراضي هو 3 أيقونات في الصف كالتطبيقات العصرية المنظمة',
                     style: TextStyle(
-                      fontFamily: GoogleFonts.cairo().fontFamily,
+                      fontFamily: GoogleFonts.tajawal().fontFamily,
                       fontSize: 10.5,
                       color: const Color(0xFF777777),
                     ),
@@ -412,7 +412,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: Text(
                 'قفل التطبيق برمز PIN',
                 style: TextStyle(
-                  fontFamily: GoogleFonts.cairo().fontFamily,
+                  fontFamily: GoogleFonts.tajawal().fontFamily,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF1E293B),
@@ -420,7 +420,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 _pinLockEnabled ? 'الرمز مفعل (4 أرقام) - اضغط للتغيير' : 'طلب رمز سري عند فتح التطبيق للحماية',
-                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
+                style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
               ),
               secondary: Container(
                 padding: const EdgeInsets.all(8),
@@ -440,7 +440,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: Text(
                 'الدخول بالبصمة الحيوية',
                 style: TextStyle(
-                  fontFamily: GoogleFonts.cairo().fontFamily,
+                  fontFamily: GoogleFonts.tajawal().fontFamily,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF1E293B),
@@ -448,7 +448,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 'استخدام بصمة الإصبع أو الوجه للدخول السريع',
-                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
+                style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
               ),
               secondary: Container(
                 padding: const EdgeInsets.all(8),
@@ -510,7 +510,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
+                  color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: const Icon(Icons.cleaning_services_rounded, color: Color(0xFF475569), size: 18),
@@ -518,7 +518,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: Text(
                 'مسح الذاكرة المؤقتة (Cache)',
                 style: TextStyle(
-                  fontFamily: GoogleFonts.cairo().fontFamily,
+                  fontFamily: GoogleFonts.tajawal().fontFamily,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF1E293B),
@@ -526,7 +526,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 'تفريغ الصور والملفات المخزنة مؤقتاً (24.6 MB)',
-                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
+                style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
               ),
               trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Color(0xFF94A3B8)),
             ),
@@ -538,7 +538,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (mounted) {
                   messenger.showSnackBar(
                     SnackBar(
-                      content: Text('تمت مزامنة البيانات مع الخادم بنجاح ✓', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
+                      content: Text('تمت مزامنة البيانات مع الخادم بنجاح ✓', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontWeight: FontWeight.bold)),
                       backgroundColor: const Color(0xFF15803D),
                     ),
                   );
@@ -555,7 +555,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: Text(
                 'مزامنة البيانات الآن',
                 style: TextStyle(
-                  fontFamily: GoogleFonts.cairo().fontFamily,
+                  fontFamily: GoogleFonts.tajawal().fontFamily,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF1E293B),
@@ -563,7 +563,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 'تحديث الجداول والمواد والدرجات من السيرفر المدرسي',
-                style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
+                style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 10.5, color: const Color(0xFF777777)),
               ),
               trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 13, color: Color(0xFF94A3B8)),
             ),
@@ -575,8 +575,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 8),
           _buildCardContainer([
             ListTile(
-              title: Text('إصدار مدرستي الذكية', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
-              subtitle: Text('الإصدار v1.2.0 (بناء معتمد مستقر)', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777))),
+              title: Text('إصدار مدرستي الذكية', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+              subtitle: Text('الإصدار v1.2.0 (بناء معتمد مستقر)', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 10.5, color: const Color(0xFF777777))),
               trailing: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
@@ -584,13 +584,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
-                child: Text('v1.2.0', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 11, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B))),
+                child: Text('v1.2.0', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 11, fontWeight: FontWeight.w800, color: const Color(0xFF1E293B))),
               ),
             ),
             const Divider(height: 1, indent: 20, color: Color(0xFFF1F5F9)),
             ListTile(
-              title: Text('المدرسة المعتمدة', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
-              subtitle: Text('${widget.api.activeSchoolName} • كود ${widget.api.activeSchoolCode}', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 10.5, color: const Color(0xFF777777))),
+              title: Text('المدرسة المعتمدة', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 12.5, fontWeight: FontWeight.w700, color: const Color(0xFF1E293B))),
+              subtitle: Text('${widget.api.activeSchoolName} • كود ${widget.api.activeSchoolCode}', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 10.5, color: const Color(0xFF777777))),
             ),
           ]),
           const SizedBox(height: 24),
@@ -601,7 +601,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _showLogoutDialog();
             },
             icon: const Icon(Icons.logout_rounded, size: 18),
-            label: Text('تسجيل الخروج من الحساب', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 13, fontWeight: FontWeight.bold)),
+            label: Text('تسجيل الخروج من الحساب', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 13, fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFFFF1F2),
               foregroundColor: const Color(0xFFE11D48),
@@ -625,12 +625,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Text('تسجيل الخروج', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 15, fontWeight: FontWeight.bold)),
-        content: Text('هل أنت متأكد من رغبتك في تسجيل الخروج من التطبيق؟', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 12.5, color: const Color(0xFF64748B))),
+        title: Text('تسجيل الخروج', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 15, fontWeight: FontWeight.bold)),
+        content: Text('هل أنت متأكد من رغبتك في تسجيل الخروج من التطبيق؟', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 12.5, color: const Color(0xFF64748B))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('إلغاء', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
+            child: Text('إلغاء', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, color: const Color(0xFF64748B), fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -643,7 +643,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
-            child: Text('خروج', style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontWeight: FontWeight.bold)),
+            child: Text('خروج', style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -675,7 +675,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     backgroundColor: const Color(0xFF1E60FF).withValues(alpha: 0.1),
                     child: Text(
                       displayName.isNotEmpty ? displayName.characters.first : 'ط',
-                      style: TextStyle(fontFamily: GoogleFonts.cairo().fontFamily, fontSize: 20, color: const Color(0xFF1E60FF), fontWeight: FontWeight.bold),
+                      style: TextStyle(fontFamily: GoogleFonts.tajawal().fontFamily, fontSize: 20, color: const Color(0xFF1E60FF), fontWeight: FontWeight.bold),
                     ),
                   ),
                   Positioned(
@@ -703,7 +703,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: GoogleFonts.cairo().fontFamily,
+                        fontFamily: GoogleFonts.tajawal().fontFamily,
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
                         color: const Color(0xFF111111),
@@ -714,7 +714,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontFamily: GoogleFonts.cairo().fontFamily,
+                        fontFamily: GoogleFonts.tajawal().fontFamily,
                         fontSize: 11,
                         color: const Color(0xFF777777),
                         fontWeight: FontWeight.w600,
@@ -730,7 +730,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Text(
                         'رقم القيد: $studentId',
                         style: TextStyle(
-                          fontFamily: GoogleFonts.cairo().fontFamily,
+                          fontFamily: GoogleFonts.tajawal().fontFamily,
                           fontSize: 9.5,
                           fontWeight: FontWeight.bold,
                           color: const Color(0xFF475569),
@@ -777,7 +777,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Text(
                           'عرض وإدارة طلابي (${widget.api.students.length})',
                           style: TextStyle(
-                            fontFamily: GoogleFonts.cairo().fontFamily,
+                            fontFamily: GoogleFonts.tajawal().fontFamily,
                             fontSize: 12,
                             fontWeight: FontWeight.w800,
                             color: const Color(0xFF0369A1),
@@ -786,7 +786,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Text(
                           'التبديل بين بطائق الطلاب بضغطة زر أو إضافة طالب جديد',
                           style: TextStyle(
-                            fontFamily: GoogleFonts.cairo().fontFamily,
+                            fontFamily: GoogleFonts.tajawal().fontFamily,
                             fontSize: 10,
                             color: const Color(0xFF0284C7),
                           ),
@@ -812,7 +812,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Text(
           title,
           style: TextStyle(
-            fontFamily: GoogleFonts.cairo().fontFamily,
+            fontFamily: GoogleFonts.tajawal().fontFamily,
             fontSize: 13,
             fontWeight: FontWeight.w800,
             color: const Color(0xFF1E293B),
@@ -848,7 +848,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+          color: isSelected ? const Color(0xFFF0F7FF) : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isSelected ? const Color(0xFF1E60FF) : const Color(0xFFE2E8F0),
@@ -865,7 +865,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: GoogleFonts.cairo().fontFamily,
+                fontFamily: GoogleFonts.tajawal().fontFamily,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: isSelected ? const Color(0xFF1E60FF) : const Color(0xFF1E293B),
@@ -878,7 +878,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontFamily: GoogleFonts.cairo().fontFamily,
+                fontFamily: GoogleFonts.tajawal().fontFamily,
                 fontSize: 9,
                 color: const Color(0xFF777777),
                 height: 1.2,
@@ -904,7 +904,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       title: Text(
         title,
         style: TextStyle(
-          fontFamily: GoogleFonts.cairo().fontFamily,
+          fontFamily: GoogleFonts.tajawal().fontFamily,
           fontSize: 12,
           fontWeight: FontWeight.w700,
           color: const Color(0xFF1E293B),
@@ -913,7 +913,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       subtitle: Text(
         subtitle,
         style: TextStyle(
-          fontFamily: GoogleFonts.cairo().fontFamily,
+          fontFamily: GoogleFonts.tajawal().fontFamily,
           fontSize: 10,
           color: const Color(0xFF777777),
         ),

@@ -100,7 +100,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
           children: [
             Text(
               sub.name,
-              style: GoogleFonts.cairo(
+              style: GoogleFonts.tajawal(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
                 color: const Color(0xFF1A1D1F),
@@ -166,7 +166,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
           // 2. "أسئلة خصيصاً لك" matching media_1793903260400_0cb23ad7.jpg
           Text(
             'أسئلة خصيصاً لك',
-            style: GoogleFonts.cairo(
+            style: GoogleFonts.tajawal(
               fontSize: 14.5,
               fontWeight: FontWeight.w700,
               color: const Color(0xFF1A1D1F),
@@ -237,7 +237,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                   Expanded(
                     child: Text(
                       '$studentFirstName، أخطائك السابقة هنا!',
-                      style: GoogleFonts.cairo(
+                      style: GoogleFonts.tajawal(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
                         color: const Color(0xFF1A1D1F),
@@ -254,7 +254,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
           // 3. "اختبارات جاهزة" matching media_1793903260400_0cb23ad7.jpg
           Text(
             'اختبارات جاهزة',
-            style: GoogleFonts.cairo(
+            style: GoogleFonts.tajawal(
               fontSize: 14.5,
               fontWeight: FontWeight.w700,
               color: const Color(0xFF1A1D1F),
@@ -289,7 +289,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                   Expanded(
                     child: Text(
                       'اختبارات الوحدة',
-                      style: GoogleFonts.cairo(
+                      style: GoogleFonts.tajawal(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
                         color: const Color(0xFF1A1D1F),
@@ -309,7 +309,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
             children: [
               Text(
                 'وحدات ودروس المنهج',
-                style: GoogleFonts.cairo(
+                style: GoogleFonts.tajawal(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF1A1D1F),
@@ -317,7 +317,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
               ),
               Text(
                 '${sub.units.length} وحدات • ${sub.teacherName}',
-                style: GoogleFonts.cairo(
+                style: GoogleFonts.tajawal(
                   fontSize: 11,
                   color: const Color(0xFF717579),
                   fontWeight: FontWeight.w500,
@@ -365,17 +365,17 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                   child: Center(
                     child: Text(
                       '${unit.unitNumber}',
-                      style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF1E60FF)),
+                      style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF1E60FF)),
                     ),
                   ),
                 ),
                 title: Text(
                   unit.title,
-                  style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF1A1D1F)),
+                  style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.w700, color: const Color(0xFF1A1D1F)),
                 ),
                 subtitle: Text(
                   '${unit.lessonsCount > 0 ? unit.lessonsCount : topics.length} دروس تعليمية',
-                  style: GoogleFonts.cairo(fontSize: 10.5, fontWeight: FontWeight.w500, color: const Color(0xFF717579)),
+                  style: GoogleFonts.tajawal(fontSize: 10.5, fontWeight: FontWeight.w500, color: const Color(0xFF717579)),
                 ),
                 children: topics.asMap().entries.map((entry) {
                   final idx = entry.key + 1;
@@ -416,11 +416,11 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
                               children: [
                                 Text(
                                   topicTitle,
-                                  style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF1A1D1F)),
+                                  style: GoogleFonts.tajawal(fontSize: 12, fontWeight: FontWeight.w700, color: const Color(0xFF1A1D1F)),
                                 ),
                                 Text(
                                   'الدرس $idx • انقر لمشاهدة الشرح التفاعلي بالفيديو',
-                                  style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.w500, color: const Color(0xFF717579)),
+                                  style: GoogleFonts.tajawal(fontSize: 10, fontWeight: FontWeight.w500, color: const Color(0xFF717579)),
                                 ),
                               ],
                             ),
@@ -485,7 +485,7 @@ class _SubjectDetailScreenState extends State<SubjectDetailScreen> {
             Text(
               label,
               maxLines: 1,
-              style: GoogleFonts.cairo(
+              style: GoogleFonts.tajawal(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: isSelected ? Colors.white : const Color(0xFF1A1D1F),

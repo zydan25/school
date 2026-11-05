@@ -55,7 +55,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
             elevation: 0,
             title: Text(
               'الواجبات والمهام المدرسية',
-              style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+              style: GoogleFonts.tajawal(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
             ),
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
@@ -104,7 +104,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                             const SizedBox(height: 8),
                             Text(
                               'لا توجد واجبات معلقة في هذا القسم',
-                              style: GoogleFonts.cairo(fontWeight: FontWeight.bold, color: const Color(0xFF64748B)),
+                              style: GoogleFonts.tajawal(fontWeight: FontWeight.bold, color: const Color(0xFF64748B)),
                             ),
                           ],
                         ),
@@ -143,7 +143,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
         ),
         child: Text(
           label,
-          style: GoogleFonts.cairo(
+          style: GoogleFonts.tajawal(
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
             color: isSelected ? Colors.white : const Color(0xFF64748B),
@@ -208,7 +208,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                       ),
                       child: Text(
                         hw.subject,
-                        style: GoogleFonts.cairo(
+                        style: GoogleFonts.tajawal(
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                           color: subjectColor,
@@ -218,7 +218,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                     const SizedBox(width: 8),
                     Text(
                       hw.teacherName,
-                      style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
+                      style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
@@ -234,7 +234,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                       const SizedBox(width: 4),
                       Text(
                         statusText,
-                        style: GoogleFonts.cairo(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
+                        style: GoogleFonts.tajawal(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
                       ),
                     ],
                   ),
@@ -251,12 +251,12 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
               children: [
                 Text(
                   hw.title,
-                  style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                  style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   hw.description,
-                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B), height: 1.4),
+                  style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF64748B), height: 1.4),
                 ),
                 const SizedBox(height: 10),
 
@@ -269,7 +269,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                         const SizedBox(width: 4),
                         Text(
                           'الموعد: ${hw.dueDate}',
-                          style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B)),
+                          style: GoogleFonts.tajawal(fontSize: 10, color: const Color(0xFF64748B)),
                         ),
                         if (isImageUpload) ...[
                           const SizedBox(width: 8),
@@ -281,7 +281,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                             ),
                             child: Text(
                               'كشكول (صورة)',
-                              style: GoogleFonts.cairo(fontSize: 9, color: AppTheme.screenshotOrange, fontWeight: FontWeight.bold),
+                              style: GoogleFonts.tajawal(fontSize: 9, color: AppTheme.screenshotOrange, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ],
@@ -309,7 +309,7 @@ class _HomeworkScreenState extends State<HomeworkScreen> {
                       ),
                       label: Text(
                         isImageUpload ? (isPending ? 'رفع صورة الحل' : 'معاينة الحل') : (isPending ? 'حل الواجب' : 'استعراض الإجابات'),
-                        style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold),
+                        style: GoogleFonts.tajawal(fontSize: 11, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -368,7 +368,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('تم التقاط صورة صفحة الكشكول بنجاح! جاهزة للتسليم.', style: GoogleFonts.cairo()),
+        content: Text('تم التقاط صورة صفحة الكشكول بنجاح! جاهزة للتسليم.', style: GoogleFonts.tajawal()),
         backgroundColor: AppTheme.screenshotGreen,
       ),
     );
@@ -377,7 +377,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
   void _submitImageHomework() async {
     if (_selectedPhotoUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('الرجاء التقاط أو اختيار صورة صفحة الحل أولاً', style: GoogleFonts.cairo())),
+        SnackBar(content: Text('الرجاء التقاط أو اختيار صورة صفحة الحل أولاً', style: GoogleFonts.tajawal())),
       );
       return;
     }
@@ -431,13 +431,13 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
               const SizedBox(height: 10),
               Text(
                 'تم تسليم الواجب بنجاح!',
-                style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                style: GoogleFonts.tajawal(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
               ),
               const SizedBox(height: 6),
               Text(
                 'تم إرسال الحل للمعلم (${widget.homework.teacherName}) للمراجعة والتقييم.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF64748B)),
               ),
               const SizedBox(height: 16),
               SizedBox(
@@ -452,7 +452,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
-                  child: Text('العودة للواجبات', style: GoogleFonts.cairo(fontWeight: FontWeight.bold)),
+                  child: Text('العودة للواجبات', style: GoogleFonts.tajawal(fontWeight: FontWeight.bold)),
                 ),
               ),
             ],
@@ -473,7 +473,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: Text(hw.subject, style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+        title: Text(hw.subject, style: GoogleFonts.tajawal(fontSize: 16, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
           onPressed: () => Navigator.pop(context),
@@ -502,7 +502,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                     children: [
                       Text(
                         hw.title,
-                        style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                        style: GoogleFonts.tajawal(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                       ),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -512,7 +512,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                         ),
                         child: Text(
                           '${hw.maxScore} درجات',
-                          style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
+                          style: GoogleFonts.tajawal(fontSize: 11, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
                         ),
                       ),
                     ],
@@ -520,7 +520,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                   const SizedBox(height: 4),
                   Text(
                     'المعلم: ${hw.teacherName} • الموعد النهائي: ${hw.dueDate}',
-                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                    style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF64748B)),
                   ),
                 ],
               ),
@@ -551,8 +551,8 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('توجيه صوتي من المعلم (${hw.teacherName})', style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
-                        Text(_isPlayingAudio ? 'جاري الاستماع...' : 'اضغط للاستماع لملاحظات المعلم (0:35 د)', style: GoogleFonts.cairo(fontSize: 10, color: AppTheme.screenshotBlue)),
+                        Text('توجيه صوتي من المعلم (${hw.teacherName})', style: GoogleFonts.tajawal(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                        Text(_isPlayingAudio ? 'جاري الاستماع...' : 'اضغط للاستماع لملاحظات المعلم (0:35 د)', style: GoogleFonts.tajawal(fontSize: 10, color: AppTheme.screenshotBlue)),
                       ],
                     ),
                   ),
@@ -577,12 +577,12 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                   children: [
                     Text(
                       'المطلوب كتابة الحل في الكشكول ورفع صورة الصفحة:',
-                      style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                      style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       hw.description,
-                      style: GoogleFonts.cairo(fontSize: 12, color: const Color(0xFF475569), height: 1.5),
+                      style: GoogleFonts.tajawal(fontSize: 12, color: const Color(0xFF475569), height: 1.5),
                     ),
                     const SizedBox(height: 14),
 
@@ -605,11 +605,11 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                               const SizedBox(height: 8),
                               Text(
                                 'التقط صورة لصفحة الكشكول أو اخترها من المعرض',
-                                style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
+                                style: GoogleFonts.tajawal(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
                               ),
                               Text(
                                 'تأكد من وضوح الخط وأرقام المسائل',
-                                style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B)),
+                                style: GoogleFonts.tajawal(fontSize: 10, color: const Color(0xFF64748B)),
                               ),
                             ],
                           ),
@@ -632,7 +632,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                             TextButton.icon(
                               onPressed: _simulatePhotoCapture,
                               icon: const Icon(Icons.refresh_rounded, size: 16),
-                              label: Text('إعادة التقاط الصورة', style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold)),
+                              label: Text('إعادة التقاط الصورة', style: GoogleFonts.tajawal(fontSize: 11, fontWeight: FontWeight.bold)),
                             ),
                           ],
                         ],
@@ -644,10 +644,10 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                     TextField(
                       controller: _photoNoteController,
                       enabled: !isReadOnly,
-                      style: GoogleFonts.cairo(fontSize: 12),
+                      style: GoogleFonts.tajawal(fontSize: 12),
                       decoration: InputDecoration(
                         labelText: 'ملاحظة للمعلم حول الحل (اختياري)',
-                        labelStyle: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                        labelStyle: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF64748B)),
                         filled: true,
                         fillColor: const Color(0xFFF8FAFC),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
@@ -672,7 +672,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     icon: const Icon(Icons.send_rounded, size: 18),
-                    label: Text('اعتماد وتسليم صورة الكشكول للمعلم', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold)),
+                    label: Text('اعتماد وتسليم صورة الكشكول للمعلم', style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold)),
                   ),
                 ),
             ] else ...[
@@ -697,7 +697,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     icon: const Icon(Icons.send_rounded, size: 18),
-                    label: Text('اعتماد وتسليم الإجابات للمعلم', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold)),
+                    label: Text('اعتماد وتسليم الإجابات للمعلم', style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold)),
                   ),
                 ),
             ],
@@ -727,15 +727,15 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
             children: [
               Text(
                 'السؤال $number',
-                style: GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
+                style: GoogleFonts.tajawal(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.screenshotBlue),
               ),
-              Text('${q.points} درجات', style: GoogleFonts.cairo(fontSize: 10, color: const Color(0xFF64748B))),
+              Text('${q.points} درجات', style: GoogleFonts.tajawal(fontSize: 10, color: const Color(0xFF64748B))),
             ],
           ),
           const SizedBox(height: 6),
           Text(
             q.text,
-            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A), height: 1.4),
+            style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A), height: 1.4),
           ),
           const SizedBox(height: 10),
 
@@ -764,7 +764,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
                       Expanded(
                         child: Text(
                           opt,
-                          style: GoogleFonts.cairo(
+                          style: GoogleFonts.tajawal(
                             fontSize: 12,
                             fontWeight: isChosen ? FontWeight.bold : FontWeight.normal,
                             color: isChosen ? AppTheme.screenshotBlue : const Color(0xFF0F172A),
@@ -781,7 +781,7 @@ class _QuestionSolverScreenState extends State<QuestionSolverScreen> {
               controller: _essayController,
               enabled: !isReadOnly,
               maxLines: 3,
-              style: GoogleFonts.cairo(fontSize: 12),
+              style: GoogleFonts.tajawal(fontSize: 12),
               decoration: InputDecoration(
                 hintText: isReadOnly ? (_answers[q.id] ?? 'تم الحل') : 'اكتب الإجابة هنا...',
                 filled: true,

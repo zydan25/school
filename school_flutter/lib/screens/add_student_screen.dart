@@ -31,7 +31,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     if (code.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø¥Ø¯Ø®Ø§Ù„ ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨ Ø£ÙˆÙ„Ø§Ù‹', style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold)),
+          content: Text('Ø§Ù„Ø±Ø¬Ø§Ø¡ Ø¥Ø¯Ø®Ø§Ù„ ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨ Ø£ÙˆÙ„Ø§Ù‹', style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold)),
           backgroundColor: const Color(0xFFE11D48),
         ),
       );
@@ -56,7 +56,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         SnackBar(
           content: Text(
             result['message'] ?? 'ØªÙ… Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø§Ù„Ø¨ ÙÙŠ Ø§Ù„Ø®Ø§Ø¯Ù… ÙˆØ±Ø¨Ø·Ù‡ Ø¨Ù†Ø¬Ø§Ø­!',
-            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold),
+            style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold),
           ),
           backgroundColor: const Color(0xFF15803D),
           duration: const Duration(seconds: 3),
@@ -66,7 +66,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(result['message'] ?? 'ÙØ´Ù„ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨ ÙÙŠ Ø§Ù„Ø®Ø§Ø¯Ù…', style: GoogleFonts.cairo(fontSize: 13)),
+          content: Text(result['message'] ?? 'ÙØ´Ù„ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨ ÙÙŠ Ø§Ù„Ø®Ø§Ø¯Ù…', style: GoogleFonts.tajawal(fontSize: 13)),
           backgroundColor: const Color(0xFFE11D48),
         ),
       );
@@ -81,7 +81,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('ØªÙ… Ù…Ø³Ø­ ÙƒÙˆØ¯ QR ÙˆÙ‚Ø±Ø§Ø¡Ø© Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø§Ù„Ø¨ Ø¨Ù†Ø¬Ø§Ø­!', style: GoogleFonts.cairo()),
+        content: Text('ØªÙ… Ù…Ø³Ø­ ÙƒÙˆØ¯ QR ÙˆÙ‚Ø±Ø§Ø¡Ø© Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø·Ø§Ù„Ø¨ Ø¨Ù†Ø¬Ø§Ø­!', style: GoogleFonts.tajawal()),
         backgroundColor: const Color(0xFF7C3AED),
       ),
     );
@@ -104,7 +104,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
         centerTitle: true,
         title: Text(
           'Ø¥Ø¶Ø§ÙØ© ÙˆØ±Ø¨Ø· Ø·Ø§Ù„Ø¨ Ø¬Ø¯ÙŠØ¯',
-          style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+          style: GoogleFonts.tajawal(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Color(0xFF0F172A)),
@@ -149,7 +149,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                       const SizedBox(width: 10),
                       Text(
                         'Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ù…Ø¯Ø±Ø³Ø© Ø§Ù„Ù…Ø¹ØªÙ…Ø¯Ø©',
-                        style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                        style: GoogleFonts.tajawal(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                       ),
                     ],
                   ),
@@ -167,8 +167,8 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(currentSchool, style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
-                            Text('ÙƒÙˆØ¯ Ø§Ù„Ù…Ø¯Ø±Ø³Ø©: $currentCode', style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B))),
+                            Text(currentSchool, style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A))),
+                            Text('ÙƒÙˆØ¯ Ø§Ù„Ù…Ø¯Ø±Ø³Ø©: $currentCode', style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF64748B))),
                           ],
                         ),
                         const Icon(Icons.verified_rounded, color: Color(0xFF15803D), size: 20),
@@ -209,14 +209,14 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                           const SizedBox(width: 10),
                           Text(
                             'ÙƒÙˆØ¯ ÙˆÙƒÙ„Ù…Ø© Ù…Ø±ÙˆØ± Ø§Ù„Ø·Ø§Ù„Ø¨',
-                            style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                            style: GoogleFonts.tajawal(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                           ),
                         ],
                       ),
                       TextButton.icon(
                         onPressed: _simulateQrScan,
                         icon: const Icon(Icons.qr_code_scanner_rounded, size: 16),
-                        label: Text('Ù…Ø³Ø­ QR', style: GoogleFonts.cairo(fontSize: 11, fontWeight: FontWeight.bold)),
+                        label: Text('Ù…Ø³Ø­ QR', style: GoogleFonts.tajawal(fontSize: 11, fontWeight: FontWeight.bold)),
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFF0284C7),
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -242,10 +242,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                           child: TextField(
                             controller: _studentCodeController,
                             textAlign: TextAlign.right,
-                            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                            style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                             decoration: InputDecoration(
                               hintText: 'ÙƒÙˆØ¯ Ø§Ù„Ø·Ø§Ù„Ø¨ (Ù…Ø«Ø§Ù„: STD-2026-009)',
-                              hintStyle: GoogleFonts.cairo(fontSize: 13, color: const Color(0xFF94A3B8)),
+                              hintStyle: GoogleFonts.tajawal(fontSize: 13, color: const Color(0xFF94A3B8)),
                               border: InputBorder.none,
                             ),
                           ),
@@ -273,10 +273,10 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                             controller: _passwordController,
                             obscureText: _obscurePassword,
                             textAlign: TextAlign.right,
-                            style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
+                            style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.bold, color: const Color(0xFF0F172A)),
                             decoration: InputDecoration(
                               hintText: 'ÙƒÙ„Ù…Ø© Ù…Ø±ÙˆØ± Ø§Ù„Ø·Ø§Ù„Ø¨',
-                              hintStyle: GoogleFonts.cairo(fontSize: 13, color: const Color(0xFF94A3B8)),
+                              hintStyle: GoogleFonts.tajawal(fontSize: 13, color: const Color(0xFF94A3B8)),
                               border: InputBorder.none,
                             ),
                           ),
@@ -320,7 +320,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                                 const SizedBox(width: 8),
                                 Text(
                                   '+ Ø¥Ø¶Ø§ÙØ© ÙˆØ±Ø¨Ø· Ø§Ù„Ø·Ø§Ù„Ø¨ Ø§Ù„Ø¢Ù†',
-                                  style: GoogleFonts.cairo(fontSize: 15, fontWeight: FontWeight.bold),
+                                  style: GoogleFonts.tajawal(fontSize: 15, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
@@ -347,7 +347,7 @@ class _AddStudentScreenState extends State<AddStudentScreen> {
                   Expanded(
                     child: Text(
                       'Ù†Ø¸Ø§Ù… Ø£Ù…Ø§Ù† Ø§Ù„Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…Ø¯Ø±Ø³ÙŠ: ÙŠØªÙ… ØªÙˆØ«ÙŠÙ‚ Ø¬Ù‡Ø§Ø²Ùƒ ÙˆØ§Ø¹ØªÙ…Ø§Ø¯Ù‡ ÙÙˆØ±ÙŠØ§Ù‹ Ù„Ù„ÙˆØµÙˆÙ„ Ø§Ù„Ø¢Ù…Ù† Ù„Ø­Ø³Ø§Ø¨ Ø§Ù„Ø·Ø§Ù„Ø¨.',
-                      style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold),
+                      style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF0284C7), fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],

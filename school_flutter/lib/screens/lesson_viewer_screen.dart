@@ -70,7 +70,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
         ),
         title: Text(
           widget.subjectName,
-          style: GoogleFonts.cairo(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
+          style: GoogleFonts.tajawal(fontSize: 16, fontWeight: FontWeight.w900, color: const Color(0xFF0F172A)),
         ),
         actions: [
           IconButton(
@@ -124,7 +124,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                                 Text(
                                   widget.lessonTitle,
                                   textAlign: TextAlign.center,
-                                  style: GoogleFonts.cairo(
+                                  style: GoogleFonts.tajawal(
                                     fontSize: 14,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,
@@ -132,7 +132,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                                 ),
                                 Text(
                                   widget.teacherName,
-                                  style: GoogleFonts.cairo(fontSize: 11, color: Colors.white70),
+                                  style: GoogleFonts.tajawal(fontSize: 11, color: Colors.white70),
                                 ),
                               ],
                             ),
@@ -171,7 +171,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('04:15 / 12:45', style: GoogleFonts.cairo(fontSize: 11, color: Colors.white)),
+                          Text('04:15 / 12:45', style: GoogleFonts.tajawal(fontSize: 11, color: Colors.white)),
                           const Row(
                             children: [
                               Icon(Icons.subtitles_rounded, color: Colors.white, size: 18),
@@ -198,7 +198,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
               children: [
                 Text(
                   widget.lessonTitle,
-                  style: GoogleFonts.cairo(
+                  style: GoogleFonts.tajawal(
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                     color: const Color(0xFF0F172A),
@@ -207,7 +207,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                 const SizedBox(height: 2),
                 Text(
                   '${widget.teacherName} â€¢ Ø´Ø±Ø­ Ù…ØªØ§Ø­ Ø¯ÙˆÙ† Ø¥Ù†ØªØ±Ù†Øª',
-                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.bold),
+                  style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF64748B), fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 12),
 
@@ -233,7 +233,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                       isActive: false,
                       onTap: () {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('ØªÙ… Ù†Ø³Ø® Ø±Ø§Ø¨Ø· Ø§Ù„Ø¯Ø±Ø³ Ø¨Ù†Ø¬Ø§Ø­ âœ“', style: GoogleFonts.cairo())),
+                          SnackBar(content: Text('ØªÙ… Ù†Ø³Ø® Ø±Ø§Ø¨Ø· Ø§Ù„Ø¯Ø±Ø³ Ø¨Ù†Ø¬Ø§Ø­ âœ“', style: GoogleFonts.tajawal())),
                         );
                       },
                     ),
@@ -247,7 +247,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                           SnackBar(
                             content: Text(
                               _isSaved ? 'ØªÙ… Ø­ÙØ¸ Ø§Ù„Ø¯Ø±Ø³ ÙÙŠ Ø§Ù„Ù…ÙØ¶Ù„Ø© âœ“' : 'ØªÙ…Øª Ø¥Ø²Ø§Ù„Ø© Ø§Ù„Ø¯Ø±Ø³ Ù…Ù† Ø§Ù„Ù…ÙØ¶Ù„Ø©',
-                              style: GoogleFonts.cairo(),
+                              style: GoogleFonts.tajawal(),
                             ),
                           ),
                         );
@@ -269,11 +269,11 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
               children: [
                 Text(
                   'Ù…Ø­ØªÙˆÙŠØ§Øª Ø§Ù„ÙˆØ­Ø¯Ø© (${_playlist.length} Ø¯Ø±ÙˆØ³)',
-                  style: GoogleFonts.cairo(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+                  style: GoogleFonts.tajawal(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
                 ),
                 Text(
                   'Ù…ÙƒØªÙ…Ù„ 1 Ù…Ù† ${_playlist.length}',
-                  style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF15803D), fontWeight: FontWeight.bold),
+                  style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF15803D), fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -331,7 +331,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                                 item['title']!,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.cairo(
+                                style: GoogleFonts.tajawal(
                                   fontSize: 12.5,
                                   fontWeight: FontWeight.bold,
                                   color: isSelected ? const Color(0xFF0284C7) : const Color(0xFF0F172A),
@@ -341,12 +341,12 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
                                 children: [
                                   Text(
                                     item['duration']!,
-                                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF64748B)),
+                                    style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF64748B)),
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
                                     'â€¢ ${item['teacher']!}',
-                                    style: GoogleFonts.cairo(fontSize: 11, color: const Color(0xFF94A3B8)),
+                                    style: GoogleFonts.tajawal(fontSize: 11, color: const Color(0xFF94A3B8)),
                                   ),
                                 ],
                               ),
@@ -381,7 +381,7 @@ class _LessonViewerScreenState extends State<LessonViewerScreen> {
           children: [
             Icon(icon, color: color, size: 20),
             const SizedBox(height: 2),
-            Text(label, style: GoogleFonts.cairo(fontSize: 10.5, color: color, fontWeight: FontWeight.bold)),
+            Text(label, style: GoogleFonts.tajawal(fontSize: 10.5, color: color, fontWeight: FontWeight.bold)),
           ],
         ),
       ),

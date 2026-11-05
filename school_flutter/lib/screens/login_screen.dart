@@ -119,7 +119,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 14),
                         Text(
                           'منظومة مدرستي الذكية',
-                          style: GoogleFonts.cairo(
+                          style: GoogleFonts.tajawal(
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
@@ -141,7 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               const SizedBox(width: 6),
                               Text(
                                 'البوابة الرسمية الموحدة للمدارس',
-                                style: GoogleFonts.cairo(
+                                style: GoogleFonts.tajawal(
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
@@ -222,7 +222,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 Expanded(
                                   child: Text(
                                     _errorMessage!,
-                                    style: GoogleFonts.cairo(color: AppTheme.rose, fontSize: 12, fontWeight: FontWeight.bold),
+                                    style: GoogleFonts.tajawal(color: AppTheme.rose, fontSize: 12, fontWeight: FontWeight.bold),
                                   ),
                                 ),
                               ],
@@ -258,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                       const SizedBox(width: 8),
                                       Text(
                                         'تسجيل الدخول للمنظومة',
-                                        style: GoogleFonts.cairo(fontSize: 14, fontWeight: FontWeight.w800),
+                                        style: GoogleFonts.tajawal(fontSize: 14, fontWeight: FontWeight.w800),
                                       ),
                                     ],
                                   ),
@@ -296,7 +296,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             Expanded(
                               child: Text(
                                 'الحسابات المعتمدة في الخادم (للاختبار السريع):',
-                                style: GoogleFonts.cairo(
+                                style: GoogleFonts.tajawal(
                                   fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   color: AppTheme.textMain,
@@ -360,7 +360,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 16),
                   Text(
                     'المنظومة المدرسية الذكية 2026 • مشغلة بتقنيات Flutter المتطورة',
-                    style: GoogleFonts.cairo(fontSize: 10, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
+                    style: GoogleFonts.tajawal(fontSize: 10, color: AppTheme.textMuted, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -378,7 +378,7 @@ class _LoginScreenState extends State<LoginScreen> {
         const SizedBox(width: 6),
         Text(
           label,
-          style: GoogleFonts.cairo(
+          style: GoogleFonts.tajawal(
             fontSize: 12,
             fontWeight: FontWeight.bold,
             color: AppTheme.textMain,
@@ -406,10 +406,10 @@ class _LoginScreenState extends State<LoginScreen> {
         controller: controller,
         obscureText: obscure,
         keyboardType: keyboardType,
-        style: GoogleFonts.cairo(fontSize: 13, color: AppTheme.textMain, fontWeight: FontWeight.w600),
+        style: GoogleFonts.tajawal(fontSize: 13, color: AppTheme.textMain, fontWeight: FontWeight.w600),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: GoogleFonts.cairo(fontSize: 12, color: AppTheme.textMuted),
+          hintStyle: GoogleFonts.tajawal(fontSize: 12, color: AppTheme.textMuted),
           prefixIcon: Icon(icon, color: AppTheme.textMuted, size: 18),
           suffixIcon: suffixIcon,
           border: InputBorder.none,
@@ -456,7 +456,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Text(
                       title,
-                      style: GoogleFonts.cairo(
+                      style: GoogleFonts.tajawal(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: color,
@@ -466,7 +466,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.cairo(
+                      style: GoogleFonts.tajawal(
                         fontSize: 10,
                         color: AppTheme.textMuted,
                         fontWeight: FontWeight.w600,

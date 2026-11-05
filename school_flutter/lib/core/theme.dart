@@ -115,7 +115,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      fontFamily: GoogleFonts.cairo().fontFamily,
+      fontFamily: GoogleFonts.tajawal().fontFamily,
       colorScheme: ColorScheme.fromSeed(
         seedColor: primary,
         primary: primary,
@@ -131,7 +131,7 @@ class AppTheme {
           color: textMain,
           fontSize: 15,
           fontWeight: FontWeight.w800,
-          fontFamily: GoogleFonts.cairo().fontFamily,
+          fontFamily: GoogleFonts.tajawal().fontFamily,
         ),
         iconTheme: const IconThemeData(color: textMain, size: 20),
       ),
